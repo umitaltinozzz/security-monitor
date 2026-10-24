@@ -270,7 +270,7 @@ pub fn build_test_args(
         OsString::from(format!("--name={container_name}")),
         OsString::from("--mount"),
         OsString::from(format!(
-            "type=bind,src={},dst=/workspace,rw",
+            "type=bind,src={},dst=/workspace",
             path_arg(&worktree)?
         )),
         OsString::from("--workdir=/workspace"),
@@ -1370,7 +1370,11 @@ mod tests {
                 "missing {required}"
             );
         }
-        assert!(values.iter().any(|arg| arg.starts_with("type=bind,src=") && arg.ends_with(",dst=/workspace,rw")));
+        assert!(
+            values
+                .iter()
+                .any(|arg| arg.starts_with("type=bind,src=") && arg.ends_with(",dst=/workspace"))
+        );
         assert!(!values.iter().any(|arg| arg.contains("--network=host")));
     }
 
