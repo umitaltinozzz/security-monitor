@@ -46,7 +46,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: samypr100/setup-dev-drive@v4
         with:
-          drive-size: 10GB
+          drive-size: 14GB
           env-mapping: |
             CARGO_HOME,{{ DEV_DRIVE }}/cargo-home
             CARGO_TARGET_DIR,{{ DEV_DRIVE }}/cargo-target
