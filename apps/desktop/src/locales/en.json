@@ -299,7 +299,11 @@
       "serverPaired": "Server paired",
       "inventoryApproved": "Server inventory collection approved",
       "findingChanged": "Finding status changed",
-      "scannerInstalled": "Scanner installed"
+      "scannerInstalled": "Scanner installed",
+      "mcpSourceAccessApproval": "MCP source access approved",
+      "mcpSourceAccessEnabled": "MCP source access enabled",
+      "mcpSourceAccessRevocation": "MCP source access revocation requested",
+      "mcpSourceAccessRevoked": "MCP source access revoked"
     }
   },
   "settings": {
@@ -378,6 +382,8 @@
       "analyze_impact": "Read finding impact context"
     },
     "projectPermissions": "Providers allowed for each project",
+    "mcpSourceAccess": "Local MCP source access",
+    "mcpSourceAccessHelp": "Granting a project lets the configured local MCP client read its redacted source files; that client may forward returned text. Approve only projects suitable for that client. Access is off by default, and every grant or revocation is recorded in Activity.",
     "runHistory": "AI run history",
     "tokens": "Tokens",
     "cost": "Cost",

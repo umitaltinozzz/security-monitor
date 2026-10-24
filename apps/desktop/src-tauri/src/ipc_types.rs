@@ -160,7 +160,7 @@ pub struct AiProviderInput {
     pub price_in: Option<f64>,
     pub price_out: Option<f64>,
     pub data_region: Option<String>,
-    /// Transient IPC input; never written to settings, SQLite, logs, or generated user state.
+    // Keep this transient: the key is consumed into the OS credential store only.
     pub api_key: Option<String>,
 }
 

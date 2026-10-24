@@ -99,6 +99,10 @@ pub async fn save_ai_settings(
     state: State<'_, AppState>,
     settings: AiSettings,
 ) -> Result<(), String> {
+    save_ai_settings_for_app(&state, settings).await
+}
+
+async fn save_ai_settings_for_app(state: &AppState, settings: AiSettings) -> Result<(), String> {
     settings
         .validate()
         .map_err(|_| "invalid_input".to_owned())?;
@@ -145,6 +149,19 @@ pub async fn save_ai_settings(
     {
         return Err("invalid_input".to_owned());
     }
+    let projects = state
+        .database
+        .repository::<Project>()
+        .list()
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?;
+    if settings
+        .mcp_source_access_projects
+        .iter()
+        .any(|project_id| !projects.iter().any(|project| project.id == *project_id))
+    {
+        return Err("invalid_input".to_owned());
+    }
     let previous = state.ai_settings.read().await.clone();
     let now = Utc::now();
     let enabled_tools = settings
@@ -170,6 +187,18 @@ pub async fn save_ai_settings(
         .filter(|tool| !settings.enabled_tools.contains(tool))
         .cloned()
         .collect::<Vec<_>>();
+    let approved_source_projects = settings
+        .mcp_source_access_projects
+        .iter()
+        .filter(|project_id| !previous.mcp_source_access_projects.contains(project_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let revoked_source_projects = previous
+        .mcp_source_access_projects
+        .iter()
+        .filter(|project_id| !settings.mcp_source_access_projects.contains(project_id))
+        .cloned()
+        .collect::<Vec<_>>();
     for tool in &revoked_tools {
         // Revocation remains possible during an audit-storage failure; it reduces access.
         let _ = write_audit_event(
@@ -177,6 +206,29 @@ pub async fn save_ai_settings(
             "ai_tool_permission_revocation_requested",
             "ai_tool",
             Some(tool.clone()),
+            now,
+            AuditResult::Succeeded,
+        )
+        .await;
+    }
+    for project_id in &approved_source_projects {
+        write_audit_event(
+            &state.database,
+            "mcp_source_access_permission_enable_approved",
+            "project",
+            Some(project_id.clone()),
+            now,
+            AuditResult::Succeeded,
+        )
+        .await?;
+    }
+    for project_id in &revoked_source_projects {
+        // Revocation remains possible during an audit-storage failure because it reduces access.
+        let _ = write_audit_event(
+            &state.database,
+            "mcp_source_access_permission_revocation_requested",
+            "project",
+            Some(project_id.clone()),
             now,
             AuditResult::Succeeded,
         )
@@ -201,6 +253,28 @@ pub async fn save_ai_settings(
             "ai_tool_permission_revoked",
             "ai_tool",
             Some(tool),
+            persisted_at,
+            AuditResult::Succeeded,
+        )
+        .await?;
+    }
+    for project_id in approved_source_projects {
+        write_audit_event(
+            &state.database,
+            "mcp_source_access_permission_enabled",
+            "project",
+            Some(project_id),
+            persisted_at,
+            AuditResult::Succeeded,
+        )
+        .await?;
+    }
+    for project_id in revoked_source_projects {
+        write_audit_event(
+            &state.database,
+            "mcp_source_access_permission_revoked",
+            "project",
+            Some(project_id),
             persisted_at,
             AuditResult::Succeeded,
         )
@@ -1671,6 +1745,68 @@ fn reason_key(reason: FindingDispositionReason) -> &'static str {
 mod ai_approval_tests {
     use super::*;
     use security_monitor_core::{AiProviderKind, ProviderCapabilities};
+
+    #[tokio::test]
+    async fn mcp_source_access_grants_and_revocations_are_audited() {
+        let app_data = tempfile::tempdir().unwrap();
+        let project_root = tempfile::tempdir().unwrap();
+        let database = Database::in_memory().await.unwrap();
+        let now = Utc::now();
+        database
+            .repository::<Project>()
+            .create(&Project {
+                id: "project-1".into(),
+                name: "fixture".into(),
+                root_path: project_root
+                    .path()
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                git_remote: None,
+                reference_branch: None,
+                allowed_ai_providers: vec![],
+                last_scan_at: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .await
+            .unwrap();
+        let state = AppState::new(
+            database.clone(),
+            app_data.path().to_path_buf(),
+            AppSettings::default(),
+        )
+        .unwrap();
+
+        save_ai_settings_for_app(
+            &state,
+            AiSettings {
+                mcp_source_access_projects: vec!["project-1".into()],
+                ..AiSettings::default()
+            },
+        )
+        .await
+        .unwrap();
+        save_ai_settings_for_app(&state, AiSettings::default())
+            .await
+            .unwrap();
+
+        let events = database.repository::<AuditEvent>().list().await.unwrap();
+        for action in [
+            "mcp_source_access_permission_enable_approved",
+            "mcp_source_access_permission_enabled",
+            "mcp_source_access_permission_revocation_requested",
+            "mcp_source_access_permission_revoked",
+        ] {
+            assert!(events.iter().any(|event| {
+                event.action == action
+                    && event.scope.resource_type == "project"
+                    && event.scope.resource_id.as_deref() == Some("project-1")
+                    && event.result == AuditResult::Succeeded
+            }));
+        }
+    }
 
     #[test]
     fn approval_digest_changes_when_destination_or_content_changes() {

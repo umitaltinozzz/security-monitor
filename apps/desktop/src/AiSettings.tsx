@@ -101,6 +101,12 @@ export function AiSettingsPanel({ data, t, setNotice, refresh }: {
     const enabledTools = enabled ? [...new Set([...aiSettings.enabled_tools, tool])] : aiSettings.enabled_tools.filter((item) => item !== tool);
     void saveSettings({ ...aiSettings, enabled_tools: enabledTools });
   }
+  function toggleMcpSourceProject(projectId: string, enabled: boolean) {
+    const projects = enabled
+      ? [...new Set([...aiSettings.mcp_source_access_projects, projectId])]
+      : aiSettings.mcp_source_access_projects.filter((item) => item !== projectId);
+    void saveSettings({ ...aiSettings, mcp_source_access_projects: projects });
+  }
   function saveBudget(field: "daily_total_usd" | "monthly_total_usd", value: string) {
     const numberValue = value === "" ? null : Number(value);
     void saveSettings({ ...aiSettings, budget: { ...aiSettings.budget, [field]: numberValue } });
@@ -152,6 +158,9 @@ export function AiSettingsPanel({ data, t, setNotice, refresh }: {
     </section>
     <section className="panel settings-panel ai-panel"><h3>{t("ai.projectPermissions")}</h3>
       {data.projects.length === 0 ? <p>{t("projects.empty")}</p> : data.projects.map((project) => <div className="ai-project-row" key={project.id}><strong>{project.name}</strong><div className="ecosystem-grid">{configuration.providers.map((provider) => <label className="check-field" key={provider.id}><input type="checkbox" checked={project.allowed_ai_providers.includes(provider.id)} onChange={(event) => void setProjectProviders(project, provider.id, event.target.checked)} />{provider.display_name}</label>)}</div></div>)}
+    </section>
+    <section className="panel settings-panel ai-panel"><h3>{t("ai.mcpSourceAccess")}</h3><p>{t("ai.mcpSourceAccessHelp")}</p>
+      {data.projects.length === 0 ? <p>{t("projects.empty")}</p> : <div className="ecosystem-grid">{data.projects.map((project) => <label className="check-field" key={project.id}><input type="checkbox" checked={aiSettings.mcp_source_access_projects.includes(project.id)} onChange={(event) => toggleMcpSourceProject(project.id, event.target.checked)} />{project.name}</label>)}</div>}
     </section>
     <section className="panel settings-panel ai-panel"><h3>{t("ai.runHistory")}</h3>{configuration.runs.length === 0 ? <p>{t("common.noResults")}</p> : <div className="table-wrap"><table><thead><tr><th>{t("ai.modelId")}</th><th>{t("ai.tier")}</th><th>{t("ai.tokens")}</th><th>{t("ai.cost")}</th><th>{t("common.status")}</th></tr></thead><tbody>{[...configuration.runs].sort((a, b) => b.started_at.localeCompare(a.started_at)).map((run) => <tr key={run.id}><td>{run.model || t("common.unknown")}</td><td>{t(`ai.tiers.${run.tier}`)}</td><td>{run.tokens_in + run.tokens_out}</td><td>{run.cost === null ? t("common.unverified") : `$${run.cost.toFixed(4)}`}</td><td>{run.outcome}</td></tr>)}</tbody></table></div>}</section>
   </>;

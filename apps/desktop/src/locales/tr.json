@@ -299,7 +299,11 @@
       "serverPaired": "Sunucu eşleştirildi",
       "inventoryApproved": "Sunucu envanter toplama onaylandı",
       "findingChanged": "Bulgu durumu değiştirildi",
-      "scannerInstalled": "Tarayıcı kuruldu"
+      "scannerInstalled": "Tarayıcı kuruldu",
+      "mcpSourceAccessApproval": "MCP kaynak erişimi onaylandı",
+      "mcpSourceAccessEnabled": "MCP kaynak erişimi açıldı",
+      "mcpSourceAccessRevocation": "MCP kaynak erişimi iptali istendi",
+      "mcpSourceAccessRevoked": "MCP kaynak erişimi iptal edildi"
     }
   },
   "settings": {
@@ -378,6 +382,8 @@
       "analyze_impact": "Bulgu etki bağlamını oku"
     },
     "projectPermissions": "Her proje için izin verilen sağlayıcılar",
+    "mcpSourceAccess": "Yerel MCP kaynak erişimi",
+    "mcpSourceAccessHelp": "Bir projeye izin vermek, yapılandırılmış yerel MCP istemcisinin redakte edilmiş kaynak dosyalarını okumasını sağlar; istemci dönen metni başka yere iletebilir. Yalnızca bu istemciyle paylaşılmasına uygun projelere izin verin. Erişim varsayılan olarak kapalıdır; her izin ve iptal Etkinlik günlüğüne kaydedilir.",
     "runHistory": "AI çalışma geçmişi",
     "tokens": "Tokenlar",
     "cost": "Maliyet",

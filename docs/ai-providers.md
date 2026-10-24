@@ -23,7 +23,7 @@ For each request the app shows the provider, model, approved origin, user-entere
 
 Only enabled tools are sent to the API. Source reads are available only for analysis/patch tiers unless the separate triage-code setting is enabled. The app rechecks the project's provider allowlist immediately before sending. File reads reject secret paths, canonicalize and contain paths under the project root, redact common secret patterns and high-entropy values, and cap the amount of tool output and context.
 
-CLI MCP runs with the database opened read-only and exposes only local Security Monitor records. It does not expose source-file reads because it cannot verify which provider an MCP client may forward source to. Desktop AI source reads remain inside the reviewed provider request and require the project provider allowlist.
+CLI MCP runs with the database opened read-only and exposes only enabled tools. Source-file reads and search require both the tools to be enabled and a per-project grant under **Settings → AI → Local MCP source access**. Grants and revocations are recorded in Activity. A local MCP client may forward returned text, so grant only projects suitable for that client. Desktop AI source reads remain inside the reviewed provider request and require the project provider allowlist.
 
 ## Data and authority limits
 

@@ -4928,11 +4928,14 @@ dependencies = [
 name = "secmon"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "security-monitor-ai",
+ "security-monitor-core",
  "security-monitor-database",
  "security-monitor-mcp-server",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -5138,6 +5141,7 @@ dependencies = [
  "sha2 0.10.9",
  "tauri",
  "tauri-build",
+ "tempfile",
  "tokio",
  "ts-rs",
  "url",

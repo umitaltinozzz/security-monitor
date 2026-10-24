@@ -16,6 +16,8 @@ Configure the command in the MCP client as a local stdio server. Keep stdin/stdo
 
 ## Source-file access
 
-The local MCP server does not expose source-file read or search tools. It cannot verify which provider an MCP client might use after receiving a file. Source reads remain available only inside desktop AI requests, where the app checks the project's provider allowlist, displays and records the destination approval, redacts the file, and confines access to the project directory.
+The `read_project_file` and `search_project` tools are available only when both tools are enabled in **Settings → AI** and the target project is selected under **Local MCP source access**. No project is approved by default. Each grant and revocation is recorded in the local Activity history, and a project that is absent from the approved list is denied even when a client calls the tool directly. Returned files and snippets are redacted, size-limited, and confined to the canonical project root.
+
+The local MCP server cannot verify which provider an MCP client may use or whether that client forwards returned text. Grant access only to projects suitable for the configured MCP client. Desktop AI requests use a separate flow that checks the project's provider allowlist and displays a request-specific destination and content approval.
 
 The default AI settings enable no tools. The MCP server cannot modify SQLite, source files, finding statuses, or priority scores. Unknown deployment identity and missing evidence remain `needs_review`.

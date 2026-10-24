@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     io::{self, Read},
     path::{Component as PathComponent, Path, PathBuf},
     sync::Arc,
@@ -44,15 +44,22 @@ pub enum McpError {
 
 pub struct WorkspaceTools {
     database: Database,
-    source_access_project: Option<String>,
+    source_access_projects: BTreeSet<String>,
     host_aliases: BTreeMap<String, String>,
 }
 
 impl WorkspaceTools {
     pub fn new(database: Database, source_access_project: Option<String>) -> Self {
+        Self::with_approved_source_projects(database, source_access_project)
+    }
+
+    pub fn with_approved_source_projects(
+        database: Database,
+        source_access_projects: impl IntoIterator<Item = String>,
+    ) -> Self {
         Self {
             database,
-            source_access_project,
+            source_access_projects: source_access_projects.into_iter().collect(),
             host_aliases: BTreeMap::new(),
         }
     }
@@ -388,11 +395,11 @@ impl WorkspaceTools {
     }
 
     fn require_source_project(&self, project_id: &str) -> Result<(), McpError> {
-        self.source_access_project
-            .as_deref()
-            .filter(|allowed| *allowed == project_id)
-            .map(|_| ())
-            .ok_or(McpError::PermissionDenied)
+        if self.source_access_projects.contains(project_id) {
+            Ok(())
+        } else {
+            Err(McpError::PermissionDenied)
+        }
     }
 }
 
@@ -423,10 +430,12 @@ impl McpServer {
             .into_iter()
             .filter(|name| known.contains(name))
             .collect::<Vec<_>>();
-        let approved_permissions = if enabled_tool_names
-            .iter()
-            .any(|name| matches!(name.as_str(), "analyze_impact"))
-        {
+        let approved_permissions = if enabled_tool_names.iter().any(|name| {
+            matches!(
+                name.as_str(),
+                "read_project_file" | "search_project" | "analyze_impact"
+            )
+        }) {
             vec![ToolPermission::AiApproval]
         } else {
             vec![]
@@ -642,13 +651,13 @@ pub fn supported_tools() -> Vec<AiTool> {
         ),
         tool(
             "read_project_file",
-            "Read one redacted project file during a reviewed provider request.",
+            "Read one redacted project file when the tool and its project access are enabled.",
             json!({"type":"object","properties":{"project_id":{"type":"string"},"path":{"type":"string"}},"required":["project_id","path"],"additionalProperties":false}),
             ToolPermission::AiApproval,
         ),
         tool(
             "search_project",
-            "Search redacted project files during a reviewed provider request.",
+            "Search redacted project files when the tool and its project access are enabled.",
             json!({"type":"object","properties":{"project_id":{"type":"string"},"query":{"type":"string"}},"required":["project_id","query"],"additionalProperties":false}),
             ToolPermission::AiApproval,
         ),
@@ -663,9 +672,6 @@ pub fn supported_tools() -> Vec<AiTool> {
 
 fn mcp_supported_tools() -> Vec<AiTool> {
     supported_tools()
-        .into_iter()
-        .filter(|tool| !matches!(tool.name.as_str(), "read_project_file" | "search_project"))
-        .collect()
 }
 
 fn safe_relative_path(path: &str) -> Result<PathBuf, McpError> {
@@ -727,14 +733,14 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect();
-        assert_eq!(names, vec!["list_projects"]);
+        assert_eq!(names, vec!["list_projects", "read_project_file"]);
     }
 
     #[tokio::test]
     async fn disabled_and_missing_approval_tools_are_denied() {
         let server = McpServer::new(Arc::new(NoopExecutor), vec!["list_projects".into()]);
         let response = server.process(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read_project_file","arguments":{"project_id":"p","path":"README.md"}}})).await.unwrap();
-        assert_eq!(response.pointer("/error/code"), Some(&json!(-32602)));
+        assert_eq!(response.pointer("/result/isError"), Some(&json!(true)));
         let response = server.process(&json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_projects","arguments":{}}})).await.unwrap();
         assert_eq!(response.pointer("/result/isError"), Some(&json!(false)));
     }

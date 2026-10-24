@@ -19,6 +19,8 @@ pub struct AiSettings {
     pub budget: AiBudget,
     pub triage_code_enabled: bool,
     pub enabled_tools: Vec<String>,
+    #[serde(default)]
+    pub mcp_source_access_projects: Vec<String>,
 }
 
 impl AiSettings {
@@ -60,6 +62,19 @@ impl AiSettings {
         {
             return Err(AiSettingsError::DuplicatePermission);
         }
+        if self
+            .mcp_source_access_projects
+            .iter()
+            .any(|project_id| project_id.is_empty() || project_id.len() > 128)
+            || self
+                .mcp_source_access_projects
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != self.mcp_source_access_projects.len()
+        {
+            return Err(AiSettingsError::DuplicatePermission);
+        }
         Ok(())
     }
 }
@@ -77,6 +92,7 @@ pub fn load_default_settings() -> AiSettings {
             budget: AiBudget::default(),
             triage_code_enabled: false,
             enabled_tools: vec![],
+            mcp_source_access_projects: vec![],
         }
     })
 }
@@ -118,6 +134,15 @@ mod tests {
         assert_eq!(settings.budget.monthly_total_usd, Some(0.0));
         assert!(!settings.triage_code_enabled);
         assert!(settings.enabled_tools.is_empty());
+        assert!(settings.mcp_source_access_projects.is_empty());
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_settings_keep_local_mcp_source_access_disabled() {
+        let legacy = r#"{"assignments":[],"budget":{"daily_total_usd":0.0,"monthly_total_usd":0.0,"daily_by_provider_usd":{},"monthly_by_provider_usd":{}},"triage_code_enabled":false,"enabled_tools":["read_project_file"]}"#;
+        let settings = serde_json::from_str::<AiSettings>(legacy).unwrap();
+        assert!(settings.mcp_source_access_projects.is_empty());
         assert!(settings.validate().is_ok());
     }
 
@@ -131,6 +156,14 @@ mod tests {
         assert_eq!(settings.validate(), Err(AiSettingsError::UnknownTool));
         let settings = AiSettings {
             enabled_tools: vec!["list_projects".into(), "list_projects".into()],
+            ..AiSettings::default()
+        };
+        assert_eq!(
+            settings.validate(),
+            Err(AiSettingsError::DuplicatePermission)
+        );
+        let settings = AiSettings {
+            mcp_source_access_projects: vec!["project-1".into(), "project-1".into()],
             ..AiSettings::default()
         };
         assert_eq!(

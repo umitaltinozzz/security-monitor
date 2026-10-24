@@ -18,7 +18,8 @@
         "monthly_by_provider_usd": {}
       },
       "triage_code_enabled": false,
-      "enabled_tools": []
+      "enabled_tools": [],
+      "mcp_source_access_projects": []
     },
     "providers": [],
     "runs": []

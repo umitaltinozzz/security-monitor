@@ -57,6 +57,10 @@ function auditAction(action: string, t: T): string {
     server_paired: "history.events.serverPaired",
     server_inventory_collection_approved: "history.events.inventoryApproved",
     scanner_installed: "history.events.scannerInstalled",
+    mcp_source_access_permission_enable_approved: "history.events.mcpSourceAccessApproval",
+    mcp_source_access_permission_enabled: "history.events.mcpSourceAccessEnabled",
+    mcp_source_access_permission_revocation_requested: "history.events.mcpSourceAccessRevocation",
+    mcp_source_access_permission_revoked: "history.events.mcpSourceAccessRevoked",
   };
   return t(keys[action] ?? "common.unknown");
 }

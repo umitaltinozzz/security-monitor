@@ -64,7 +64,22 @@ try {
           case "get_app_settings": return state.settings;
           case "save_app_settings": state.settings = args.settings; return null;
           case "get_ai_configuration": return state.aiConfiguration;
-          case "save_ai_settings": state.aiConfiguration.settings = args.settings; return null;
+          case "save_ai_settings": {
+            const previous = state.aiConfiguration.settings.mcp_source_access_projects ?? [];
+            const next = args.settings.mcp_source_access_projects ?? [];
+            for (const projectId of next.filter((id) => !previous.includes(id))) {
+              for (const action of ["mcp_source_access_permission_enable_approved", "mcp_source_access_permission_enabled"]) {
+                state.audit.push({ id: `audit-${action}-${projectId}`, timestamp, actor: "user", action, scope: { resource_type: "project", resource_id: projectId }, result: "succeeded" });
+              }
+            }
+            for (const projectId of previous.filter((id) => !next.includes(id))) {
+              for (const action of ["mcp_source_access_permission_revocation_requested", "mcp_source_access_permission_revoked"]) {
+                state.audit.push({ id: `audit-${action}-${projectId}`, timestamp, actor: "user", action, scope: { resource_type: "project", resource_id: projectId }, result: "succeeded" });
+              }
+            }
+            state.aiConfiguration.settings = args.settings;
+            return null;
+          }
           case "list_projects": return state.projects;
           case "add_project": {
             const project = { id: "project-fixture-1", name: "Fixture Project", root_path: args.path, git_remote: null, reference_branch: null, allowed_ai_providers: [], last_scan_at: null, created_at: timestamp, updated_at: timestamp };
@@ -166,6 +181,15 @@ try {
   for (const [theme, themeValue] of [["light", "light"], ["dark", "dark"]]) {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.locator("select").first().selectOption(themeValue);
+    if (themeValue === "light") {
+      const sourceAccess = page.getByRole("checkbox", { name: "Fixture Project" });
+      await sourceAccess.check();
+      assert.equal(await sourceAccess.isChecked(), true);
+      await sourceAccess.uncheck();
+      const actions = await page.evaluate(() => window.__securityMonitorE2eState.audit.map((event) => event.action));
+      assert.ok(actions.includes("mcp_source_access_permission_enabled"));
+      assert.ok(actions.includes("mcp_source_access_permission_revoked"));
+    }
     await page.waitForTimeout(150);
     const closeNotice = page.getByRole("button", { name: "Close" });
     if (await closeNotice.count()) await closeNotice.click();

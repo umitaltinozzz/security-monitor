@@ -336,14 +336,14 @@ pub struct ScanRun {
     pub error: Option<String>,
 }
 
-/// Local checkpoint used to detect dependency-input changes without retaining source code.
+// This checkpoint detects dependency-input changes without retaining source code.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProjectScanCheckpoint {
     pub id: String,
     pub project_id: String,
     pub input_hash: Option<String>,
-    /// Serialized `security_monitor_inventory::Inventory`, containing metadata only.
+    // The serialized inventory contains component metadata only.
     pub inventory_json: String,
     pub inventory_complete: bool,
     pub checked_at: DateTime<Utc>,
@@ -441,10 +441,10 @@ pub struct NotificationChannel {
     pub config_ref: Option<String>,
     pub min_priority: u8,
     pub enabled: bool,
-    /// Timestamp of the user's explicit approval to send summaries to an external destination.
+    // This timestamp records the user's explicit approval for external summaries.
     #[serde(default)]
     pub network_approved_at: Option<DateTime<Utc>>,
-    /// Approved destination authority; full webhook URLs and passwords remain in the keyring.
+    // Store only the approved authority; complete destinations and passwords stay in the keyring.
     #[serde(default)]
     pub network_approved_destination: Option<String>,
     pub created_at: DateTime<Utc>,
