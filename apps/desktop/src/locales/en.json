@@ -149,6 +149,7 @@
     "scanCancelled": "Scan cancelled",
     "inventory": "Dependencies and inventory",
     "scanHistory": "Scan history",
+    "scanDiagnostics": "Scan coverage and checks",
     "referenceBranch": "Reference branch",
     "remoteConfigured": "Git remote configured",
     "noRemote": "No Git remote configured"
@@ -232,7 +233,7 @@
     "confidence": "Confidence",
     "changeStatus": "Change status",
     "source": "Source",
-    "remediation": {
+    "remediationWorkflow": {
       "workflowTitle": "Prepare a patch in an isolated worktree",
       "projectRequired": "A local project is required to prepare a patch.",
       "providerRequired": "Add an agent CLI provider and allow it for this project in AI settings.",
@@ -371,6 +372,11 @@
     "privacyTitle": "Privacy and network",
     "ecosystems": "Ecosystems for advisory downloads",
     "scanners": "Scanner and runtime tools",
+    "dataSources": "Data source attribution",
+    "dataSourcesHelp": "Attribution and license details preserved with advisory records stored on this device.",
+    "osvLicenses": "Mixed upstream terms; includes CC BY-SA and CC BY-NC-ND records",
+    "licenseUnverified": "License not verified",
+    "noAttributions": "No advisory source attribution records are available yet.",
     "installed": "Verified scanner installation completed",
     "publicDownloads": "Allow public advisory, scanner, and application update downloads",
     "publicDownloadsHelp": "Downloads send no project files, lockfiles, or inventory. Destination hosts are logged locally.",
@@ -553,6 +559,25 @@
     "outdated": "Update required",
     "unsupported_platform": "Unsupported platform",
     "unverified": "Could not verify"
+  },
+  "scanCoverage": {
+    "dependencies": "dependency manifests",
+    "filesystem": "filesystem vulnerabilities and secrets",
+    "misconfiguration": "configuration files",
+    "code": "code rules",
+    "image_archive": "image archive",
+    "completed": "ran; findings do not prove full coverage",
+    "incomplete": "incomplete",
+    "unavailable": "unavailable"
+  },
+  "scanDiagnostics": {
+    "scanner_coverage_unverified": "Scanner results do not prove complete repository coverage.",
+    "inventory_incomplete": "The local dependency inventory is incomplete.",
+    "dependency_inputs_incomplete": "Some dependency inputs could not be hashed.",
+    "advisory_data_stale_or_unverified": "Advisory data is stale or could not be verified.",
+    "semgrep_rules_not_configured": "Semgrep code rules are not configured.",
+    "scanner_execution_failed": "A scanner did not complete.",
+    "scan_cancelled": "The scan was cancelled."
   },
   "ecosystems": {
     "npm": "npm",

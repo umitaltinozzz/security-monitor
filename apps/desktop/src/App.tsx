@@ -47,6 +47,15 @@ function date(value: string | null | undefined, language: Language): string {
   return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 
+function safeExternalUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function isFresh(value: string | null | undefined, hours: number): boolean {
   if (!value) return false;
   const timestamp = new Date(value).getTime();
@@ -326,7 +335,7 @@ function Projects({ data, t, addProject, startScan, cancelScan, scanState, activ
           <section className="project-subsection"><h3>{t("navigation.findings")}</h3>{projectFindings.length === 0 ? <p>{t("common.unverified")}</p> : <><p className="risk-summary">{(["critical", "high", "medium", "low"] as const).map((severity) => `${projectFindings.filter((finding) => finding.severity === severity).length} ${t(`severity.${severity}`)}`).join(" · ")}</p><ul>{projectFindings.slice(0, 3).map((finding) => <li key={finding.id}><button className="text-button" onClick={() => { setPage("findings"); setFocusFindingId(finding.id); setContext(project.name); }}>{data.advisories.find((item) => item.canonical_id === finding.advisory_id)?.canonical_id ?? finding.advisory_id}</button><span><StatusTag value={finding.status} t={t} /> <small>{t("findings.priority")}: {finding.priority_score}</small></span></li>)}</ul></>}</section>
           <section className="project-subsection"><h3>{t("projects.inventory")}</h3>{projectComponents.length === 0 ? <p>{project.last_scan_at ? t("common.noResults") : t("common.unverified")}</p> : <ul>{projectComponents.slice(0, 8).map((component) => <li key={component.id}><span>{component.name}@{component.version}</span><small>{t(`ecosystems.${component.ecosystem}`) === `ecosystems.${component.ecosystem}` ? t("common.unverified") : t(`ecosystems.${component.ecosystem}`)}</small></li>)}</ul>}</section>
           <section className="project-subsection"><div className="subsection-title"><h3>{t("drift.title")}</h3><StatusTag value="unverified" t={t} /></div><p>{t("drift.noSnapshotBody")}</p></section>
-          <section className="project-subsection"><h3>{t("projects.scanHistory")}</h3>{projectRuns.length === 0 ? <p>{t("common.unverified")}</p> : <ul>{projectRuns.map((run) => <li key={run.id}><StatusTag value={run.outcome} t={t} /><small>{date(run.finished_at ?? run.started_at, data.settings.language)}</small></li>)}</ul>}</section>
+          <section className="project-subsection"><h3>{t("projects.scanHistory")}</h3>{projectRuns.length === 0 ? <p>{t("common.unverified")}</p> : <ul>{projectRuns.map((run) => <li key={run.id}><StatusTag value={run.outcome} t={t} /><small>{date(run.finished_at ?? run.started_at, data.settings.language)}</small><ScanDiagnostics error={run.error} t={t} /></li>)}</ul>}</section>
           <MemoryNotes scope="project" scopeId={project.id} t={t} setNotice={setNotice} />
           <div className="project-meta"><span>{project.git_remote ? t("projects.remoteConfigured") : t("projects.noRemote")}</span><span>{t("common.updated")}: {date(project.updated_at, data.settings.language)}</span></div>
           <div className="button-row">{activeScanIds[project.id] ? <button className="button quiet" onClick={() => void cancelScan(project.id)}>{t("actions.cancel")}</button> : <><button className="button primary" onClick={() => void startScan(project, "quick")}>{t("actions.scanQuick")}</button><button className="button secondary" onClick={() => void startScan(project, "full")}>{t("actions.scanFull")}</button></>}</div>
@@ -396,9 +405,9 @@ function Findings({ data, t, refresh, setNotice, updateFinding, initialFindingId
   return <>
     <PageHeading title={t("findings.title")} description={t("findings.description")} />
     <section className="panel filters" aria-label={t("common.search")}><label className="field grow"><span>{t("common.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("common.searchPlaceholder")} /></label><label className="field"><span>{t("common.severity")}</span><select value={severity} onChange={(event) => setSeverity(event.target.value)}><option value="all">{t("common.all")}</option>{["critical", "high", "medium", "low", "unknown"].map((value) => <option key={value} value={value}>{t(`severity.${value}`)}</option>)}</select></label><label className="field"><span>{t("common.status")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">{t("common.all")}</option>{["new", "needs_review", "confirmed_affected", "not_reachable", "mitigated", "fix_proposed", "fixed_in_repo", "fixed_in_production", "accepted_risk", "false_positive"].map((value) => <option key={value} value={value}>{t(`status.${value}`)}</option>)}</select></label><label className="field"><span>{t("common.project")}</span><select value={project} onChange={(event) => setProject(event.target.value)}><option value="all">{t("common.all")}</option>{data.projects.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label></section>
-    {filtered.length === 0 ? <Empty t={t} noResults={data.findings.length > 0} /> : <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t("findings.advisory")}</th><th>{t("findings.package")}</th><th>{t("common.severity")}</th><th>{t("common.status")}</th><th>{t("common.project")}</th><th>{t("findings.priority")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{filtered.map((finding) => {
+    {filtered.length === 0 ? <Empty t={t} noResults={data.findings.length > 0} /> : <section className="panel table-panel"><div className="table-wrap"><table><thead><tr><th>{t("findings.advisory")}</th><th>{t("findings.package")}</th><th>{t("common.severity")}</th><th>{t("common.status")}</th><th>{t("drift.repository")}</th><th>{t("drift.production")}</th><th>{t("common.project")}</th><th>{t("findings.priority")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{filtered.map((finding) => {
       const advisory = advisories.get(finding.advisory_id); const instance = instances.get(finding.component_instance_id); const component = instance ? components.get(instance.component_id) : undefined;
-      return <tr key={finding.id}><td><button className="text-button" onClick={() => setSelected(finding)}>{advisory?.canonical_id ?? finding.advisory_id}</button><small className="cell-subtitle">{advisory?.title ?? t("common.unverified")}</small></td><td>{component ? `${component.name}@${component.version}` : t("common.unverified")}</td><td><SeverityLabel severity={finding.severity} t={t} /></td><td><StatusTag value={finding.status} t={t} /></td><td>{instance?.project_id ? projects.get(instance.project_id)?.name ?? t("common.unverified") : t("common.unknown")}</td><td>{finding.priority_score}</td><td>{date(finding.updated_at, data.settings.language)}</td></tr>;
+      return <tr key={finding.id}><td><button className="text-button" onClick={() => setSelected(finding)}>{advisory?.canonical_id ?? finding.advisory_id}</button><small className="cell-subtitle">{advisory?.title ?? t("common.unverified")}</small></td><td>{component ? `${component.name}@${component.version}` : t("common.unverified")}</td><td><SeverityLabel severity={finding.severity} t={t} /></td><td><StatusTag value={finding.status} t={t} /></td><td><RepoProductionStatus kind="repo" value={finding.repo_status} compact t={t} /></td><td><RepoProductionStatus kind="production" value={finding.production_status} compact t={t} /></td><td>{instance?.project_id ? projects.get(instance.project_id)?.name ?? t("common.unverified") : t("common.unknown")}</td><td>{finding.priority_score}</td><td>{date(finding.updated_at, data.settings.language)}</td></tr>;
     })}</tbody></table></div></section>}
     {selected && (editingStatus
       ? <StatusDialog finding={selected} instance={instances.get(selected.component_instance_id)} t={t} close={() => setEditingStatus(false)} onSave={async (change) => { try { const updated = await api.setFindingStatus(change); updateFinding(updated); setSelected(null); setEditingStatus(false); setNotice({ kind: "success", message: t("findings.statusSaved") }); refresh(); } catch (error) { setNotice({ kind: "error", message: safeError(error, t) }); } }} />
@@ -442,7 +451,7 @@ function FindingDetail({ finding, advisory, component, instance, projectName, ev
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><article className="finding-detail panel" role="dialog" aria-modal="true" aria-labelledby="finding-detail-title">
     <div className="panel-heading"><div><span className="eyebrow">{t("findings.detailTitle")}</span><h2 id="finding-detail-title">{advisory?.canonical_id ?? finding.advisory_id}</h2></div><button className="icon-button" aria-label={t("actions.close")} onClick={close}>×</button></div>
     <p className="finding-detail-package">{component ? `${component.name}@${component.version}` : t("common.unverified")} · {projectName ?? t("common.unverified")}</p>
-    <div className="finding-detail-tags"><SeverityLabel severity={finding.severity} t={t} /><StatusTag value={finding.status} t={t} /><span className="tag">{t("findings.priority")}: {finding.priority_score}</span></div>
+    <div className="finding-detail-tags"><SeverityLabel severity={finding.severity} t={t} /><StatusTag value={finding.status} t={t} /><RepoProductionStatus kind="repo" value={finding.repo_status} t={t} /><RepoProductionStatus kind="production" value={finding.production_status} t={t} /><span className="tag">{t("findings.priority")}: {finding.priority_score}</span></div>
     <section><h3>{t("findings.whyMatters")}</h3><p>{advisory?.description || advisory?.summary || t("common.unverified")}</p>{why.length > 0 && <ul>{why.map((reason, index) => <li key={`${reason}-${index}`}>{reason}</li>)}</ul>}</section>
     <section><h3>{t("findings.evidence")}</h3>{evidence.length === 0 && instanceEvidence.length === 0 ? <p>{t("findings.noEvidence")}</p> : <ul>{evidence.map((item) => {
       const evidenceKey = `evidence.${item.evidence_type}`;
@@ -485,11 +494,37 @@ function Drift({ data, t }: { data: WorkspaceData; t: T }) {
 }
 
 function History({ data, t }: { data: WorkspaceData; t: T }) {
-  return <><PageHeading title={t("history.title")} description={t("history.description")} /><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.scanRuns")}</h2></div>{data.runs.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.project")}</th><th>{t("common.status")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{data.runs.map((run) => <tr key={run.id}><td>{run.scanner === "security-monitor" ? t("appName") : t("common.unknown")}</td><td><StatusTag value={run.outcome} t={t} /></td><td>{date(run.finished_at ?? run.started_at, data.settings.language)}</td></tr>)}</tbody></table></div>}</section><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.auditEvents")}</h2></div>{data.audit.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.updated")}</th><th>{t("history.actor")}</th><th>{t("history.action")}</th><th>{t("history.scope")}</th><th>{t("history.outcome")}</th></tr></thead><tbody>{[...data.audit].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((event) => <tr key={event.id}><td>{date(event.timestamp, data.settings.language)}</td><td>{event.actor === "user" ? t("common.user") : t("common.unknown")}</td><td>{auditAction(event.action, t)}</td><td>{event.scope.resource_type === "project" ? t("common.project") : event.scope.resource_type === "asset" ? t("common.server") : t("common.unknown")}</td><td>{t(`status.${event.result}`)}</td></tr>)}</tbody></table></div>}</section></>;
+  return <><PageHeading title={t("history.title")} description={t("history.description")} /><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.scanRuns")}</h2></div>{data.runs.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.project")}</th><th>{t("common.status")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{data.runs.map((run) => <tr key={run.id}><td>{run.scanner === "security-monitor" ? t("appName") : t("common.unknown")}</td><td><StatusTag value={run.outcome} t={t} /><ScanDiagnostics error={run.error} t={t} /></td><td>{date(run.finished_at ?? run.started_at, data.settings.language)}</td></tr>)}</tbody></table></div>}</section><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.auditEvents")}</h2></div>{data.audit.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.updated")}</th><th>{t("history.actor")}</th><th>{t("history.action")}</th><th>{t("history.scope")}</th><th>{t("history.outcome")}</th></tr></thead><tbody>{[...data.audit].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((event) => <tr key={event.id}><td>{date(event.timestamp, data.settings.language)}</td><td>{event.actor === "user" ? t("common.user") : t("common.unknown")}</td><td>{auditAction(event.action, t)}</td><td>{event.scope.resource_type === "project" ? t("common.project") : event.scope.resource_type === "asset" ? t("common.server") : t("common.unknown")}</td><td>{t(`status.${event.result}`)}</td></tr>)}</tbody></table></div>}</section></>;
+}
+
+function ScanDiagnostics({ error, t }: { error: string | null; t: T }) {
+  if (!error) return null;
+  const items = error.split(",").map((diagnostic) => {
+    const [kind, engine, scope, state] = diagnostic.split(":");
+    if (kind === "scanner_coverage" && engine && scope && state) {
+      const scanner = t(`scanner.${engine.replaceAll("-", "_")}`);
+      return `${scanner} · ${t(`scanCoverage.${scope}`)} · ${t(`scanCoverage.${state}`)}`;
+    }
+    if (kind === "scanner_execution_failed" && engine && scope) {
+      return `${t(`scanner.${engine.replaceAll("-", "_")}`)} · ${t(`scanCoverage.${scope}`)} · ${t("scanCoverage.incomplete")}`;
+    }
+    const key = `scanDiagnostics.${diagnostic}`;
+    return t(key) === key ? t("common.unverified") : t(key);
+  });
+  return <ul className="scan-diagnostics">{items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>;
 }
 
 function Settings({ data, t, saveSettings, setNotice, refresh }: { data: WorkspaceData; t: T; saveSettings: (settings: AppSettings) => Promise<void>; setNotice: NoticeSetter; refresh: () => void }) {
   const settings = data.settings;
+  const builtInAttributions = [
+    { name: "cve.now", url: "https://cve.now/", license: "CC-BY 4.0" },
+    { name: "OSV", url: "https://osv.dev/", license: t("settings.osvLicenses") },
+    { name: "GitHub Advisory Database", url: "https://github.com/advisories", license: "CC-BY 4.0" },
+    { name: "CISA KEV", url: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog", license: null },
+    { name: "FIRST EPSS", url: "https://www.first.org/epss/", license: "Attribution requested by FIRST" },
+  ];
+  const attributions = [...new Map([...builtInAttributions, ...data.advisories.flatMap((advisory) => advisory.source_attributions)].map((source) => [`${source.name}\u0000${source.url}\u0000${source.license ?? ""}`, source])).values()]
+    .sort((left, right) => left.name.localeCompare(right.name) || left.url.localeCompare(right.url));
   const [scanners, setScanners] = useState<{ engine: string; status: string; version: string | null }[]>([]);
   const [busyEngine, setBusyEngine] = useState<string | null>(null);
   const [update, setUpdate] = useState<UpdateCheckResult | null>(null);
@@ -569,6 +604,7 @@ function Settings({ data, t, saveSettings, setNotice, refresh }: { data: Workspa
       {scanners.length === 0 ? <p>{t("common.unverified")}</p> : <ul className="scanner-list">{scanners.map((scanner) => <li key={scanner.engine}><span>{t(`scanner.${scanner.engine.replaceAll("-", "_")}`)}</span><span className={`tag ${scanner.status === "available" ? "verified" : "unverified"}`}>{t(`scanner.${scanner.status}`)}</span>{scanner.version && <small>{scanner.version}</small>}{scanner.status === "missing" && ["osv-scanner", "trivy", "semgrep"].includes(scanner.engine) && <button className="button secondary" disabled={!settings.public_downloads_enabled || busyEngine === scanner.engine} onClick={() => void install(scanner.engine)}>{busyEngine === scanner.engine ? t("common.loading") : t("actions.install")}</button>}</li>)}</ul>}
     </section>
     <section className="panel settings-panel"><h2>{t("settings.appearance")}</h2><label className="field"><span>{t("settings.appearance")}</span><select value={settings.theme} onChange={(event) => void saveSettings({ ...settings, theme: event.target.value as AppSettings["theme"] })}>{["system", "light", "dark"].map((value) => <option value={value} key={value}>{t(`theme.${value}`)}</option>)}</select></label><label className="field"><span>{t("settings.language")}</span><select value={settings.language} onChange={(event) => void saveSettings({ ...settings, language: event.target.value as AppSettings["language"] })}><option value="en">{en.languageName}</option><option value="tr">{tr.languageName}</option></select></label></section>
+    <section className="panel settings-panel"><h2>{t("settings.dataSources")}</h2><p>{t("settings.dataSourcesHelp")}</p><ul className="simple-list">{attributions.map((source) => { const url = safeExternalUrl(source.url); return <li key={`${source.name}-${source.url}-${source.license ?? ""}`}><span><strong>{source.name}</strong><small>{source.license ?? t("settings.licenseUnverified")}</small></span>{url ? <a href={url} target="_blank" rel="noreferrer">{source.url}</a> : <code>{t("common.unverified")}</code>}</li>; })}</ul></section>
     <AiSettingsPanel data={data} t={t} setNotice={setNotice} refresh={refresh} />
     <section className="panel settings-panel"><h2>{t("settings.backup")}</h2><p>{t("settings.backupHelp")}</p></section>
   </>;
@@ -636,5 +672,17 @@ function StatusTag({ value, t }: { value: string; t: T }) {
 }
 
 function SeverityLabel({ severity, t }: { severity: string; t: T }) {
-  return <span className="severity-label"><span className={`severity-dot ${severity}`} />{t(`severity.${severity}`)}</span>;
+  const marks: Record<string, string> = { critical: "■", high: "●", medium: "◐", low: "○", unknown: "◌" };
+  const label = severity === "unknown" ? t("common.unverified") : t(`severity.${severity}`);
+  return <span className={`severity-label severity-${severity}`}><span className="severity-mark" aria-hidden="true">{marks[severity] ?? marks.unknown}</span><span>{label}</span></span>;
+}
+
+function RepoProductionStatus({ kind, value, compact = false, t }: { kind: "repo" | "production"; value: string; compact?: boolean; t: T }) {
+  const labels: Record<string, string> = {
+    still_affected: "drift.stillAffected",
+    fixed_in_repo: "drift.fixedInRepo",
+    fixed_in_production: "drift.fixedInProduction",
+    unknown: "common.unverified",
+  };
+  return <span className={`tag repo-production-status${compact ? " compact" : ""}`}><span className={compact ? "sr-only" : undefined}>{t(kind === "repo" ? "drift.repository" : "drift.production")}</span><strong>{t(labels[value] ?? "common.unverified")}</strong></span>;
 }

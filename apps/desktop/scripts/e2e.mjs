@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -9,8 +9,33 @@ import { chromium } from "@playwright/test";
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const fixture = JSON.parse(await readFile(new URL("../../../tests/fixtures/desktop/workspace.json", import.meta.url), "utf8"));
+const localeDictionaries = await Promise.all(["en", "tr"].map(async (language) =>
+  JSON.parse(await readFile(new URL(`../src/locales/${language}.json`, import.meta.url), "utf8"))
+));
+function localeKeys(dictionary, prefix = "") {
+  return Object.entries(dictionary).flatMap(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return value !== null && typeof value === "object" ? [path, ...localeKeys(value, path)] : [path];
+  });
+}
+const rawLocaleKeys = new Set(localeDictionaries.flatMap((dictionary) => localeKeys(dictionary)));
+async function assertCleanUi(page, label) {
+  const renderedText = await page.locator("body *").evaluateAll((elements) => elements
+    .filter((element) => element.children.length === 0)
+    .map((element) => element.textContent?.trim() ?? "")
+    .filter(Boolean));
+  const rawKeys = renderedText.filter((text) => rawLocaleKeys.has(text));
+  assert.deepEqual(rawKeys, [], `${label} rendered raw locale keys: ${rawKeys.join(", ")}`);
+  assert.equal(await page.getByRole("alert").count(), 0, `${label} shows an error notice`);
+}
 const viteEntrypoint = fileURLToPath(new URL("../node_modules/vite/bin/vite.js", import.meta.url));
 const require = createRequire(new URL("../package.json", import.meta.url));
+const build = spawnSync(process.execPath, [viteEntrypoint, "build"], {
+  cwd: projectRoot,
+  stdio: "inherit",
+  windowsHide: true,
+});
+assert.equal(build.status, 0, "Vite production build must pass before browser checks run.");
 const server = spawn(process.execPath, [viteEntrypoint, "preview", "--host", "127.0.0.1", "--port", "4173", "--strictPort"], {
   cwd: projectRoot,
   stdio: "ignore",
@@ -116,6 +141,10 @@ try {
           case "list_finding_evidence": return state.evidence;
           case "list_scan_runs": return state.runs;
           case "list_audit_events": return state.audit;
+          case "list_memories": return [];
+          case "list_remediations": return [];
+          case "list_mcp_remediation_requests": return [];
+          case "remediation_sandbox_status": return { available: false, engine: null };
           case "set_finding_status": {
             state.finding = { ...state.finding, status: args.change.status, updated_at: timestamp };
             state.findings = [state.finding];
@@ -160,6 +189,7 @@ try {
   await page.getByRole("button", { name: "GHSA-fixture-2025" }).click();
   await page.getByRole("dialog").getByRole("heading", { name: "GHSA-fixture-2025" }).waitFor();
   await page.getByRole("dialog").getByRole("heading", { name: "Why this matters" }).waitFor();
+  await assertCleanUi(page, "finding detail");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).last().click();
 
   await page.getByRole("button", { name: "Servers", exact: true }).first().click();
@@ -207,6 +237,7 @@ try {
       await page.waitForTimeout(80);
       if (slug === "settings") {
         await page.getByText("No AI providers are configured.").waitFor();
+        await page.getByText("Mixed upstream terms; includes CC BY-SA and CC BY-NC-ND records").waitFor();
         const updateButton = page.getByRole("button", { name: "Check for updates" });
         await updateButton.waitFor();
         assert.equal(await updateButton.isDisabled(), true);
@@ -214,6 +245,7 @@ try {
       await page.addScriptTag({ path: axePath });
       const accessibility = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } }));
       assert.equal(accessibility.violations.length, 0, `${theme} ${label} axe violations: ${JSON.stringify(accessibility.violations.map((item) => ({ id: item.id, nodes: item.nodes.map((node) => ({ target: node.target, checks: node.any.map((check) => check.data) })) })))}`);
+      await assertCleanUi(page, `${theme} ${label} screenshot`);
       await page.screenshot({ path: `${screenshotDirectory}/${slug}-${theme}.png` });
     }
   }

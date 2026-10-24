@@ -149,6 +149,7 @@
     "scanCancelled": "Tarama iptal edildi",
     "inventory": "Bağımlılıklar ve envanter",
     "scanHistory": "Tarama geçmişi",
+    "scanDiagnostics": "Tarama kapsamı ve kontroller",
     "referenceBranch": "Referans dalı",
     "remoteConfigured": "Git uzak deposu yapılandırılmış",
     "noRemote": "Git uzak deposu yapılandırılmamış"
@@ -232,7 +233,7 @@
     "confidence": "Güven",
     "changeStatus": "Durumu değiştir",
     "source": "Kaynak",
-    "remediation": {
+    "remediationWorkflow": {
       "workflowTitle": "Yamayı yalıtılmış worktree'de hazırlayın",
       "projectRequired": "Yama hazırlamak için yerel bir proje gerekir.",
       "providerRequired": "AI ayarlarında bir ajan CLI sağlayıcısı ekleyip bu projeye izin verin.",
@@ -371,6 +372,11 @@
     "privacyTitle": "Gizlilik ve ağ",
     "ecosystems": "Duyuru indirmeleri için ekosistemler",
     "scanners": "Tarayıcı ve çalışma zamanı araçları",
+    "dataSources": "Veri kaynağı atıfları",
+    "dataSourcesHelp": "Bu cihazda saklanan duyuru kayıtlarıyla birlikte korunan atıf ve lisans bilgileri.",
+    "osvLicenses": "Karışık üst kaynak koşulları; CC BY-SA ve CC BY-NC-ND lisanslı kayıtlar içerir",
+    "licenseUnverified": "Lisans doğrulanmadı",
+    "noAttributions": "Henüz duyuru kaynağı atıf kaydı yok.",
     "installed": "Doğrulanmış tarayıcı kurulumu tamamlandı",
     "publicDownloads": "Herkese açık duyuru, tarayıcı ve uygulama güncellemelerinin indirilmesine izin ver",
     "publicDownloadsHelp": "İndirmeler proje dosyası, lockfile veya envanter göndermez. Hedef hostlar yerel olarak kaydedilir.",
@@ -553,6 +559,25 @@
     "outdated": "Güncelleme gerekli",
     "unsupported_platform": "Platform desteklenmiyor",
     "unverified": "Doğrulanamadı"
+  },
+  "scanCoverage": {
+    "dependencies": "bağımlılık bildirim dosyaları",
+    "filesystem": "dosya sistemi açıkları ve sırları",
+    "misconfiguration": "yapılandırma dosyaları",
+    "code": "kod kuralları",
+    "image_archive": "imaj arşivi",
+    "completed": "çalıştı; bulgular tam kapsamı kanıtlamaz",
+    "incomplete": "eksik",
+    "unavailable": "kullanılamıyor"
+  },
+  "scanDiagnostics": {
+    "scanner_coverage_unverified": "Tarayıcı sonuçları deponun tamamının kapsandığını kanıtlamaz.",
+    "inventory_incomplete": "Yerel bağımlılık envanteri tamamlanamadı.",
+    "dependency_inputs_incomplete": "Bazı bağımlılık girdilerinin özeti alınamadı.",
+    "advisory_data_stale_or_unverified": "Duyuru verisi eski veya doğrulanamadı.",
+    "semgrep_rules_not_configured": "Semgrep kod kuralları yapılandırılmadı.",
+    "scanner_execution_failed": "Bir tarayıcı tamamlanamadı.",
+    "scan_cancelled": "Tarama iptal edildi."
   },
   "ecosystems": {
     "npm": "npm",
