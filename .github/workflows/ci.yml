@@ -2,8 +2,19 @@ name: CI
 
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -35,6 +46,20 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: rustfmt, clippy
+
+      - name: Set up Windows Dev Drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@v4
+        with:
+          drive-size: 10GB
+          env-mapping: |
+            CARGO_HOME,{{ DEV_DRIVE }}/cargo-home
+            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/cargo-target
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: security-monitor-${{ runner.os }}
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
@@ -83,5 +108,10 @@ jobs:
       - name: Run desktop smoke test
         run: pnpm -C apps/desktop e2e
 
-      - name: Build Tauri shell
+      - name: Build Tauri shell (debug)
+        if: github.event_name != 'push'
+        run: pnpm -C apps/desktop tauri build --debug --no-bundle
+
+      - name: Build Tauri shell (release)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: pnpm -C apps/desktop tauri build --no-bundle
