@@ -133,7 +133,8 @@ async fn forced_command_collects_from_an_unprivileged_openssh_user() {
     let published = docker_output(["port", container_id.as_str(), "22/tcp"]);
     assert!(
         published.status.success(),
-        "Docker should publish the local SSH port"
+        "Docker should publish the local SSH port: {}",
+        String::from_utf8_lossy(&published.stderr)
     );
     let address = String::from_utf8(published.stdout).expect("published address is UTF-8");
     let port = address
@@ -210,7 +211,7 @@ fn docker_output<const N: usize>(args: [&str; N]) -> Output {
     Command::new("docker")
         .args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .output()
         .expect("Docker CLI should be installed")
 }
