@@ -1,0 +1,17 @@
+{
+  "version": "1.145.0",
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.eval-detected",
+      "path": "app.py",
+      "start": { "line": 1, "col": 1 },
+      "end": { "line": 1, "col": 20 },
+      "extra": {
+        "severity": "ERROR",
+        "message": "Rule text includes sk_fixture_do_not_store and eval(input('secret'))",
+        "metavars": { "$VALUE": { "abstract_content": "sk_fixture_do_not_store" } }
+      }
+    }
+  ],
+  "errors": []
+}

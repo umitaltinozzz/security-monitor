@@ -1,0 +1,51 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "fixture-project",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "Dockerfile",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2026-7002",
+          "PkgName": "libssl3",
+          "PkgType": "alpine",
+          "InstalledVersion": "3.2.1-r0",
+          "FixedVersion": "3.2.2-r0",
+          "Severity": "HIGH",
+          "Title": "Fixture package vulnerability"
+        }
+      ],
+      "Secrets": [
+        {
+          "RuleID": "aws-access-key-id",
+          "Category": "AWS",
+          "Severity": "CRITICAL",
+          "Match": "AKIAIOSFODNN7EXAMPLE",
+          "Code": {
+            "StartLine": 4,
+            "EndLine": 4,
+            "Lines": [{ "Number": 4, "Content": "aws_access_key_id=AKIAIOSFODNN7EXAMPLE" }]
+          }
+        }
+      ],
+      "Misconfigurations": [
+        {
+          "ID": "AVD-DS-0001",
+          "Title": "Fixture misconfiguration",
+          "Severity": "MEDIUM",
+          "Status": "FAIL",
+          "CauseMetadata": { "Code": { "StartLine": 1, "EndLine": 1 } }
+        },
+        {
+          "ID": "AVD-DS-0002",
+          "Title": "Compliant fixture",
+          "Severity": "LOW",
+          "Status": "PASS"
+        }
+      ]
+    }
+  ]
+}

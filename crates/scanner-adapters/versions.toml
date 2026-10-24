@@ -1,0 +1,72 @@
+[osv_scanner]
+version = "2.7.0"
+minimum_version = "2.0.0"
+max_download_bytes = 67108864
+
+[osv_scanner.downloads.windows_x86_64]
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_windows_amd64.exe"
+sha256 = "9964ed64ec9a387391eb4cc006ad5c531154821aef29b793e02c448de4686438"
+format = "raw"
+binary = "osv-scanner.exe"
+
+[osv_scanner.downloads.linux_x86_64]
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64"
+sha256 = "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b"
+format = "raw"
+binary = "osv-scanner"
+
+[osv_scanner.downloads.linux_aarch64]
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_arm64"
+sha256 = "4061ef4c021ed3c47f203b818f337e351336cc5cd67c0274fc36bd1dfc728dd7"
+format = "raw"
+binary = "osv-scanner"
+
+[osv_scanner.downloads.macos_x86_64]
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_darwin_amd64"
+sha256 = "e82c5df7ab0a42dff29a1cd0660711447b56b4c0483ff66ad8634df10fd81a45"
+format = "raw"
+binary = "osv-scanner"
+
+[osv_scanner.downloads.macos_aarch64]
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_darwin_arm64"
+sha256 = "d4926ef8da134332543be276dff157e4c170f99ad91fc48e89448a8816bdf70b"
+format = "raw"
+binary = "osv-scanner"
+
+[trivy]
+version = "0.76.1"
+minimum_version = "0.70.0"
+max_download_bytes = 125829120
+
+[trivy.downloads.windows_x86_64]
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_windows-64bit.zip"
+sha256 = "1051f49cb22d5284f43425f72aad9cda63ca12ceb92e7caa06903490c82dc9bf"
+format = "zip"
+binary = "trivy.exe"
+
+[trivy.downloads.linux_x86_64]
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz"
+sha256 = "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"
+format = "tar_gz"
+binary = "trivy"
+
+[trivy.downloads.linux_aarch64]
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-ARM64.tar.gz"
+sha256 = "e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f"
+format = "tar_gz"
+binary = "trivy"
+
+[trivy.downloads.macos_x86_64]
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_macOS-64bit.tar.gz"
+sha256 = "7aa762eacd582052d053b62dcf972a1ab058abe39a57ccae234ed8894945b6b7"
+format = "tar_gz"
+binary = "trivy"
+
+[trivy.downloads.macos_aarch64]
+url = "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_macOS-ARM64.tar.gz"
+sha256 = "11a9b6cd2752011b54f01ea4bd0dbfa9f0c41dc6538d5a3f9d23955f471bf4e5"
+format = "tar_gz"
+binary = "trivy"
+
+[semgrep]
+minimum_version = "1.100.0"

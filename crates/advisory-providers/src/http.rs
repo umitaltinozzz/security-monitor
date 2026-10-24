@@ -3,7 +3,10 @@ use std::{path::Path, time::Duration};
 use futures_util::{Stream, StreamExt};
 use reqwest::{StatusCode, header::RETRY_AFTER};
 use thiserror::Error;
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{
+    fs::File,
+    io::{AsyncWrite, AsyncWriteExt},
+};
 use url::Url;
 
 const MAX_BUFFERED_RESPONSE_BYTES: u64 = 128 * 1024 * 1024;
@@ -39,7 +42,7 @@ impl PublicDataHttp {
                 if attempt.previous().len() >= 5 {
                     return attempt.stop();
                 }
-                if is_allowed_url(attempt.url(), redirect_loopback) {
+                if is_allowed_url(attempt.url(), redirect_loopback, true) {
                     if let Some(host) = attempt.url().host_str() {
                         tracing::info!(destination_host = %host, "following public provider redirect");
                     }
@@ -72,7 +75,7 @@ impl PublicDataHttp {
     pub(crate) async fn get(&self, address: &str) -> Result<HttpResponse, ProviderError> {
         self.ensure_enabled()?;
         let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
-        if !is_allowed_url(&url, self.allow_loopback) {
+        if !is_allowed_url(&url, self.allow_loopback, false) {
             return Err(ProviderError::DestinationNotAllowed);
         }
         let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
@@ -104,15 +107,28 @@ impl PublicDataHttp {
         Ok(HttpResponse { body })
     }
 
-    pub(crate) async fn download_to(
+    pub async fn download_to(
         &self,
         address: &str,
         destination: &Path,
         max_bytes: u64,
     ) -> Result<u64, ProviderError> {
+        let mut file = File::create(destination).await.map_err(ProviderError::Io)?;
+        self.download_to_writer(address, &mut file, max_bytes).await
+    }
+
+    pub async fn download_to_writer<W>(
+        &self,
+        address: &str,
+        writer: &mut W,
+        max_bytes: u64,
+    ) -> Result<u64, ProviderError>
+    where
+        W: AsyncWrite + Unpin,
+    {
         self.ensure_enabled()?;
         let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
-        if !is_allowed_url(&url, self.allow_loopback) {
+        if !is_allowed_url(&url, self.allow_loopback, false) {
             return Err(ProviderError::DestinationNotAllowed);
         }
         let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
@@ -134,7 +150,6 @@ impl PublicDataHttp {
             });
         }
         let mut stream = response.bytes_stream();
-        let mut file = File::create(destination).await.map_err(ProviderError::Io)?;
         let mut total = 0_u64;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|_| ProviderError::Network { host: host.clone() })?;
@@ -144,9 +159,9 @@ impl PublicDataHttp {
             if total > max_bytes {
                 return Err(ProviderError::DownloadTooLarge);
             }
-            file.write_all(&chunk).await.map_err(ProviderError::Io)?;
+            writer.write_all(&chunk).await.map_err(ProviderError::Io)?;
         }
-        file.flush().await.map_err(ProviderError::Io)?;
+        writer.flush().await.map_err(ProviderError::Io)?;
         Ok(total)
     }
 
@@ -192,7 +207,7 @@ fn rate_limited_error(response: &reqwest::Response, host: String) -> ProviderErr
     ProviderError::RateLimited { host, retry_after }
 }
 
-fn is_allowed_url(url: &Url, allow_loopback: bool) -> bool {
+fn is_allowed_url(url: &Url, allow_loopback: bool, allow_release_asset_redirect: bool) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
@@ -202,9 +217,18 @@ fn is_allowed_url(url: &Url, allow_loopback: bool) -> bool {
     if url.scheme() != "https" {
         return false;
     }
+    let github_release = host == "github.com"
+        && (url
+            .path()
+            .starts_with("/google/osv-scanner/releases/download/")
+            || url
+                .path()
+                .starts_with("/aquasecurity/trivy/releases/download/"));
     host == "cve.now"
         || host.ends_with(".cve.now")
         || host == "api.github.com"
+        || github_release
+        || (allow_release_asset_redirect && host == "release-assets.githubusercontent.com")
         || host == "osv-vulnerabilities.storage.googleapis.com"
         || host == "www.cisa.gov"
         || host == "cisa.gov"
@@ -279,7 +303,34 @@ impl From<zip::result::ZipError> for ProviderError {
 mod tests {
     use futures_util::stream;
 
-    use super::{ProviderError, collect_bounded_body};
+    use url::Url;
+
+    use super::{ProviderError, collect_bounded_body, is_allowed_url};
+
+    #[test]
+    fn github_downloads_are_restricted_to_the_two_pinned_scanner_repositories() {
+        let osv = Url::parse(
+            "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64",
+        )
+        .unwrap();
+        let trivy = Url::parse(
+            "https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz",
+        )
+        .unwrap();
+        let other_repository =
+            Url::parse("https://github.com/attacker/tool/releases/download/v1/tool").unwrap();
+        let source_code =
+            Url::parse("https://github.com/google/osv-scanner/archive/main.zip").unwrap();
+
+        assert!(is_allowed_url(&osv, false, false));
+        assert!(is_allowed_url(&trivy, false, false));
+        assert!(!is_allowed_url(&other_repository, false, false));
+        assert!(!is_allowed_url(&source_code, false, false));
+        let asset_host =
+            Url::parse("https://release-assets.githubusercontent.com/downloads/asset").unwrap();
+        assert!(!is_allowed_url(&asset_host, false, false));
+        assert!(is_allowed_url(&asset_host, false, true));
+    }
 
     #[tokio::test]
     async fn streamed_response_without_a_length_header_is_bounded() {

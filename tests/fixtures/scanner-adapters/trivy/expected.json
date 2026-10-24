@@ -1,0 +1,43 @@
+{
+  "engine": "trivy",
+  "complete": true,
+  "findings": [
+    {
+      "kind": "vulnerability",
+      "rule_id": "CVE-2026-7002",
+      "aliases": [],
+      "package": { "name": "libssl3", "ecosystem": "alpine", "version": "3.2.1-r0" },
+      "severity": "high",
+      "title": "Fixture package vulnerability",
+      "fixed_version": "3.2.2-r0",
+      "path": "Dockerfile",
+      "line_start": null,
+      "line_end": null
+    },
+    {
+      "kind": "secret",
+      "rule_id": "aws-access-key-id",
+      "aliases": [],
+      "package": null,
+      "severity": "critical",
+      "title": null,
+      "fixed_version": null,
+      "path": "Dockerfile",
+      "line_start": 4,
+      "line_end": 4
+    },
+    {
+      "kind": "misconfiguration",
+      "rule_id": "AVD-DS-0001",
+      "aliases": [],
+      "package": null,
+      "severity": "medium",
+      "title": null,
+      "fixed_version": null,
+      "path": "Dockerfile",
+      "line_start": 1,
+      "line_end": 1
+    }
+  ],
+  "diagnostics": []
+}

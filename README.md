@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`) is an open-source project to connect software vulnerability advisories with evidence from local projects and deployed environments in a local-first workflow.
 
-> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, a dependency inventory library, and an advisory-provider library with deterministic matching and local caches. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
+> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, dependency inventory and advisory-provider libraries, and local scanner adapters. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
 
 ## Implemented today
 
@@ -10,23 +10,24 @@ Security Monitor (`secmon`) is an open-source project to connect software vulner
 - Rust domain types, SQLite migrations, typed repositories, and generated TypeScript contracts.
 - A local inventory library for supported lockfiles, monorepo discovery, Dockerfile/workflow detection, and PURL generation.
 - An advisory library for incremental cve.now records, offline OSV archives, GHSA cross-checks, CISA KEV, FIRST EPSS, source merging, cache freshness, and conservative local matching.
+- A scanner adapter library for OSV-Scanner, Trivy, and Semgrep detection, offline invocation, pinned binary downloads, and output normalization.
 - A Tauri desktop shell and the `secmon --help` / `secmon --version` CLI.
 
-These libraries are not yet connected to a project scanning workflow in the desktop app or CLI. Server collection, scanner execution, finding correlation, AI, remediation, and product screens are not available.
+These libraries are not yet connected to a project scanning workflow in the desktop app or CLI. Server collection, finding correlation, AI, remediation, and product screens are not available.
 
 ## Roadmap
 
-The remaining v1.0 work adds scanner adapters, finding correlation and lifecycle, orchestration, read-only Linux collection over SSH, AI/MCP, approved remediation, reporting, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
+The remaining v1.0 work connects scanner adapters through finding correlation and orchestration, adds read-only Linux collection over SSH, AI/MCP, approved remediation, reporting, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
 
 ## How it compares
 
 | Tool | Main focus | How Security Monitor relates |
 | --- | --- | --- |
 | [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Alerts on vulnerable repository dependencies and can open security-update pull requests. | Security Monitor is not a dependency updater; its target is to connect local inventory with deployment evidence. |
-| [Trivy](https://trivy.dev/docs/latest/) | Scans packages, images, secrets, and misconfigurations. | Trivy is a scanner Security Monitor plans to adapt; the product target also tracks repo-to-production evidence. |
-| [OSV-Scanner](https://google.github.io/osv-scanner/) | Extracts project or image packages and matches them to OSV advisories. | Security Monitor includes an inventory/advisory library, but its scanner integration is still roadmap work. |
+| [Trivy](https://trivy.dev/docs/latest/) | Scans packages, images, secrets, and misconfigurations. | Security Monitor has a local Trivy adapter library; the current app does not invoke it. The product target also tracks repo-to-production evidence. |
+| [OSV-Scanner](https://google.github.io/osv-scanner/) | Extracts project or image packages and matches them to OSV advisories. | Security Monitor has inventory, advisory, and scanner adapter libraries; the current app does not invoke them. |
 
-Security Monitor aims to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. Inventory and advisory libraries now exist, but the end-user workflow that connects them to scanners, deployment evidence, and the UI is not implemented yet.
+Security Monitor aims to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. Inventory, advisory, and scanner adapter libraries now exist, but the end-user workflow that connects them to advisory data, deployment evidence, and the UI is not implemented yet.
 
 ## Planned architecture
 
@@ -42,11 +43,11 @@ flowchart LR
   MCP --> Model[Optional user-selected AI provider]
 ```
 
-The diagram describes the target product architecture. Inventory and advisory provider libraries are implemented, but the Linux agent, scanner integration, orchestration, MCP tools, and functional UI are not implemented yet.
+The diagram describes the target product architecture. Inventory, advisory provider, and scanner adapter libraries are implemented, but the Linux agent integration, orchestration, MCP tools, and functional UI are not implemented yet.
 
 ## Privacy
 
-The current desktop shell and CLI do not run scans or make runtime network requests. The advisory library can download public data only when its caller explicitly enables `public_downloads_enabled`. Its requests do not contain source code, lockfiles, package names, or package versions. An OSV archive request includes the selected ecosystem in its URL, which reveals that coarse ecosystem to OSV; cve.now filtered feeds that would disclose inventory-derived filters are not used. Provider caches stay local. AI integration is not implemented. See [Privacy](docs/privacy.md) for details.
+The current desktop shell and CLI do not run scans or make runtime network requests. The scanner adapter library runs tools offline; pinned binary downloads require caller approval and `public_downloads_enabled`. The advisory library can download public data only when its caller explicitly enables `public_downloads_enabled`. Its requests do not contain source code, lockfiles, package names, or package versions. An OSV archive request includes the selected ecosystem in its URL, which reveals that coarse ecosystem to OSV; cve.now filtered feeds that would disclose inventory-derived filters are not used. Provider caches stay local. AI integration is not implemented. See [Privacy](docs/privacy.md) and [Scanner adapters](docs/scanners.md) for details.
 
 ## Quick start
 
@@ -87,6 +88,7 @@ The provider library supports public advisory downloads, but the current applica
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Scanner adapters](docs/scanners.md)
 - [Threat model](docs/threat-model.md)
 - [Privacy](docs/privacy.md)
 - [Data sources](docs/data-sources.md)

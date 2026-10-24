@@ -1,0 +1,19 @@
+{
+  "engine": "semgrep",
+  "complete": true,
+  "findings": [
+    {
+      "kind": "code",
+      "rule_id": "python.lang.security.audit.eval-detected",
+      "aliases": [],
+      "package": null,
+      "severity": "high",
+      "title": null,
+      "fixed_version": null,
+      "path": "app.py",
+      "line_start": 1,
+      "line_end": 1
+    }
+  ],
+  "diagnostics": []
+}

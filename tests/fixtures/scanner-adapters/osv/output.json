@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "source": { "path": "package-lock.json", "type": "lockfile" },
+      "packages": [
+        {
+          "package": { "name": "left-pad", "version": "1.3.0", "ecosystem": "npm" },
+          "vulnerabilities": [
+            {
+              "id": "GHSA-abcd-efgh-ijkl",
+              "aliases": ["CVE-2026-7001", "CVE-2026-7001"],
+              "summary": "Fixture vulnerability",
+              "affected": [
+                {
+                  "ranges": [
+                    { "events": [{ "introduced": "0" }, { "fixed": "1.3.1" }] }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

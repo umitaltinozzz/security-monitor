@@ -21,6 +21,7 @@ export default defineConfig({
             { label: 'Threat model', link: '/threat-model/' },
             { label: 'Privacy', link: '/privacy/' },
             { label: 'Data sources', link: '/data-sources/' },
+            { label: 'Scanner adapters', link: '/scanners/' },
           ],
         },
         {

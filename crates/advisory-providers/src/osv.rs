@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use security_monitor_core::{Advisory, AdvisorySource, AffectedRange, RangeEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tempfile::NamedTempFile;
 use zip::ZipArchive;
 
 use crate::{
@@ -205,6 +206,13 @@ impl OsvDatabaseUpdater {
                 Err(error)
             };
         }
+        if let Err(error) = install_scanner_archive(root, slug, &archive) {
+            let _ = fs::remove_dir_all(&stage);
+            let _ = fs::remove_file(&archive);
+            let stale_status = failure_status(ecosystem, previous, &error);
+            write_update_status(root, &target, slug, &stale_status)?;
+            return Ok(stale_status);
+        }
         let fetched_at = Utc::now();
         let metadata = OsvUpdateStatus {
             ecosystem: ecosystem.to_owned(),
@@ -241,6 +249,41 @@ impl OsvDatabaseUpdater {
         write_update_status(root, &target, slug, &metadata)?;
         Ok(metadata)
     }
+}
+
+fn install_scanner_archive(root: &Path, slug: &str, archive: &Path) -> Result<(), ProviderError> {
+    let root = root.canonicalize().map_err(ProviderError::Io)?;
+    let scanner_root = root.join("scanner-db");
+    fs::create_dir_all(&scanner_root).map_err(ProviderError::Io)?;
+    let scanner_root = scanner_root.canonicalize().map_err(ProviderError::Io)?;
+    if !scanner_root.starts_with(&root) {
+        return Err(ProviderError::InvalidData);
+    }
+    let engine_root = scanner_root.join("osv-scanner");
+    fs::create_dir_all(&engine_root).map_err(ProviderError::Io)?;
+    let engine_root = engine_root.canonicalize().map_err(ProviderError::Io)?;
+    if !engine_root.starts_with(&scanner_root) {
+        return Err(ProviderError::InvalidData);
+    }
+    let ecosystem_root = engine_root.join(slug);
+    fs::create_dir_all(&ecosystem_root).map_err(ProviderError::Io)?;
+    let ecosystem_root = ecosystem_root.canonicalize().map_err(ProviderError::Io)?;
+    if !ecosystem_root.starts_with(&engine_root) {
+        return Err(ProviderError::InvalidData);
+    }
+
+    let source = archive.canonicalize().map_err(ProviderError::Io)?;
+    if !source.starts_with(&root) {
+        return Err(ProviderError::InvalidData);
+    }
+    let mut input = File::open(source).map_err(ProviderError::Io)?;
+    let mut temporary = NamedTempFile::new_in(&ecosystem_root).map_err(ProviderError::Io)?;
+    std::io::copy(&mut input, temporary.as_file_mut()).map_err(ProviderError::Io)?;
+    temporary.as_file().sync_all().map_err(ProviderError::Io)?;
+    temporary
+        .persist(ecosystem_root.join("all.zip"))
+        .map_err(|error| ProviderError::Io(error.error))?;
+    Ok(())
 }
 
 impl OsvDatabase {
@@ -580,6 +623,22 @@ fn write_update_status(
     atomic_write(&root.join(format!(".{slug}-status.json")), &encoded)?;
     if target.is_dir() {
         atomic_write(&target.join(".secmon-cache.json"), &encoded)?;
+    }
+    let scanner_status = root
+        .join("scanner-db/osv-scanner")
+        .join(slug)
+        .join(".secmon-cache.json");
+    if scanner_status.parent().is_some_and(Path::is_dir) {
+        let canonical_root = root.canonicalize().map_err(ProviderError::Io)?;
+        let canonical_parent = scanner_status
+            .parent()
+            .ok_or(ProviderError::InvalidData)?
+            .canonicalize()
+            .map_err(ProviderError::Io)?;
+        if !canonical_parent.starts_with(&canonical_root) {
+            return Err(ProviderError::InvalidData);
+        }
+        atomic_write(&scanner_status, &encoded)?;
     }
     Ok(())
 }

@@ -16,8 +16,9 @@ use crate::{
     AdvisoryCache, AdvisoryMerger, AdvisoryService, CveNowCursor, CveNowProvider,
     CveNowSourceStatus, DEFAULT_CVE_POLL_INTERVAL_SECONDS, EpssProvider, FindingReason,
     GhsaProvider, HttpPolicy, KevProvider, MAX_CVE_POLL_INTERVAL_SECONDS,
-    MIN_CVE_POLL_INTERVAL_SECONDS, OsvDatabase, OsvDatabaseUpdater, PublicDataHttp, apply_epss,
-    apply_kev, evaluate_inventory, parse_epss_csv, parse_ghsa_advisory, parse_kev_catalog,
+    MIN_CVE_POLL_INTERVAL_SECONDS, OsvDatabase, OsvDatabaseUpdater, OsvUpdateStatus,
+    PublicDataHttp, apply_epss, apply_kev, evaluate_inventory, parse_epss_csv, parse_ghsa_advisory,
+    parse_kev_catalog,
 };
 
 fn fixture(path: &str) -> &'static [u8] {
@@ -341,6 +342,21 @@ async fn stale_osv_cache_remains_queryable_when_refresh_is_disabled() {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/advisory-db/npm"),
         &target,
     );
+    let scanner_cache = root.join("scanner-db/osv-scanner/npm");
+    fs::create_dir_all(&scanner_cache).unwrap();
+    fs::write(scanner_cache.join("all.zip"), b"previous local database").unwrap();
+    fs::write(
+        scanner_cache.join(".secmon-cache.json"),
+        serde_json::to_vec(&OsvUpdateStatus {
+            ecosystem: "npm".to_owned(),
+            updated_at: Some(Utc::now()),
+            stale: false,
+            error: None,
+            ..OsvUpdateStatus::default()
+        })
+        .unwrap(),
+    )
+    .unwrap();
     let updater = OsvDatabaseUpdater::new(
         PublicDataHttp::new(HttpPolicy {
             public_downloads_enabled: false,
@@ -352,6 +368,10 @@ async fn stale_osv_cache_remains_queryable_when_refresh_is_disabled() {
         .await
         .expect("stale cache should not fail the update batch");
     assert!(statuses[0].stale);
+    let scanner_status: OsvUpdateStatus =
+        serde_json::from_slice(&fs::read(scanner_cache.join(".secmon-cache.json")).unwrap())
+            .unwrap();
+    assert!(scanner_status.stale);
     let database = OsvDatabase::open(target).expect("open the cached database offline");
     assert!(database.status().stale);
     assert_eq!(database.query("npm", "fixture-package").len(), 1);
@@ -373,6 +393,7 @@ async fn osv_updater_installs_a_downloaded_ecosystem_archive_atomically() {
         ))
         .unwrap();
     let archive = writer.finish().unwrap().into_inner();
+    let scanner_archive = archive.clone();
     Mock::given(method("GET"))
         .and(path("/npm/all.zip"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(archive))
@@ -390,6 +411,19 @@ async fn osv_updater_installs_a_downloaded_ecosystem_archive_atomically() {
     let database = OsvDatabase::open(temp.path().join("npm")).expect("installed dump");
     assert_eq!(database.query("npm", "fixture-package").len(), 1);
     assert!(!temp.path().join(".npm-staging").exists());
+    assert_eq!(
+        fs::read(temp.path().join("scanner-db/osv-scanner/npm/all.zip")).unwrap(),
+        scanner_archive
+    );
+    let scanner_status: OsvUpdateStatus = serde_json::from_slice(
+        &fs::read(
+            temp.path()
+                .join("scanner-db/osv-scanner/npm/.secmon-cache.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(!scanner_status.stale);
 }
 
 #[tokio::test]

@@ -11,6 +11,7 @@ const publicPages = [
   'threat-model.md',
   'privacy.md',
   'data-sources.md',
+  'scanners.md',
   'agent-install.md',
   'deploy-id.md',
   'ai-providers.md',
