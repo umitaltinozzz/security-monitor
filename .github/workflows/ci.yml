@@ -46,20 +46,28 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: rustfmt, clippy
+          cache: false
 
       - name: Set up Windows Dev Drive
         if: runner.os == 'Windows'
         uses: samypr100/setup-dev-drive@v4
         with:
           drive-size: 10GB
+          mount-path: .dev-drive
           env-mapping: |
             CARGO_HOME,{{ DEV_DRIVE }}/cargo-home
-            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/cargo-target
+
+      - name: Set Windows Cargo target directory
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\.dev-drive\cargo-target" >> $env:GITHUB_ENV
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: security-monitor-${{ runner.os }}
+          workspaces: . -> ${{ runner.os == 'Windows' && '.dev-drive/cargo-target' || 'target' }}
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
