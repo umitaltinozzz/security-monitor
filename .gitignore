@@ -4,18 +4,15 @@
 /apps/desktop/dist/
 /apps/desktop/coverage/
 /apps/desktop/src-tauri/target/
+/docs/site/node_modules/
+/docs/site/dist/
+/docs/site/.astro/
 /apps/desktop/src-tauri/icons/android/
 /apps/desktop/src-tauri/icons/ios/
 /apps/desktop/src-tauri/icons/StoreLogo.png
 /apps/desktop/src-tauri/icons/Square*Logo.png
+/docs/site/src/content/docs/*.md
 *.log
 .remember/
 .DS_Store
 Thumbs.db
-
-# Private planning docs (local only, never pushed)
-/proje.md
-/AGENTS.md
-/CODEX_PROMPT.md
-/docs/progress.md
-/docs/decisions.md

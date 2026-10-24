@@ -62,6 +62,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build documentation site
+        run: pnpm -C docs/site build
+
       - name: Lint desktop
         run: pnpm -C apps/desktop lint
 

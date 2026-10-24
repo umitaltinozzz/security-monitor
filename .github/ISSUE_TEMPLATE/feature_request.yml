@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a product improvement.
+title: "feature: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What user need or workflow is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the outcome, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy and security considerations
+      description: Does this involve network access, source code, lockfiles, inventory, credentials, or remote execution?
+    validations:
+      required: true
