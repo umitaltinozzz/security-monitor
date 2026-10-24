@@ -1,0 +1,4 @@
+[
+  "pkg:pypi/click@8.1.7",
+  "pkg:pypi/requests@2.31.0"
+]

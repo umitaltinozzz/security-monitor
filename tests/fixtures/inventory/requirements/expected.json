@@ -1,0 +1,4 @@
+[
+  "pkg:pypi/requests@2.31.0",
+  "pkg:pypi/urllib3"
+]

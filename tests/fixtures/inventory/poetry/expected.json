@@ -1,0 +1,4 @@
+[
+  "pkg:pypi/attrs@23.2.0",
+  "pkg:pypi/requests@2.31.0"
+]

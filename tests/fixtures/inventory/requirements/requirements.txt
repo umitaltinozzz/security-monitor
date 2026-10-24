@@ -1,0 +1,2 @@
+-r base.txt
+urllib3>=1.26,<3

@@ -1,0 +1,5 @@
+[
+  "pkg:npm/root-lib@4.5.6",
+  "pkg:pypi/fastapi@0.110.0",
+  "pkg:pypi/idna"
+]

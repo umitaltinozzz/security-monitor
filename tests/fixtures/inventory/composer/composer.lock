@@ -1,0 +1,10 @@
+{
+  "_readme": ["fixture"],
+  "content-hash": "fixture",
+  "packages": [
+    { "name": "vendor/package", "version": "1.2.3", "dist": { "type": "zip" } }
+  ],
+  "packages-dev": [
+    { "name": "vendor/dev-tool", "version": "2.0.0", "dist": { "type": "zip" } }
+  ]
+}

@@ -1,0 +1,1 @@
+Requests[security]==2.31.0 ; python_version >= "3.9"

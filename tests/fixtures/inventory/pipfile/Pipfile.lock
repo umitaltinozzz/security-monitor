@@ -1,0 +1,5 @@
+{
+  "_meta": { "hash": { "sha256": "fixture" }, "pipfile-spec": 6 },
+  "default": { "requests": { "version": "==2.31.0", "hashes": [] } },
+  "develop": { "click": { "version": "==8.1.7", "hashes": [] } }
+}

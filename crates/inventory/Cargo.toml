@@ -1,0 +1,19 @@
+[package]
+name = "security-monitor-inventory"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Offline repository dependency inventory and PURL generation for Security Monitor"
+
+[dependencies]
+cargo-lock = { workspace = true }
+gomod-parser = { workspace = true }
+pep508_rs = { workspace = true }
+purl = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+yarn-lock-parser = { workspace = true }
