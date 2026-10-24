@@ -1422,6 +1422,7 @@ mod tests {
     #[tokio::test]
     async fn sandbox_runs_fixture_code_without_network_or_host_writes() {
         let (temp, repository) = fixture_repository();
+        let original_source = fs::read_to_string(repository.join("src/lib.rs")).unwrap();
         let prepared = create_worktree(&repository, temp.path()).await.unwrap();
         fs::write(
             prepared.worktree_path.join("src/lib.rs"),
@@ -1494,7 +1495,7 @@ mod tests {
         assert!(!result.timed_out);
         assert_eq!(
             fs::read_to_string(repository.join("src/lib.rs")).unwrap(),
-            "pub fn value() -> u8 { 1 }\n"
+            original_source
         );
         let _ = StdCommand::new(sandbox_executable(engine))
             .args(["image", "rm", "--force"])
