@@ -1,0 +1,17 @@
+[package]
+name = "security-monitor-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Security Monitor domain types and shared logic"
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

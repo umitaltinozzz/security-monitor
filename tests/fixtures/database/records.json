@@ -1,0 +1,167 @@
+{
+  "project": {
+    "id": "project-1",
+    "name": "fixture-project",
+    "root_path": "C:/workspace/fixture-project",
+    "git_remote": "https://github.com/example/fixture-project.git",
+    "reference_branch": "main",
+    "allowed_ai_providers": ["provider-1"],
+    "last_scan_at": null,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "asset": {
+    "id": "asset-1",
+    "asset_type": "server",
+    "hostname_alias": "fixture-host",
+    "environment": "staging",
+    "ssh_target_ref": "credential:fixture-host",
+    "host_key_fingerprint": "SHA256:fixture",
+    "last_seen_at": null,
+    "last_success_at": null,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "service": {
+    "id": "service-1",
+    "asset_id": "asset-1",
+    "service_name": "fixture-service",
+    "runtime_binary": "node",
+    "runtime_version": "22.0.0",
+    "internet_facing": false,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "deployment": {
+    "id": "deployment-1",
+    "service_id": "service-1",
+    "commit_sha": "0123456789abcdef",
+    "image_digest": null,
+    "release_id": "release-1",
+    "id_source": "fixture",
+    "observed_at": "2026-01-01T00:00:00Z"
+  },
+  "component": {
+    "id": "component-1",
+    "purl": "pkg:cargo/serde@1.0.0",
+    "ecosystem": "cargo",
+    "name": "serde",
+    "version": "1.0.0",
+    "source_type": "lockfile",
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "component_instance": {
+    "id": "component-instance-1",
+    "component_id": "component-1",
+    "project_id": "project-1",
+    "asset_id": "asset-1",
+    "service_id": "service-1",
+    "deployment_id": "deployment-1",
+    "evidence": [{"evidence_type": "lockfile", "file_path_redacted": "<project>/Cargo.lock", "reference": null}],
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "advisory": {
+    "canonical_id": "CVE-2026-1234",
+    "aliases": ["GHSA-aaaa-bbbb-cccc"],
+    "affected_ranges": [{"ecosystem": "cargo", "events": [{"introduced": "0", "fixed": "1.0.1", "last_affected": null, "limit": null}]}],
+    "fixed_versions": ["1.0.1"],
+    "cvss": 7.5,
+    "severity": "high",
+    "kev": false,
+    "epss": 0.12,
+    "epss_date": "2026-01-01T00:00:00Z",
+    "source_urls": ["https://example.invalid/advisory/CVE-2026-1234"],
+    "source_updated_at": "2026-01-01T00:00:00Z",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "finding": {
+    "id": "finding-1",
+    "advisory_id": "CVE-2026-1234",
+    "component_instance_id": "component-instance-1",
+    "status": "needs_review",
+    "severity": "high",
+    "priority_score": 70,
+    "priority_reasons": ["known_kev_false"],
+    "fingerprint": "fixture-fingerprint-1",
+    "repo_status": "unknown",
+    "production_status": "unknown",
+    "risk_expires_at": null,
+    "fix_version": "1.0.1",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "finding_evidence": {
+    "id": "evidence-1",
+    "finding_id": "finding-1",
+    "evidence_type": "manifest_match",
+    "file_path_redacted": "<project>/Cargo.lock",
+    "reference": "serde@1.0.0",
+    "confidence": 0.9,
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "scan_run": {
+    "id": "scan-1",
+    "scope": {"resource_type": "project", "resource_id": "project-1"},
+    "scanner": "fixture-scanner",
+    "scanner_version": "1.0.0",
+    "started_at": "2026-01-01T00:00:00Z",
+    "finished_at": "2026-01-01T00:00:01Z",
+    "outcome": "succeeded",
+    "error": null
+  },
+  "remediation": {
+    "id": "remediation-1",
+    "finding_id": "finding-1",
+    "worktree_path": "C:/workspace/fixture-project/.worktrees/fix-1",
+    "branch": "security/fix-1",
+    "diff_hash": null,
+    "tests": [{"name": "unit", "passed": true, "exit_code": 0, "log_reference": null}],
+    "approval_state": "pending",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "ai_provider": {
+    "id": "provider-1",
+    "kind": "open_ai_compatible",
+    "display_name": "Fixture provider",
+    "base_url": "https://api.example.invalid/v1",
+    "model": "fixture-model",
+    "capabilities": {"tool_calling": true, "context_window": 32000, "json_mode": true},
+    "price_in": 0.1,
+    "price_out": 0.2,
+    "data_region": "local-fixture",
+    "keychain_ref": "keychain:fixture-provider",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "ai_run": {
+    "id": "ai-run-1",
+    "provider_id": "provider-1",
+    "tier": "analysis",
+    "finding_id": "finding-1",
+    "tokens_in": 100,
+    "tokens_out": 50,
+    "cost": 0.02,
+    "files_sent": ["<project>/Cargo.lock"],
+    "started_at": "2026-01-01T00:00:00Z",
+    "outcome": "completed"
+  },
+  "notification_channel": {
+    "id": "channel-1",
+    "kind": "desktop",
+    "config_ref": null,
+    "min_priority": 0,
+    "enabled": true,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z"
+  },
+  "audit_event": {
+    "id": "audit-1",
+    "timestamp": "2026-01-01T00:00:00Z",
+    "actor": "user",
+    "action": "fixture_created",
+    "scope": {"resource_type": "project", "resource_id": "project-1"},
+    "result": "succeeded"
+  }
+}
