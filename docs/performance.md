@@ -58,3 +58,9 @@ After closing the window into the tray, the WebView2 descendants exited. A 30-se
 The close-to-tray runtime sample used the equivalent exit-policy build before the final switch to Tauri main-thread dispatch. The current dispatch implementation passes workspace tests and a release build, but still needs interactive verification.
 
 These measurements cover one Windows workstation only. macOS and Linux desktop samples, real Linux agent collection time/RSS, and an interactive tray restore/quit check remain pending. The tray restore path is implemented, but the sample verifies close-to-tray process retention and resource use only.
+
+## Repeat Windows windowed sample (2026-10-25)
+
+Diagnostic release-mode repeat on Windows 11 Pro 10.0.26300, Intel Core i7-11800H (8 cores / 16 logical processors), with the same Evergreen WebView2 runtime. Built from commit 756f0ea using `pnpm -C apps/desktop tauri build --no-bundle` and a temporary app-identifier overlay so the run used a fresh isolated profile. The profile contained no project inventory. After a 30-second warmup and 60-second idle interval, the app process plus six WebView2 descendants used 370 MiB summed working set, 162.5 MiB private commit, and 0.024% normalized CPU.
+
+This repeat confirms that the Windows working-set target remains exceeded (370 MiB versus 250 MiB). The release-mode executable was not installed from a signed package, so this diagnostic does not replace the packaged-app measurement required for release acceptance. The product currently creates one WebView2 control; Microsoft documents that each control uses a multi-process browser, renderer, GPU, and utility architecture. Disabling GPU rendering is not an appropriate memory shortcut because Microsoft recommends keeping hardware acceleration enabled for performance: [WebView2 performance best practices](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/performance).
