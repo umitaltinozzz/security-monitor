@@ -190,7 +190,7 @@ p { color: var(--muted); line-height: 1.6; }
 .memory-notes .memory-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--dim); font-size: .72rem; }
 .memory-notes textarea { width: 100%; min-height: 64px; resize: vertical; }
 .memory-notes .button-row { margin-top: 0; }
-.button.danger { border: 1px solid var(--danger, #a33); color: var(--danger, #a33); background: transparent; }
+.button.danger { border: 1px solid var(--red); color: var(--red); background: transparent; }
 .file-button { position: relative; overflow: hidden; }
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .subsection-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
