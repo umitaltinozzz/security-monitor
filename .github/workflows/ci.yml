@@ -51,6 +51,11 @@ jobs:
       - name: Test Rust
         run: cargo test --workspace
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2.87.31
+        with:
+          tool: cargo-deny@0.20.2
+
       - name: Check Rust dependency policies
         run: cargo deny check
 
@@ -77,16 +82,3 @@ jobs:
 
       - name: Build Tauri shell
         run: pnpm -C apps/desktop tauri build --no-bundle
-
-  dependency-policy:
-    name: Cargo dependency policy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Check Rust dependency policies
-        uses: EmbarkStudios/cargo-deny-action@v2.1.1
-        with:
-          command: check
-          rust-version: stable
