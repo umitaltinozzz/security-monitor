@@ -13,6 +13,30 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::Url;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CycloneDxJustification {
+    CodeNotPresent,
+    CodeNotReachable,
+    RequiresConfiguration,
+    RequiresDependency,
+    RequiresEnvironment,
+    ProtectedByCompiler,
+    ProtectedAtRuntime,
+    ProtectedAtPerimeter,
+    ProtectedByMitigatingControl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CycloneDxResponse {
+    CanNotFix,
+    WillNotFix,
+    Update,
+    Rollback,
+    WorkaroundAvailable,
+}
+
 const SARIF_SCHEMA: &str = include_str!("../schemas/sarif-2.1.0.schema.json");
 const CYCLONEDX_SCHEMA: &str = include_str!("../schemas/cyclonedx-bom-1.6.schema.json");
 const OPENVEX_SCHEMA: &str = include_str!("../schemas/openvex-0.2.0.schema.json");
@@ -514,10 +538,16 @@ fn cyclonedx_report(snapshot: &ReportSnapshot) -> Value {
             let advisory = advisory_by_id.get(finding.advisory_id.as_str());
             let mut vulnerability = json!({"id":finding.advisory_id,"source":{"name":"OSV"},
                 "ratings":[{"severity":cyclonedx_severity(&finding.severity)}],
-                "affects":[{"ref":component.purl,"versions":[{"version":component.version,"status":cyclonedx_version_status(&finding.status, snapshot.verification)}]}],
-                "analysis":{"state":cyclonedx_analysis_state(&finding.status, snapshot.verification)},
+                "affects":[{"ref":component.purl,"versions":[{"version":component.version,"status":cyclonedx_version_status(finding, snapshot.verification)}]}],
+                "analysis":{"state":cyclonedx_analysis_state(finding, snapshot.verification)},
                 "properties":[{"name":"security-monitor:verification","value":verification_text(snapshot.verification)},
                     {"name":"security-monitor:finding-status","value":finding_status(&finding.status)}]});
+            if let Some(justification) = cyclonedx_justification(finding) {
+                vulnerability["analysis"]["justification"] = json!(justification);
+            }
+            if let Some(response) = cyclonedx_response(finding) {
+                vulnerability["analysis"]["response"] = json!([response]);
+            }
             if let Some(title) = advisory.map(|item| item.title.as_str()).filter(|title| !title.is_empty()) {
                 vulnerability["description"] = json!(title);
             }
@@ -534,11 +564,14 @@ fn cyclonedx_report(snapshot: &ReportSnapshot) -> Value {
         })
         .collect::<Vec<_>>();
     let vulnerabilities = unique_values(vulnerabilities);
+    let skipped = skipped_vex_finding_ids(snapshot);
     json!({"bomFormat":"CycloneDX","specVersion":"1.6","serialNumber":format!("urn:uuid:{}", deterministic_uuid(snapshot)),
         "version":1,"metadata":{"timestamp":snapshot.generated_at,"component":{"type":"application","bom-ref":"secmon-report",
             "name":snapshot.project.as_ref().map_or("Security Monitor workspace", |project| project.name.as_str()),"version":"0.1.0"},
             "properties":[{"name":"security-monitor:verification","value":verification_text(snapshot.verification)},
-                {"name":"security-monitor:inventory-complete","value":snapshot.inventory_complete.to_string()}]},
+                {"name":"security-monitor:inventory-complete","value":snapshot.inventory_complete.to_string()},
+                {"name":"security-monitor:skipped-finding-count","value":skipped.len().to_string()},
+                {"name":"security-monitor:skipped-finding-ids","value":skipped.join(",")} ]},
         "components":components,"vulnerabilities":vulnerabilities})
 }
 
@@ -546,19 +579,25 @@ fn openvex_report(snapshot: &ReportSnapshot) -> Value {
     let component_by_id = component_map(snapshot);
     let instance_by_id = instance_map(snapshot);
     let advisory_by_id = advisory_map(snapshot);
+    let skipped = skipped_vex_finding_ids(snapshot);
     let statements = snapshot
         .findings
         .iter()
-        .filter_map(|finding| {
-            let instance = instance_by_id.get(finding.component_instance_id.as_str())?;
-            let component = component_by_id.get(instance.component_id.as_str())?;
+        .map(|finding| {
+            let Some(instance) = instance_by_id.get(finding.component_instance_id.as_str()) else {
+                return openvex_unscoped_finding(finding, snapshot.generated_at);
+            };
+            let Some(component) = component_by_id.get(instance.component_id.as_str()) else {
+                return openvex_unscoped_finding(finding, snapshot.generated_at);
+            };
             let advisory = advisory_by_id.get(finding.advisory_id.as_str());
             let status = openvex_status(finding, snapshot.verification);
             let mut statement = json!({"vulnerability":{"name":finding.advisory_id},
                 "products":[{"@id":component.purl,"identifiers":{"purl":component.purl}}],
                 "status":status,"timestamp":snapshot.generated_at,"last_updated":snapshot.generated_at,
-                "status_notes":format!("Security Monitor finding status: {}; verification: {}.",
-                    finding_status(&finding.status),verification_text(snapshot.verification))});
+                "status_notes":format!("Security Monitor finding status: {}; verification: {}.{}",
+                    finding_status(&finding.status),verification_text(snapshot.verification),
+                    if skipped.is_empty() { String::new() } else { format!(" Skipped finding IDs omitted because product scope could not be verified ({}): {}.", skipped.len(), skipped.join(", ")) })});
             if let Some(title) = advisory.map(|item| item.title.as_str()).filter(|title| !title.is_empty()) {
                 statement["vulnerability"]["description"] = json!(title);
             }
@@ -571,13 +610,29 @@ fn openvex_report(snapshot: &ReportSnapshot) -> Value {
             if status == "not_affected" {
                 statement["impact_statement"] = json!("A user-reviewed disposition records that the vulnerable code does not affect this product.");
             }
-            Some(statement)
+            statement
         })
         .collect::<Vec<_>>();
     let statements = unique_values(statements);
+    let tooling = if skipped.is_empty() {
+        format!("Security Monitor {}", env!("CARGO_PKG_VERSION"))
+    } else {
+        format!(
+            "Security Monitor {}; skipped findings without verifiable product scope ({}): {}",
+            env!("CARGO_PKG_VERSION"),
+            skipped.len(),
+            skipped.join(", ")
+        )
+    };
     json!({"@context":"https://openvex.dev/ns/v0.2.0","@id":format!("https://openvex.dev/docs/secmon/{}",deterministic_uuid(snapshot)),
         "author":"Security Monitor","role":"Document Creator","timestamp":snapshot.generated_at,"last_updated":snapshot.generated_at,"version":1,
-        "tooling":concat!("Security Monitor ",env!("CARGO_PKG_VERSION")),"statements":statements})
+        "tooling":tooling,"statements":statements})
+}
+
+fn openvex_unscoped_finding(finding: &Finding, timestamp: DateTime<Utc>) -> Value {
+    json!({"vulnerability":{"name":finding.advisory_id},
+        "status":"under_investigation","timestamp":timestamp,"last_updated":timestamp,
+        "status_notes":format!("Finding {} is omitted from product-specific statements because its component scope could not be verified.", finding.id)})
 }
 
 fn component_map(snapshot: &ReportSnapshot) -> BTreeMap<&str, &Component> {
@@ -610,6 +665,22 @@ fn unique_values(values: Vec<Value>) -> Vec<Value> {
         unique.entry(value.to_string()).or_insert(value);
     }
     unique.into_values().collect()
+}
+
+fn skipped_vex_finding_ids(snapshot: &ReportSnapshot) -> Vec<String> {
+    let components = component_map(snapshot);
+    let instances = instance_map(snapshot);
+    snapshot
+        .findings
+        .iter()
+        .filter(|finding| {
+            instances
+                .get(finding.component_instance_id.as_str())
+                .and_then(|instance| components.get(instance.component_id.as_str()))
+                .is_none()
+        })
+        .map(|finding| format!("{}@{}", finding.advisory_id, finding.component_instance_id))
+        .collect()
 }
 
 fn safe_reference_uri(value: &str) -> Option<String> {
@@ -712,37 +783,81 @@ fn cyclonedx_severity(severity: &Severity) -> &'static str {
     }
 }
 
-fn cyclonedx_version_status(
-    status: &FindingStatus,
-    verification: VerificationState,
-) -> &'static str {
-    match status {
-        FindingStatus::FixedInProduction if verification == VerificationState::Verified => {
+fn cyclonedx_version_status(finding: &Finding, verification: VerificationState) -> &'static str {
+    match &finding.status {
+        FindingStatus::FixedInProduction if is_verified_fixed(finding, verification) => {
             "unaffected"
         }
         FindingStatus::FixedInProduction => "unknown",
+        FindingStatus::FalsePositive | FindingStatus::NotReachable
+            if cyclonedx_justification(finding).is_some() =>
+        {
+            "unaffected"
+        }
         FindingStatus::FalsePositive | FindingStatus::NotReachable => "unknown",
         _ => "affected",
     }
 }
 
-fn cyclonedx_analysis_state(
-    status: &FindingStatus,
-    verification: VerificationState,
-) -> &'static str {
-    match status {
-        FindingStatus::FixedInProduction if verification == VerificationState::Verified => {
-            "resolved"
-        }
+fn cyclonedx_analysis_state(finding: &Finding, verification: VerificationState) -> &'static str {
+    match &finding.status {
+        FindingStatus::FixedInProduction if is_verified_fixed(finding, verification) => "resolved",
         FindingStatus::FixedInProduction => "in_triage",
+        FindingStatus::FalsePositive if cyclonedx_justification(finding).is_some() => {
+            "false_positive"
+        }
+        FindingStatus::NotReachable if cyclonedx_justification(finding).is_some() => "not_affected",
         FindingStatus::ConfirmedAffected | FindingStatus::AcceptedRisk => "exploitable",
         _ => "in_triage",
     }
 }
 
+fn cyclonedx_justification(finding: &Finding) -> Option<CycloneDxJustification> {
+    let reason = finding.disposition.as_ref()?.reason;
+    match (&finding.status, reason) {
+        (FindingStatus::NotReachable, FindingDispositionReason::NoAffectedCodePath)
+        | (
+            FindingStatus::NotReachable,
+            FindingDispositionReason::ConfigurationPreventsReachability,
+        ) => Some(CycloneDxJustification::CodeNotReachable),
+        (FindingStatus::FalsePositive, FindingDispositionReason::IncorrectPackage)
+        | (FindingStatus::FalsePositive, FindingDispositionReason::UnaffectedVersion) => {
+            Some(CycloneDxJustification::CodeNotPresent)
+        }
+        (FindingStatus::FalsePositive, FindingDispositionReason::NoAffectedCodePath) => {
+            Some(CycloneDxJustification::CodeNotReachable)
+        }
+        (
+            FindingStatus::FalsePositive,
+            FindingDispositionReason::ConfigurationPreventsReachability,
+        ) => Some(CycloneDxJustification::RequiresConfiguration),
+        (FindingStatus::FalsePositive, FindingDispositionReason::CompensatingControl) => {
+            Some(CycloneDxJustification::ProtectedByMitigatingControl)
+        }
+        _ => None,
+    }
+}
+
+fn cyclonedx_response(finding: &Finding) -> Option<CycloneDxResponse> {
+    finding.disposition.as_ref()?;
+    match &finding.status {
+        FindingStatus::FixedInRepo | FindingStatus::FixedInProduction => {
+            Some(CycloneDxResponse::Update)
+        }
+        FindingStatus::AcceptedRisk => Some(CycloneDxResponse::WillNotFix),
+        _ => None,
+    }
+}
+
+fn is_verified_fixed(finding: &Finding, verification: VerificationState) -> bool {
+    finding.status == FindingStatus::FixedInProduction
+        && verification == VerificationState::Verified
+        && finding.disposition.is_some()
+}
+
 fn openvex_status(finding: &Finding, verification: VerificationState) -> &'static str {
     match &finding.status {
-        FindingStatus::FixedInProduction if verification == VerificationState::Verified => "fixed",
+        FindingStatus::FixedInProduction if is_verified_fixed(finding, verification) => "fixed",
         FindingStatus::FixedInProduction => "under_investigation",
         FindingStatus::ConfirmedAffected | FindingStatus::AcceptedRisk => "affected",
         FindingStatus::NotReachable | FindingStatus::FalsePositive
@@ -929,6 +1044,57 @@ mod tests {
     }
 
     #[test]
+    fn cyclonedx_enums_match_the_vendored_1_6_schema() {
+        let schema: Value = serde_json::from_str(CYCLONEDX_SCHEMA).expect("valid schema JSON");
+        let schema_values = |path: &str| {
+            schema
+                .pointer(path)
+                .and_then(Value::as_array)
+                .expect("schema enum array")
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect::<BTreeSet<_>>()
+        };
+        let serialized_values = |values: Vec<Value>| {
+            values
+                .into_iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect::<BTreeSet<_>>()
+        };
+
+        let justifications = serialized_values(vec![
+            json!(CycloneDxJustification::CodeNotPresent),
+            json!(CycloneDxJustification::CodeNotReachable),
+            json!(CycloneDxJustification::RequiresConfiguration),
+            json!(CycloneDxJustification::RequiresDependency),
+            json!(CycloneDxJustification::RequiresEnvironment),
+            json!(CycloneDxJustification::ProtectedByCompiler),
+            json!(CycloneDxJustification::ProtectedAtRuntime),
+            json!(CycloneDxJustification::ProtectedAtPerimeter),
+            json!(CycloneDxJustification::ProtectedByMitigatingControl),
+        ]);
+        let responses = serialized_values(vec![
+            json!(CycloneDxResponse::CanNotFix),
+            json!(CycloneDxResponse::WillNotFix),
+            json!(CycloneDxResponse::Update),
+            json!(CycloneDxResponse::Rollback),
+            json!(CycloneDxResponse::WorkaroundAvailable),
+        ]);
+
+        assert_eq!(
+            justifications,
+            schema_values("/definitions/impactAnalysisJustification/enum")
+        );
+        assert_eq!(
+            responses,
+            schema_values(
+                "/definitions/vulnerability/properties/analysis/properties/response/items/enum"
+            )
+        );
+    }
+
+    #[test]
     fn all_external_formats_validate_against_vendored_official_schemas() {
         let snapshot = fixture_snapshot();
         for format in [
@@ -1019,6 +1185,13 @@ mod tests {
     fn fixed_production_claims_require_a_current_verified_snapshot() {
         let mut snapshot = fixture_snapshot();
         snapshot.findings[0].status = FindingStatus::FixedInProduction;
+        snapshot.findings[0].disposition = Some(FindingDisposition {
+            reason: FindingDispositionReason::FixPlanned,
+            scope: "project".into(),
+            scope_id: "project-fixture".into(),
+            set_at: snapshot.generated_at,
+            expires_at: None,
+        });
         snapshot.verification = VerificationState::NeedsReview;
 
         let openvex = openvex_report(&snapshot);
@@ -1059,6 +1232,74 @@ mod tests {
             Some("resolved")
         );
         validate(ReportFormat::Cyclonedx, &cyclonedx).unwrap();
+    }
+
+    #[test]
+    fn vex_exports_record_official_justification_response_and_skipped_findings() {
+        let mut snapshot = fixture_snapshot();
+        snapshot.findings[0].status = FindingStatus::FalsePositive;
+        snapshot.findings[0].disposition = Some(FindingDisposition {
+            reason: FindingDispositionReason::IncorrectPackage,
+            scope: "project".into(),
+            scope_id: "project-fixture".into(),
+            set_at: snapshot.generated_at,
+            expires_at: None,
+        });
+        let cyclone = cyclonedx_report(&snapshot);
+        assert_eq!(
+            cyclone
+                .pointer("/vulnerabilities/0/analysis/justification")
+                .and_then(Value::as_str),
+            Some("code_not_present")
+        );
+        assert_eq!(
+            cyclone
+                .pointer("/vulnerabilities/0/analysis/state")
+                .and_then(Value::as_str),
+            Some("false_positive")
+        );
+        validate(ReportFormat::Cyclonedx, &cyclone).unwrap();
+
+        snapshot.findings[0].status = FindingStatus::AcceptedRisk;
+        snapshot.findings[0].disposition.as_mut().unwrap().reason =
+            FindingDispositionReason::BusinessAccepted;
+        let cyclone = cyclonedx_report(&snapshot);
+        assert_eq!(
+            cyclone
+                .pointer("/vulnerabilities/0/analysis/response/0")
+                .and_then(Value::as_str),
+            Some("will_not_fix")
+        );
+        validate(ReportFormat::Cyclonedx, &cyclone).unwrap();
+
+        snapshot.instances[0].component_id = "missing-component".into();
+        let cyclone = cyclonedx_report(&snapshot);
+        assert_eq!(
+            cyclone
+                .pointer("/metadata/properties/2/value")
+                .and_then(Value::as_str),
+            Some("1")
+        );
+        let skipped_id = format!(
+            "{}@{}",
+            snapshot.findings[0].advisory_id, snapshot.findings[0].component_instance_id
+        );
+        assert_eq!(
+            cyclone
+                .pointer("/metadata/properties/3/value")
+                .and_then(Value::as_str),
+            Some(skipped_id.as_str())
+        );
+        let openvex = openvex_report(&snapshot);
+        assert!(
+            openvex
+                .pointer("/tooling")
+                .and_then(Value::as_str)
+                .unwrap()
+                .contains("skipped findings without verifiable product scope (1)")
+        );
+        validate(ReportFormat::Cyclonedx, &cyclone).unwrap();
+        validate(ReportFormat::Openvex, &openvex).unwrap();
     }
 
     #[test]

@@ -115,6 +115,7 @@ pub struct NormalizedScan {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScanExecution {
     pub detection: EngineDetection,
+    pub mode: crate::commands::ScanMode,
     pub result: Option<NormalizedScan>,
 }
 

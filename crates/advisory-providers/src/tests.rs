@@ -693,17 +693,106 @@ fn missing_package_ranges_stay_needs_review_and_reference_urls_drop_credentials(
 }
 
 #[test]
-fn unsupported_ecosystem_ranges_stay_reviewable_and_exact_versions_match_safely() {
+fn ecosystem_versions_use_supported_comparators_or_stay_reviewable() {
     let mut advisory = parse_fixture_entry("cve-entry");
     advisory.affected_ranges[0].ecosystem = "pypi".to_owned();
     advisory.affected_ranges[0].range_type = Some("ECOSYSTEM".to_owned());
-    let pending = evaluate_inventory(
+    advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
+        introduced: Some("1.0".to_owned()),
+        fixed: Some("2.0".to_owned()),
+        last_affected: None,
+        limit: None,
+    }];
+    let pep440_post = evaluate_inventory(
         std::slice::from_ref(&advisory),
-        &inventory(component("fixture-package", Some("1.0.2"), "pypi")),
+        &inventory(component("fixture-package", Some("1.0.post1"), "pypi")),
     );
-    assert_eq!(pending[0].status, FindingStatus::NeedsReview);
-    assert_eq!(pending[0].reason, FindingReason::VersionRangeUnverified);
+    assert_eq!(pep440_post[0].status, FindingStatus::New);
+    assert_eq!(pep440_post[0].reason, FindingReason::AffectedVersion);
 
+    advisory.affected_ranges[0].ecosystem = "Debian:12".to_owned();
+    advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
+        introduced: Some("1:9.2p1-1".to_owned()),
+        fixed: Some("1:9.2p1-3".to_owned()),
+        last_affected: None,
+        limit: None,
+    }];
+    let debian_epoch = evaluate_inventory(
+        std::slice::from_ref(&advisory),
+        &inventory(component("fixture-package", Some("1:9.2p1-2"), "Debian:12")),
+    );
+    assert_eq!(debian_epoch[0].status, FindingStatus::New);
+    assert!(
+        evaluate_inventory(
+            std::slice::from_ref(&advisory),
+            &inventory(component(
+                "fixture-package",
+                Some("1:9.2p1-10"),
+                "Debian:12"
+            )),
+        )
+        .is_empty()
+    );
+    assert!(
+        evaluate_inventory(
+            std::slice::from_ref(&advisory),
+            &inventory(component("fixture-package", Some("0:9.2p1-2"), "Debian:12")),
+        )
+        .is_empty()
+    );
+
+    advisory.affected_ranges[0].ecosystem = "golang".to_owned();
+    advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
+        introduced: Some("v0.0.0".to_owned()),
+        fixed: Some("v0.0.0-20250320123456-abcdef123456".to_owned()),
+        last_affected: None,
+        limit: None,
+    }];
+    let go_pseudo = evaluate_inventory(
+        std::slice::from_ref(&advisory),
+        &inventory(component(
+            "fixture-package",
+            Some("v1.2.3-0.20250319123456-123456abcdef"),
+            "golang",
+        )),
+    );
+    assert_eq!(go_pseudo[0].status, FindingStatus::NeedsReview);
+    assert_eq!(go_pseudo[0].reason, FindingReason::VersionRangeUnverified);
+
+    advisory.affected_ranges[0].ecosystem = "rubygems".to_owned();
+    advisory.affected_ranges[0].range_type = Some("SEMVER".to_owned());
+    advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
+        introduced: Some("0".to_owned()),
+        fixed: Some("2.0.0".to_owned()),
+        last_affected: None,
+        limit: None,
+    }];
+    let ruby_platform = evaluate_inventory(
+        std::slice::from_ref(&advisory),
+        &inventory(component(
+            "fixture-package",
+            Some("1.0.0-x86_64-linux"),
+            "rubygems",
+        )),
+    );
+    assert_eq!(ruby_platform[0].status, FindingStatus::NeedsReview);
+    assert_eq!(
+        ruby_platform[0].reason,
+        FindingReason::VersionRangeUnverified
+    );
+
+    advisory.affected_ranges[0].range_type = Some("ECOSYSTEM".to_owned());
+    for ecosystem in ["composer", "maven", "nuget"] {
+        advisory.affected_ranges[0].ecosystem = ecosystem.to_owned();
+        let unsupported = evaluate_inventory(
+            std::slice::from_ref(&advisory),
+            &inventory(component("fixture-package", Some("1.0"), ecosystem)),
+        );
+        assert_eq!(unsupported[0].status, FindingStatus::NeedsReview);
+        assert_eq!(unsupported[0].reason, FindingReason::VersionRangeUnverified);
+    }
+
+    advisory.affected_ranges[0].ecosystem = "pypi".to_owned();
     advisory.affected_ranges[0].range_type = Some("EXACT".to_owned());
     advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
         introduced: Some("1.0rc1".to_owned()),

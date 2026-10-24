@@ -201,7 +201,7 @@ impl LocalProjectScanner {
         let now = Utc::now();
         self.persist_inventory(&project, &inventory, &input_hash, now)
             .await?;
-        let advisory_fresh = self.provider_data_is_fresh(now);
+        let advisory_fresh = self.refresh_inventory_advisories(&inventory).await;
         let freshness = inventory_freshness(&inventory, &input_hash, advisory_fresh);
         let correlated = self
             .correlate_project_inventory(&project.id, freshness, now)
@@ -214,6 +214,19 @@ impl LocalProjectScanner {
         } else {
             (Vec::new(), Vec::new())
         };
+        for execution in &executions {
+            let state = match (&execution.detection.status, execution.result.as_ref()) {
+                (EngineStatus::Available, Some(scan)) if scan.complete => "completed",
+                (EngineStatus::Available, Some(_)) => "incomplete",
+                _ => "unavailable",
+            };
+            diagnostics.push(format!(
+                "scanner_coverage:{}:{}:{}",
+                execution.detection.engine.as_str(),
+                execution.mode.as_str(),
+                state
+            ));
+        }
         ensure_not_cancelled(&cancellation)?;
         let scanner_findings = executions
             .iter()
@@ -230,10 +243,21 @@ impl LocalProjectScanner {
         if !inventory.complete {
             diagnostics.push("inventory_incomplete".to_owned());
         }
+        if !input_hash.complete {
+            diagnostics.push("dependency_inputs_incomplete".to_owned());
+        }
         if !advisory_fresh {
             diagnostics.push("advisory_data_stale_or_unverified".to_owned());
         }
-        let outcome = if inventory.complete && advisory_fresh && scanners_complete {
+        if request.profile == ScanProfile::Full {
+            diagnostics.push("scanner_coverage_unverified".to_owned());
+        }
+        let outcome = if inventory.complete
+            && input_hash.complete
+            && advisory_fresh
+            && scanners_complete
+            && request.profile != ScanProfile::Full
+        {
             ScanOutcome::Succeeded
         } else {
             ScanOutcome::Partial
@@ -270,7 +294,7 @@ impl LocalProjectScanner {
             scan_id,
             outcome,
             input_hash: input_hash.sha256,
-            inventory_complete: inventory.complete,
+            inventory_complete: inventory.complete && input_hash.complete,
             component_count: inventory.components.len(),
             correlated_finding_count: correlated.len(),
             scanner_findings,
@@ -296,9 +320,15 @@ impl LocalProjectScanner {
                 diagnostics.push("scan_cancelled".to_owned());
                 break;
             }
+            let engine = request.engine;
+            let mode = request.mode;
             match self.scanners.scan(request).await {
                 Ok(execution) => executions.push(execution),
-                Err(_) => diagnostics.push("scanner_execution_failed".to_owned()),
+                Err(_) => diagnostics.push(format!(
+                    "scanner_execution_failed:{}:{}",
+                    engine.as_str(),
+                    mode.as_str()
+                )),
             }
         }
         if let Some(rules) = self.settings.semgrep_rules_file.clone() {
@@ -307,7 +337,11 @@ impl LocalProjectScanner {
                     .with_local_rules(rules);
                 match self.scanners.scan(request).await {
                     Ok(execution) => executions.push(execution),
-                    Err(_) => diagnostics.push("scanner_execution_failed".to_owned()),
+                    Err(_) => diagnostics.push(format!(
+                        "scanner_execution_failed:{}:{}",
+                        EngineKind::Semgrep.as_str(),
+                        ScanMode::Code.as_str()
+                    )),
                 }
             }
         } else {
@@ -315,6 +349,7 @@ impl LocalProjectScanner {
             let detection = self.scanners.detect_engine(EngineKind::Semgrep).await;
             executions.push(ScanExecution {
                 detection,
+                mode: ScanMode::Code,
                 result: None,
             });
         }
@@ -524,7 +559,7 @@ impl LocalProjectScanner {
         let service = AdvisoryService::new(self.http_policy, self.database.clone(), cache_root)
             .map_err(|_| ScanError::AdvisoryRefreshFailed)?;
         let refresh_succeeded = match service.refresh_and_match(&union).await {
-            Ok(_) => true,
+            Ok(_) => self.provider_data_is_fresh(Utc::now(), &union),
             Err(_) => {
                 if service.mark_provider_statuses_stale().is_err() {
                     warn!(
@@ -566,7 +601,11 @@ impl LocalProjectScanner {
             {
                 InventoryFreshness::Stale
             } else {
-                inventory_freshness(&inventory, &current_hash, self.provider_data_is_fresh(now))
+                inventory_freshness(
+                    &inventory,
+                    &current_hash,
+                    refresh_succeeded && self.provider_data_is_fresh(now, &inventory),
+                )
             };
             let findings = self
                 .correlate_project_inventory(&project.id, freshness, now)
@@ -576,7 +615,29 @@ impl LocalProjectScanner {
         Ok(finding_count)
     }
 
-    fn provider_data_is_fresh(&self, now: DateTime<Utc>) -> bool {
+    async fn refresh_inventory_advisories(&self, inventory: &Inventory) -> bool {
+        let cache_root = self.app_data_dir.join("advisories");
+        let service =
+            match AdvisoryService::new(self.http_policy, self.database.clone(), cache_root) {
+                Ok(service) => service,
+                Err(_) => return false,
+            };
+        match service.refresh_and_match(inventory).await {
+            Ok(_) => self.provider_data_is_fresh(Utc::now(), inventory),
+            Err(_) => {
+                if service.mark_provider_statuses_stale().is_err() {
+                    warn!(
+                        "advisory refresh failed and cached provider status could not be updated"
+                    );
+                } else {
+                    warn!("advisory refresh failed; cached provider data is stale");
+                }
+                false
+            }
+        }
+    }
+
+    fn provider_data_is_fresh(&self, now: DateTime<Utc>, inventory: &Inventory) -> bool {
         let path = self.app_data_dir.join("advisories/provider-status.json");
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
@@ -587,12 +648,51 @@ impl LocalProjectScanner {
                 Ok(statuses) if !statuses.is_empty() => statuses,
                 _ => return false,
             };
-        statuses.iter().all(|status| {
-            !status.stale
+        provider_statuses_are_fresh(&statuses, now, inventory)
+    }
+}
+
+fn provider_statuses_are_fresh(
+    statuses: &[ProviderFreshness],
+    now: DateTime<Utc>,
+    inventory: &Inventory,
+) -> bool {
+    let is_fresh = |provider: &str| {
+        statuses.iter().any(|status| {
+            status.provider == provider
+                && !status.stale
                 && status.updated_at.is_some_and(|updated| {
                     updated <= now && now.signed_duration_since(updated).num_hours() < 24
                 })
         })
+    };
+    if !is_fresh("cve.now")
+        || !is_fresh("CISA KEV")
+        || !is_fresh("FIRST EPSS")
+        || statuses
+            .iter()
+            .any(|status| status.provider.starts_with("cve.now: ") && !is_fresh(&status.provider))
+    {
+        return false;
+    }
+    let ecosystems = inventory
+        .components
+        .iter()
+        .map(|component| canonical_provider_ecosystem(&component.ecosystem))
+        .collect::<BTreeSet<_>>();
+    ecosystems
+        .iter()
+        .all(|ecosystem| is_fresh(&format!("OSV ({ecosystem})")))
+}
+
+fn canonical_provider_ecosystem(ecosystem: &str) -> String {
+    match ecosystem.trim().to_ascii_lowercase().as_str() {
+        "go" => "golang".to_owned(),
+        "crates.io" => "cargo".to_owned(),
+        "packagist" => "composer".to_owned(),
+        "rubygems" | "gem" => "rubygems".to_owned(),
+        "pip" => "pypi".to_owned(),
+        other => other.to_owned(),
     }
 }
 
@@ -672,5 +772,86 @@ fn ensure_not_cancelled(cancellation: &CancellationToken) -> Result<(), ScanErro
         Err(ScanError::Cancelled)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod freshness_tests {
+    use super::{ProviderFreshness, provider_statuses_are_fresh};
+    use chrono::{Duration, Utc};
+    use security_monitor_inventory::{Inventory, InventoryComponent};
+
+    fn status(provider: &str, now: chrono::DateTime<Utc>) -> ProviderFreshness {
+        ProviderFreshness {
+            provider: provider.to_owned(),
+            updated_at: Some(now),
+            stale: false,
+            error: None,
+        }
+    }
+
+    fn base_statuses(now: chrono::DateTime<Utc>) -> Vec<ProviderFreshness> {
+        vec![
+            status("cve.now", now),
+            status("CISA KEV", now),
+            status("FIRST EPSS", now),
+        ]
+    }
+
+    fn inventory(ecosystem: &str) -> Inventory {
+        Inventory {
+            components: vec![InventoryComponent {
+                purl: format!("pkg:{ecosystem}/example@1.0.0"),
+                ecosystem: ecosystem.to_owned(),
+                name: "example".to_owned(),
+                version: Some("1.0.0".to_owned()),
+                source_type: "fixture".to_owned(),
+                evidence_paths: vec!["lockfile".to_owned()],
+            }],
+            project_roots: Vec::new(),
+            detected_files: Vec::new(),
+            diagnostics: Vec::new(),
+            complete: true,
+        }
+    }
+
+    #[test]
+    fn freshness_requires_osv_coverage_for_each_scanned_ecosystem() {
+        let now = Utc::now();
+        let mut statuses = base_statuses(now);
+        statuses.push(status("OSV (npm)", now));
+        assert!(!provider_statuses_are_fresh(
+            &statuses,
+            now,
+            &inventory("cargo")
+        ));
+
+        statuses.push(status("OSV (cargo)", now));
+        assert!(provider_statuses_are_fresh(
+            &statuses,
+            now,
+            &inventory("cargo")
+        ));
+    }
+
+    #[test]
+    fn freshness_rejects_missing_and_stale_required_provider_statuses() {
+        let now = Utc::now();
+        let inventory = inventory("npm");
+        let mut statuses = base_statuses(now);
+        statuses.push(status("OSV (npm)", now));
+        statuses.push(status("cve.now: upstream source status", now));
+        assert!(provider_statuses_are_fresh(&statuses, now, &inventory));
+
+        statuses.retain(|item| item.provider != "FIRST EPSS");
+        assert!(!provider_statuses_are_fresh(&statuses, now, &inventory));
+
+        statuses.push(ProviderFreshness {
+            provider: "FIRST EPSS".to_owned(),
+            updated_at: Some(now - Duration::hours(25)),
+            stale: false,
+            error: None,
+        });
+        assert!(!provider_statuses_are_fresh(&statuses, now, &inventory));
     }
 }

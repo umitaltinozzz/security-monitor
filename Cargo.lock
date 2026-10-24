@@ -5336,6 +5336,7 @@ name = "security-monitor-correlation"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "pep440_rs",
  "purl",
  "security-monitor-core",
  "security-monitor-database",

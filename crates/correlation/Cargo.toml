@@ -12,6 +12,7 @@ security-monitor-core = { version = "0.1.0", path = "../core" }
 security-monitor-database = { version = "0.1.0", path = "../database" }
 security-monitor-inventory = { version = "0.1.0", path = "../inventory" }
 semver = { workspace = true }
+pep440_rs = { workspace = true }
 purl = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }

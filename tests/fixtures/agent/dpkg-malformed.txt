@@ -1,0 +1,2 @@
+valid-package	1.0.0	amd64
+malformed package output

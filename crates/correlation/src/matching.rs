@@ -1,5 +1,7 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
+use pep440_rs::Version as Pep440Version;
 use security_monitor_core::{Advisory, FindingStatus};
 use security_monitor_inventory::{Inventory, InventoryComponent};
 use semver::Version;
@@ -109,22 +111,45 @@ fn evaluate_component(
                 event.introduced.as_deref() == Some(version)
                     || event.last_affected.as_deref() == Some(version)
             })),
-            Some("SEMVER") => events_include_version(version, &range.events),
+            Some("SEMVER") => {
+                if (canonical_ecosystem(&range.ecosystem) == "golang"
+                    && is_go_pseudo_version(version))
+                    || (canonical_ecosystem(&range.ecosystem) == "rubygems"
+                        && is_ruby_platform_version(version))
+                {
+                    None
+                } else {
+                    events_include_semver(version, &range.events)
+                }
+            }
+            Some("ECOSYSTEM") if is_debian_ecosystem(&range.ecosystem) => {
+                events_include_debian(version, &range.events)
+            }
+            Some("ECOSYSTEM") if canonical_ecosystem(&range.ecosystem) == "pypi" => {
+                events_include_pep440(version, &range.events)
+            }
             Some("ECOSYSTEM")
                 if matches!(
                     canonical_ecosystem(&range.ecosystem).as_str(),
-                    "npm" | "cargo" | "golang"
-                ) =>
+                    "npm" | "cargo"
+                ) || (canonical_ecosystem(&range.ecosystem) == "golang"
+                    && !is_go_pseudo_version(version)) =>
             {
-                events_include_version(version, &range.events)
+                events_include_semver(version, &range.events)
+            }
+            None if source == "cve.now" && is_debian_ecosystem(&range.ecosystem) => {
+                events_include_debian(version, &range.events)
             }
             None if source == "cve.now"
                 && matches!(
                     canonical_ecosystem(&range.ecosystem).as_str(),
-                    "npm" | "cargo" | "golang"
-                ) =>
+                    "npm" | "cargo"
+                )
+                || (source == "cve.now"
+                    && canonical_ecosystem(&range.ecosystem) == "golang"
+                    && !is_go_pseudo_version(version)) =>
             {
-                events_include_version(version, &range.events)
+                events_include_semver(version, &range.events)
             }
             _ => None,
         };
@@ -177,28 +202,50 @@ fn union_result(current: Option<bool>, incoming: Option<bool>) -> Option<bool> {
     }
 }
 
-fn events_include_version(
+fn events_include_semver(
     version: &str,
     events: &[security_monitor_core::RangeEvent],
 ) -> Option<bool> {
-    let version = parse_version(version)?;
-    let mut lower: Option<(Version, bool)> = None;
+    events_include_with(version, events, parse_semver_version)
+}
+
+fn events_include_pep440(
+    version: &str,
+    events: &[security_monitor_core::RangeEvent],
+) -> Option<bool> {
+    events_include_with(version, events, |value| value.parse::<Pep440Version>().ok())
+}
+
+fn events_include_debian(
+    version: &str,
+    events: &[security_monitor_core::RangeEvent],
+) -> Option<bool> {
+    events_include_with(version, events, parse_debian_version)
+}
+
+fn events_include_with<T: Ord>(
+    version: &str,
+    events: &[security_monitor_core::RangeEvent],
+    parse: impl Fn(&str) -> Option<T>,
+) -> Option<bool> {
+    let version = parse(version)?;
+    let mut lower: Option<(T, bool)> = None;
     let mut included = false;
     let mut saw_introduced = false;
     for event in events {
         if let Some(introduced) = &event.introduced {
             saw_introduced = true;
             lower = Some(if introduced == "0" {
-                (Version::new(0, 0, 0), false)
+                (parse("0")?, false)
             } else if let Some(exclusive) = introduced.strip_prefix('>') {
-                (parse_version(exclusive)?, true)
+                (parse(exclusive)?, true)
             } else {
-                (parse_version(introduced)?, false)
+                (parse(introduced)?, false)
             });
         }
         if let Some(fixed) = &event.fixed {
             lower.as_ref()?;
-            let upper = parse_version(fixed)?;
+            let upper = parse(fixed)?;
             included |= lower.as_ref().is_some_and(|(start, exclusive)| {
                 lower_includes(&version, start, *exclusive) && version < upper
             });
@@ -206,7 +253,7 @@ fn events_include_version(
         }
         if let Some(last_affected) = &event.last_affected {
             lower.as_ref()?;
-            let upper = parse_version(last_affected)?;
+            let upper = parse(last_affected)?;
             included |= lower.as_ref().is_some_and(|(start, exclusive)| {
                 lower_includes(&version, start, *exclusive) && version <= upper
             });
@@ -214,7 +261,7 @@ fn events_include_version(
         }
         if let Some(limit) = &event.limit {
             lower.as_ref()?;
-            let upper = parse_version(limit)?;
+            let upper = parse(limit)?;
             included |= lower.as_ref().is_some_and(|(start, exclusive)| {
                 lower_includes(&version, start, *exclusive) && version < upper
             });
@@ -230,7 +277,7 @@ fn events_include_version(
     Some(included)
 }
 
-fn lower_includes(candidate: &Version, start: &Version, exclusive: bool) -> bool {
+fn lower_includes<T: Ord>(candidate: &T, start: &T, exclusive: bool) -> bool {
     if exclusive {
         candidate > start
     } else {
@@ -238,9 +285,173 @@ fn lower_includes(candidate: &Version, start: &Version, exclusive: bool) -> bool
     }
 }
 
-fn parse_version(value: &str) -> Option<Version> {
+fn parse_semver_version(value: &str) -> Option<Version> {
     let value = value.trim().strip_prefix('v').unwrap_or(value.trim());
+    if value == "0" {
+        return Some(Version::new(0, 0, 0));
+    }
     Version::parse(value).ok()
+}
+
+#[derive(Debug, Clone)]
+struct DebianVersion {
+    epoch: u64,
+    upstream: String,
+    revision: String,
+}
+
+impl PartialEq for DebianVersion {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for DebianVersion {}
+
+impl PartialOrd for DebianVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DebianVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.epoch
+            .cmp(&other.epoch)
+            .then_with(|| debian_revision_cmp(&self.upstream, &other.upstream))
+            .then_with(|| debian_revision_cmp(&self.revision, &other.revision))
+    }
+}
+
+fn parse_debian_version(value: &str) -> Option<DebianVersion> {
+    let value = value.trim();
+    if value.is_empty() || !value.is_ascii() || value.bytes().any(|byte| byte.is_ascii_control()) {
+        return None;
+    }
+    let (epoch, value) = match value.split_once(':') {
+        Some((epoch, value)) if !epoch.is_empty() => (epoch.parse().ok()?, value),
+        Some(_) => return None,
+        None => (0, value),
+    };
+    let (upstream, revision) = match value.rsplit_once('-') {
+        Some((upstream, revision)) if !revision.is_empty() => (upstream, revision),
+        Some(_) => return None,
+        None => (value, "0"),
+    };
+    if upstream.is_empty()
+        || !upstream.as_bytes()[0].is_ascii_digit()
+        || !upstream
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".+~-".contains(&byte))
+        || !revision
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b".+~".contains(&byte))
+    {
+        return None;
+    }
+    Some(DebianVersion {
+        epoch,
+        upstream: upstream.to_owned(),
+        revision: revision.to_owned(),
+    })
+}
+
+fn debian_revision_cmp(left: &str, right: &str) -> Ordering {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let (mut left_index, mut right_index) = (0, 0);
+    loop {
+        while (left_index < left.len() && !left[left_index].is_ascii_digit())
+            || (right_index < right.len() && !right[right_index].is_ascii_digit())
+        {
+            let left_byte = left.get(left_index).copied();
+            let right_byte = right.get(right_index).copied();
+            let order = debian_character_order(left_byte).cmp(&debian_character_order(right_byte));
+            if order != Ordering::Equal {
+                return order;
+            }
+            left_index += usize::from(left_byte.is_some());
+            right_index += usize::from(right_byte.is_some());
+        }
+
+        while left.get(left_index) == Some(&b'0') {
+            left_index += 1;
+        }
+        while right.get(right_index) == Some(&b'0') {
+            right_index += 1;
+        }
+        let left_start = left_index;
+        let right_start = right_index;
+        while left.get(left_index).is_some_and(u8::is_ascii_digit) {
+            left_index += 1;
+        }
+        while right.get(right_index).is_some_and(u8::is_ascii_digit) {
+            right_index += 1;
+        }
+        let left_length = left_index - left_start;
+        let right_length = right_index - right_start;
+        match left_length.cmp(&right_length) {
+            Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        match left[left_start..left_index].cmp(&right[right_start..right_index]) {
+            Ordering::Equal => {}
+            ordering => return ordering,
+        }
+        if left_index == left.len() && right_index == right.len() {
+            return Ordering::Equal;
+        }
+    }
+}
+
+fn debian_character_order(value: Option<u8>) -> i32 {
+    match value {
+        Some(b'~') => -1,
+        None => 0,
+        Some(value) if value.is_ascii_alphabetic() => i32::from(value),
+        Some(value) => i32::from(value) + 256,
+    }
+}
+
+fn is_debian_ecosystem(ecosystem: &str) -> bool {
+    let ecosystem = canonical_ecosystem(ecosystem);
+    ecosystem == "debian" || ecosystem.starts_with("debian:")
+}
+
+fn is_go_pseudo_version(value: &str) -> bool {
+    let value = value.trim().strip_prefix('v').unwrap_or(value.trim());
+    let value = value.strip_suffix("+incompatible").unwrap_or(value);
+    let mut suffix = value.rsplitn(3, '-');
+    let Some(commit) = suffix.next() else {
+        return false;
+    };
+    let Some(timestamp_segment) = suffix.next() else {
+        return false;
+    };
+    let Some(timestamp) = timestamp_segment.rsplit('.').next() else {
+        return false;
+    };
+    commit.len() == 12
+        && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && timestamp.len() == 14
+        && timestamp.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_ruby_platform_version(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    [
+        "-java",
+        "-x86_64-linux",
+        "-x86_64-linux-musl",
+        "-x86_64-darwin",
+        "-arm64-darwin",
+        "-aarch64-linux",
+        "-x64-mingw-ucrt",
+        "-x64-mingw32",
+        "-universal-java",
+    ]
+    .iter()
+    .any(|platform| value.ends_with(platform))
 }
 
 fn candidate(

@@ -1,0 +1,3 @@
+ID=unknown-linux
+NAME="Unknown Linux Distribution"
+VERSION_ID=1

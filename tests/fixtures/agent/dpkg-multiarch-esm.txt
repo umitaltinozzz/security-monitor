@@ -1,0 +1,5 @@
+libfixture:amd64	1.0.0-1	amd64
+libfixture:i386	1.0.0-1	i386
+ubuntu-pro-client	1.2.3-0ubuntu0.22.04.1+esm1	amd64
+linux-image-6.1.0-18-amd64	6.1.0-18.1	amd64
+linux-image-6.1.0-21-amd64	6.1.0-21.1	amd64

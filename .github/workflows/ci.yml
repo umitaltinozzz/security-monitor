@@ -98,16 +98,6 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo build -p secmon-agent --target x86_64-unknown-linux-musl --release
 
-      - name: Build the OpenSSH E2E container
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p target/openssh-e2e
-          cp tests/openssh/Dockerfile target/openssh-e2e/Dockerfile
-          cp tests/openssh/sshd_config target/openssh-e2e/sshd_config
-          cp target/x86_64-unknown-linux-musl/release/secmon-agent target/openssh-e2e/secmon-agent
-          docker build --tag security-monitor-openssh-e2e:${{ github.sha }} target/openssh-e2e
-          echo "SECMON_OPENSSH_E2E_IMAGE=security-monitor-openssh-e2e:${{ github.sha }}" >> "$GITHUB_ENV"
-
       - name: Check Rust formatting
         run: cargo fmt --all --check
 

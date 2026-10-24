@@ -2124,9 +2124,17 @@ pub async fn update_advisory_data(
     .map_err(|_| "unknown".to_owned())?;
     let updater = OsvDatabaseUpdater::new(http);
     let statuses = updater
-        .update_ecosystems(state.app_data_dir.join("advisory-db"), settings.ecosystems)
+        .update_ecosystems(
+            state.app_data_dir.join("advisories").join("osv"),
+            settings.ecosystems,
+        )
         .await
         .map_err(|_| "unknown".to_owned())?;
+    let queue = state.scans.read().await.queue.clone();
+    queue
+        .refresh_advisories()
+        .await
+        .map_err(|_| "scan_failed".to_owned())?;
     Ok(statuses
         .into_iter()
         .map(|status| AdvisoryUpdateStatus {

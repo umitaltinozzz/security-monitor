@@ -57,6 +57,7 @@ impl ScannerAdapters {
         if detection.status != EngineStatus::Available {
             return Ok(ScanExecution {
                 detection,
+                mode: request.mode,
                 result: None,
             });
         }
@@ -119,6 +120,7 @@ impl ScannerAdapters {
         }
         Ok(ScanExecution {
             detection,
+            mode: request.mode,
             result: Some(result),
         })
     }

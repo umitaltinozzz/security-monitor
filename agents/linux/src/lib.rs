@@ -183,17 +183,7 @@ struct PackageCollection {
 }
 
 async fn collect_os_packages(os: Option<&OperatingSystem>) -> PackageCollection {
-    let command = match os.and_then(|os| os.id.as_deref()) {
-        Some("debian" | "ubuntu" | "linuxmint" | "raspbian") => {
-            Some((HostCommand::DpkgPackages, "deb", PackageSource::Dpkg))
-        }
-        Some("alpine") => Some((HostCommand::ApkPackages, "apk", PackageSource::Apk)),
-        Some("fedora" | "rhel" | "centos" | "rocky" | "almalinux" | "ol") => {
-            Some((HostCommand::RpmPackages, "rpm", PackageSource::Rpm))
-        }
-        _ => None,
-    };
-    let Some((command, ecosystem, source)) = command else {
+    let Some((command, ecosystem, source)) = package_command_for_os(os) else {
         return PackageCollection {
             records: Vec::new(),
             check: check(
@@ -231,6 +221,21 @@ async fn collect_os_packages(os: Option<&OperatingSystem>) -> PackageCollection 
                 0,
             ),
         },
+    }
+}
+
+fn package_command_for_os(
+    os: Option<&OperatingSystem>,
+) -> Option<(HostCommand, &'static str, PackageSource)> {
+    match os.and_then(|os| os.id.as_deref()) {
+        Some("debian" | "ubuntu" | "linuxmint" | "raspbian") => {
+            Some((HostCommand::DpkgPackages, "deb", PackageSource::Dpkg))
+        }
+        Some("alpine") => Some((HostCommand::ApkPackages, "apk", PackageSource::Apk)),
+        Some("fedora" | "rhel" | "centos" | "rocky" | "almalinux" | "ol") => {
+            Some((HostCommand::RpmPackages, "rpm", PackageSource::Rpm))
+        }
+        _ => None,
     }
 }
 
@@ -1163,7 +1168,8 @@ mod tests {
 
     use super::{
         collect_dependency_inventory, kernel_restart_required, manual_product_name,
-        newest_installed_kernel, parse_docker_inspect, parse_os_release, parse_package_output,
+        newest_installed_kernel, package_command_for_os, parse_docker_inspect, parse_os_release,
+        parse_package_output,
     };
     use security_monitor_agent_protocol::{CheckKind, CheckStatus, DiagnosticCode, PackageSource};
 
@@ -1186,6 +1192,61 @@ mod tests {
         assert_eq!(alpine.records[0].name, "lib-example");
         assert_eq!(alpine.records[0].version.as_deref(), Some("2.4.1-r3"));
         assert!(!alpine.partial);
+    }
+
+    #[test]
+    fn package_inventory_preserves_multiarch_esm_and_kernel_flavor_uncertainty() {
+        let multiarch = include_bytes!("../../../tests/fixtures/agent/dpkg-multiarch-esm.txt");
+        let parsed = parse_package_output(multiarch, "deb", PackageSource::Dpkg);
+        assert!(!parsed.partial);
+        assert!(parsed.records.iter().any(|record| {
+            record.name == "libfixture:amd64" && record.architecture.as_deref() == Some("amd64")
+        }));
+        assert!(parsed.records.iter().any(|record| {
+            record.name == "libfixture:i386" && record.architecture.as_deref() == Some("i386")
+        }));
+        assert!(parsed.records.iter().any(|record| {
+            record.name == "ubuntu-pro-client"
+                && record.version.as_deref() == Some("1.2.3-0ubuntu0.22.04.1+esm1")
+        }));
+        assert_eq!(
+            newest_installed_kernel(&parsed.records).as_deref(),
+            Some("6.1.0-21-amd64")
+        );
+
+        let flavors = parse_package_output(
+            include_bytes!("../../../tests/fixtures/agent/dpkg-kernel-flavors.txt"),
+            "deb",
+            PackageSource::Dpkg,
+        );
+        assert_eq!(newest_installed_kernel(&flavors.records), None);
+    }
+
+    #[tokio::test]
+    async fn unknown_distro_and_malformed_package_output_remain_unverified() {
+        let os = parse_os_release(include_str!(
+            "../../../tests/fixtures/agent/os-release-unknown.txt"
+        ));
+        assert_eq!(
+            os.as_ref().and_then(|value| value.id.as_deref()),
+            Some("unknown-linux")
+        );
+        assert!(package_command_for_os(os.as_ref()).is_none());
+        let unsupported = super::collect_os_packages(os.as_ref()).await;
+        assert_eq!(unsupported.check.status, CheckStatus::Unavailable);
+        assert_eq!(
+            unsupported.check.diagnostic,
+            Some(DiagnosticCode::UnsupportedPlatform)
+        );
+
+        let malformed = parse_package_output(
+            include_bytes!("../../../tests/fixtures/agent/dpkg-malformed.txt"),
+            "deb",
+            PackageSource::Dpkg,
+        );
+        assert!(malformed.partial);
+        assert_eq!(malformed.records.len(), 1);
+        assert_eq!(malformed.diagnostic, DiagnosticCode::InvalidOutput);
     }
 
     #[test]

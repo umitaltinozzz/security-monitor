@@ -5,13 +5,26 @@ use std::{
 
 use crate::types::{EngineKind, ScannerError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScanMode {
     Dependencies,
     Filesystem,
     Misconfiguration,
     ImageArchive,
     Code,
+}
+
+impl ScanMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dependencies => "dependencies",
+            Self::Filesystem => "filesystem",
+            Self::Misconfiguration => "misconfiguration",
+            Self::ImageArchive => "image_archive",
+            Self::Code => "code",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
