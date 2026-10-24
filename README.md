@@ -1,144 +1,149 @@
-# Security Monitor
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img src="docs/assets/logo-light.png" alt="Security Monitor logo: two raven heads facing outward around an eye" width="220">
+  </picture>
+</p>
 
-Security Monitor (`secmon`) is an open-source, local-first security monitoring product. The desktop app connects local project inventory, advisory matching, scanner adapters, finding review, and approved Linux server inventory in one workflow. Missing, stale, partial, or unverified evidence remains visible for review; an empty screen is not a claim that a system is safe.
+<h1 align="center">Security Monitor</h1>
 
-## Why Security Monitor
+<p align="center"><strong>You fixed it in the repo. Is production still vulnerable?</strong></p>
 
-A repository scan cannot show what is currently running after deployment. Security Monitor connects local repository evidence with separately approved, read-only Linux inventory so users can review that difference on their device.
+<p align="center">
+  <a href="https://github.com/umitaltinozzz/security-monitor/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/umitaltinozzz/security-monitor/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Platforms: Windows, macOS, Linux" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <a href="https://umitaltinozzz.github.io/security-monitor/"><img alt="Documentation" src="https://img.shields.io/badge/docs-site-informational"></a>
+</p>
 
-| Tool | Main focus | How Security Monitor differs |
-| --- | --- | --- |
-| [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Detects vulnerable dependencies in GitHub repositories and can open update pull requests. | Security Monitor keeps inventory and review local and adds approved production inventory; it does not automatically update dependencies. |
-| [Trivy](https://trivy.dev/docs/latest/) | Scans packages, images, secrets, and configuration. | Security Monitor includes a Trivy adapter and connects scan evidence to locally reviewed deployment observations. |
-| [OSV-Scanner](https://google.github.io/osv-scanner/) | Extracts project packages and matches them against OSV advisories. | Security Monitor uses offline OSV data and adds local finding review, advisory signals, and approved server inventory. |
+<p align="center"><a href="README.tr.md">Türkçe</a></p>
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Demo: adding a project and running a local quick scan, reading why a finding matters, and pairing a production server after verifying its host key" width="900">
+  <br><sub>Demo recorded from the desktop UI with sample data (lodash 4.17.20, GHSA-35jh-r3h4-6jhm); no real scan or server.</sub>
+</p>
+
+Security Monitor (`secmon`) is an open-source, local-first security monitor for your projects and your Linux servers. It matches your dependencies against vulnerability advisories on your own machine, then checks what is actually running in production, so a fix that never got deployed does not look finished.
+
+No account. No cloud dashboard. Source code, lockfiles, and inventory stay on your device unless you approve a specific transfer.
+
+> **Status: pre-release.** v1.0 is code complete; signed installers are not published yet. Build from source to try it. Missing, stale, or unverified data is always shown as *could not verify*, never as safe.
+
+## What it does
+
+- **Finds vulnerable dependencies locally.** Lockfile inventory, offline OSV data, GHSA, CISA KEV and EPSS, plus OSV-Scanner, Trivy, and Semgrep adapters.
+- **Compares the repo with production.** A read-only Linux agent (or agentless SSH) reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries.
+- **Warns before vulnerable code is pushed.** `secmon hook` checks only the changed lockfiles, offline, in under three seconds.
+- **Works with your coding agent.** One command connects Claude Code, Codex, or OpenCode to a local MCP server and Security Monitor skills.
+- **Prepares fixes you approve.** Fixes are prepared in an isolated Git worktree and tested in a network-disabled sandbox; nothing is applied without your approval.
+
+## Why it is different
+
+| | Security Monitor | Typical SaaS scanners | Repository scanners (Dependabot, OSV-Scanner, Trivy) |
+| --- | --- | --- | --- |
+| Account required | No | Yes | Varies |
+| Source code leaves your device | Only with explicit approval | Usually | No |
+| Sees what runs on your servers | Yes, read-only | Some, with cloud agents | No |
+| "Fixed in repo, still running in production" | Yes | Rarely | No |
+| Missing data shown as safe | Never | Varies | Varies |
+| Cost | Free, Apache-2.0 | Paid tiers | Free |
+
+Security Monitor uses OSV-Scanner, Trivy, and Semgrep as local adapters; it builds on them rather than replacing them.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   Repo[Local projects and lockfiles] --> Local[Local inventory and matching]
-  Host[Approved read-only Linux inventory] --> Local
+  Host[Approved read-only Linux inventory over SSH] --> Local
   Feeds[Public advisory and RSS/Atom feeds] --> Local
   Local --> Store[(Local SQLite database)]
-  Store --> Desktop[Desktop review]
-  Store --> MCP[Enabled local MCP tools]
-  MCP --> AI[Optional user-selected AI provider]
+  Store --> Desktop[Desktop app and tray]
+  Store --> CLI[secmon CLI and Git hooks]
+  Store --> MCP[Local MCP tools]
+  MCP --> AI[Optional AI provider you choose]
 ```
 
-Local inventory and feed matching happen on-device. Remote AI use and source-file access require separate user approvals.
+The agent has no remote-command feature: it runs only a fixed, compile-time list of read-only collectors and never needs root.
 
-## Desktop workflow
+## Privacy: what leaves your device
 
-- Add a local project folder or discover candidate projects, then start a quick or full scan. Inventory and scan results are stored locally.
-- Review findings, filter the list, inspect evidence, and record a reasoned user disposition. User dispositions are kept in the audit history.
-- Check scanner availability and install supported scanners only after enabling public downloads. Advisory data updates are also explicit user actions.
-- Discover static SSH host configuration, verify a host fingerprint, pair a Linux server, and separately approve each inventory collection. SSH credentials use the operating-system credential store.
-- Review restart evidence when the installed kernel differs from the running kernel, processes retain deleted shared libraries, or allowlisted manually installed binaries are found under `/opt` and `/usr/local`. Missing permissions remain partial or unverified.
-- See product-matched RSS/Atom security-news signals separately from vulnerability findings. Signals do not create findings by themselves and bind only when a matching advisory ID arrives.
-- Switch between English and Turkish and light, dark, or system appearance. The app can stay in the system tray.
+| Data | Leaves the device? |
+| --- | --- |
+| Source code, lockfiles, project inventory | No, unless you approve a specific AI request or export |
+| Server inventory | Moves from your server to your device over a pinned SSH connection, after you approve each collection |
+| Advisory and feed updates | Only when public downloads are enabled; OSV requests name the ecosystem, not your packages |
+| AI requests | Only after you review the redacted prompt, destination, tools, and cost limit; budgets default to zero |
+| Secrets (SSH keys, API keys, webhooks) | Stored only in the OS credential store |
+| Telemetry | None |
 
-AI settings support user-configured OpenAI-compatible, Anthropic, and loopback-local providers. Before each request, the app shows the redacted prompt, provider origin, region, enabled tools, and a worst-case bounded cost estimate. Provider credentials stay in the OS credential store, budgets default to zero, and project provider permissions are checked again before sending. The local CLI MCP server exposes only enabled tools and requires a separate recorded per-project approval before reading source files. Supported coding-agent plugins can share redacted, expiring local notes; notes remain untrusted context, and agents cannot change finding status or priority.
+See [Privacy](docs/privacy.md) for the full model.
 
-## Screenshots
+## Quick start (from source)
 
-These screen captures were generated by the deterministic desktop E2E fixture. They illustrate the interface and do not represent a real scan or server.
-
-| Screen | Light | Dark |
-| --- | --- | --- |
-| Review | ![Review in light theme](docs/screenshots/review-light.png) | ![Review in dark theme](docs/screenshots/review-dark.png) |
-| Findings | ![Findings in light theme](docs/screenshots/findings-light.png) | ![Findings in dark theme](docs/screenshots/findings-dark.png) |
-| Projects | ![Projects in light theme](docs/screenshots/projects-light.png) | ![Projects in dark theme](docs/screenshots/projects-dark.png) |
-| Servers | ![Servers in light theme](docs/screenshots/servers-light.png) | ![Servers in dark theme](docs/screenshots/servers-dark.png) |
-| History | ![History in light theme](docs/screenshots/history-light.png) | ![History in dark theme](docs/screenshots/history-dark.png) |
-| Settings | ![Settings in light theme](docs/screenshots/settings-light.png) | ![Settings in dark theme](docs/screenshots/settings-dark.png) |
-
-## Implemented foundations
-
-- Rust domain types, SQLite migrations and typed repositories.
-- Local inventory for supported lockfiles, monorepo discovery, Dockerfile/workflow detection, and package URL generation.
-- Advisory providers for offline OSV archives, GHSA cross-checks, CISA KEV, FIRST EPSS, source merging, cache freshness, and conservative local matching.
-- Offline scanner adapters for OSV-Scanner, Trivy, and Semgrep, including pinned binary downloads and output normalization.
-- Finding correlation with advisory alias merging, version-range matching, stable fingerprints, priority explanations, and evidence-gated transitions.
-- Repository-to-production drift comparison that requires verified snapshots and keeps unknown evidence unverified.
-- Local scan orchestration with a bounded queue, resource limits, quick/full profiles, file watching, startup hash checks, and advisory re-correlation.
-- Desktop and approved webhook, Slack, Discord, and TLS SMTP notification transports with OS-keyring secrets and recorded approvals.
-- A versioned Linux server inventory protocol, root-free read-only collector, dedicated-key SSH pairing, host-key pinning, and fixed-command agentless collection.
-- Linux host evidence for running-versus-installed kernels, processes using deleted shared libraries, and low-confidence manual binaries from `/opt` or `/usr/local`; unsupported or inaccessible observations stay partial.
-- RSS/Atom news signals with local product-name matching, exact advisory binding, seven-day archival, conditional requests, and no automatic vulnerability finding creation.
-- Approval-gated remediation requests in isolated Git worktrees with network-disabled sandbox tests.
-- A Tauri desktop app with AI provider setup, request review, bounded tool calling, budgets, run history, shared local notes, and a permission-limited local MCP server.
-- Claude Code, Codex, and OpenCode plugin packages with local MCP tools, reusable workflows, and supported slash commands.
-- A `secmon` CLI for local scans and reports, advisory cache refreshes, diagnostics, explicitly approved server collection, fast Git hooks, coding-agent integrations, and the local MCP server.
-
-## Privacy
-
-Project manifests, lockfiles, source trees, and collected inventory stay on the device unless a user explicitly approves an operation that transfers data. Scanner adapters run locally. Public advisory refreshes and scanner downloads require the public-download setting and an explicit user action. When public downloads are enabled, the desktop polls configured RSS/Atom feed hosts every 30 minutes; those hosts see the request's network metadata, but no project inventory or package list is sent. An OSV archive request identifies the selected ecosystem to OSV; it does not include project files, package names, or versions. Server inventory collection requires its own user approval and transfers inventory to this device over the pinned SSH connection. Remote AI requests use the shared HTTP wrapper, show the approved origin, do not follow redirects, and are sent only after a reviewed request is approved. Source-file tools are off by default; the desktop API rechecks its project provider allowlist, while CLI MCP source reads require a separately recorded project approval. See [Privacy](docs/privacy.md), [AI providers](docs/ai-providers.md), [Local MCP](docs/local-mcp.md), [Shared local memory](docs/shared-memory.md), and [Scanner adapters](docs/scanners.md).
-
-Signed application updates are checked manually from Settings and require public downloads to be enabled. Update requests contact only the project's GitHub Releases endpoint and release asset host; they do not contain project or inventory data. See [Signed releases and updates](docs/release.md) and [Performance budgets](docs/performance.md).
-
-## Quick start
-
-Install Rust, Node.js 22 or newer, pnpm 10.27.0, and the native prerequisites listed in the [Tauri guide](https://v2.tauri.app/start/prerequisites/). Then run:
+Install Rust, Node.js 22 or newer, pnpm 10.27.0, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```text
 pnpm install --frozen-lockfile
 pnpm -C apps/desktop tauri dev
 ```
 
-The CLI can scan a project with local cache data and start the local MCP server:
+CLI:
 
 ```text
-cargo run -p secmon -- --help
-cargo run -p secmon -- --version
 cargo run -p secmon -- scan <project-path> --offline
-cargo run -p secmon -- mcp
+cargo run -p secmon -- report --format sarif
+cargo run -p secmon -- hook install --pre-push --mode warn
+cargo run -p secmon -- integrate claude-code --dry-run
 ```
 
-See [CLI](docs/cli.md) for reports, diagnostics, server collection, and Git hooks. See [coding-agent integrations](docs/integrations.md) for Claude Code, Codex, and OpenCode setup. See [Linux agent installation](docs/agent-install.md) for direct-host installation and pairing. See [AI providers](docs/ai-providers.md) and [Local MCP](docs/local-mcp.md) for setup, privacy, and approval details.
+Linux agent: build the static binary, verify its checksum, and install it with the provided script. Confirm the SSH host-key fingerprint independently before pairing. See [Linux agent installation](docs/agent-install.md).
 
-To build and install the Linux agent on a Linux host, verify the binary checksum before installation:
+## With coding agents
 
 ```text
-rustup target add x86_64-unknown-linux-musl
-cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
-sha256sum target/x86_64-unknown-linux-musl/release/secmon-agent
-sudo ./install.sh --binary target/x86_64-unknown-linux-musl/release/secmon-agent --sha256 <verified-sha256>
+secmon integrate <claude-code|codex|opencode> --dry-run
+secmon integrate <claude-code|codex|opencode>
+secmon integrate remove <claude-code|codex|opencode>
 ```
 
-Pair the host from the desktop only after independently confirming its SSH host-key fingerprint and reviewing the collection approval. See [Linux agent installation](docs/agent-install.md) for exact steps.
+This adds the local MCP server, the Security Monitor skills, and, where supported, a hook that runs `secmon hook run` before the agent pushes. `--dry-run` shows the exact diff, and `remove` restores the previous files. Agents can read findings and leave notes; they cannot change a finding's status or priority. See [Coding-agent integrations](docs/integrations.md).
 
-## Data sources and attribution
+## Screenshots
 
-Supported sources, freshness rules, and attribution are documented in [Data sources](docs/data-sources.md). When displaying cve.now summaries, attribute [cve.now](https://cve.now/) under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Data combined by cve.now may have separate source terms. For NVD-derived data, display: "This product uses data from the NVD API but is not endorsed or certified by the NVD." Missing, stale, or unverified data must not be treated as a clean result.
+<p align="center">
+  <img src="docs/screenshots/review-dark.png" alt="Review screen in dark theme" width="820">
+</p>
+
+<details>
+<summary>More screens (light and dark)</summary>
+
+| Screen | Light | Dark |
+| --- | --- | --- |
+| Findings | ![Findings in light theme](docs/screenshots/findings-light.png) | ![Findings in dark theme](docs/screenshots/findings-dark.png) |
+| Projects | ![Projects in light theme](docs/screenshots/projects-light.png) | ![Projects in dark theme](docs/screenshots/projects-dark.png) |
+| Servers | ![Servers in light theme](docs/screenshots/servers-light.png) | ![Servers in dark theme](docs/screenshots/servers-dark.png) |
+| History | ![History in light theme](docs/screenshots/history-light.png) | ![History in dark theme](docs/screenshots/history-dark.png) |
+| Settings | ![Settings in light theme](docs/screenshots/settings-light.png) | ![Settings in dark theme](docs/screenshots/settings-dark.png) |
+
+</details>
+
+Screenshots come from the deterministic test fixture, not a real scan or server.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Scanner adapters](docs/scanners.md)
-- [Finding correlation](docs/correlation.md)
-- [Repository-to-production drift](docs/drift.md)
-- [Scan orchestration and notifications](docs/orchestration.md)
-- [Threat model](docs/threat-model.md)
-- [Privacy](docs/privacy.md)
-- [Data sources](docs/data-sources.md)
-- [Linux agent installation](docs/agent-install.md)
-- [Deploy ID](docs/deploy-id.md)
-- [AI providers](docs/ai-providers.md)
-- [Local MCP](docs/local-mcp.md)
-- [CLI](docs/cli.md)
-- [Coding-agent integrations](docs/integrations.md)
-- [Contributing](docs/contributing.md)
+Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-The documentation site source is in [`docs/site`](docs/site). A GitHub Pages workflow builds and deploys it only when Pages is enabled by a repository maintainer.
+- Using it: [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
+- How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration and notifications](docs/orchestration.md)
+- Trust: [Privacy](docs/privacy.md) · [Threat model](docs/threat-model.md) · [Data sources](docs/data-sources.md) · [Signed releases and updates](docs/release.md) · [Performance budgets](docs/performance.md)
 
-## Contributing
+## Contributing and security
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/contributing.md](docs/contributing.md) before making changes. Please use the issue forms for bugs, feature requests, and false-positive reports. Security vulnerabilities should be reported through the private process in [SECURITY.md](SECURITY.md), not a public issue.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Use the issue forms for bugs, feature requests, and false-positive reports. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
-## Security and license
+## License, data, and disclaimer
 
-See [SECURITY.md](SECURITY.md) for supported-version policy and private vulnerability reporting. Security Monitor source code is licensed under Apache-2.0; see [LICENSE](LICENSE). Third-party vulnerability and advisory data retain their own source licenses and terms.
+Source code is licensed under [Apache-2.0](LICENSE). Vulnerability and advisory data keep their own source licenses; see [Data sources](docs/data-sources.md). cve.now summaries are attributed to [cve.now](https://cve.now/) under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). This product uses data from the NVD API but is not endorsed or certified by the NVD.
 
-## Disclaimer
-
-Security Monitor is provided for informational purposes. A missing finding is not proof that software or an environment is secure. Verify results against the original advisory and your own environment before making security decisions.
+A missing finding is not proof that software or an environment is secure. Verify results against the original advisory and your own environment before making security decisions.

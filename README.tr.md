@@ -1,131 +1,149 @@
-# Security Monitor
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img src="docs/assets/logo-light.png" alt="Security Monitor logosu: bir gözün iki yanında dışa bakan iki kuzgun başı" width="220">
+  </picture>
+</p>
 
-Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler ve dağıtılmış ortam kanıtlarıyla yerel öncelikli bir iş akışında birleştirmeyi amaçlayan açık kaynaklı bir projedir.
+<h1 align="center">Security Monitor</h1>
 
-> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, repo-production drift, orkestrasyon, bildirim, Linux ajanı/SSH, masaüstü inceleme akışları ve kullanıcı onaylı AI/MCP desteği bulunur. Eksik, eski veya doğrulanmamış kanıt temiz ya da güvenli sonuç sayılmaz.
+<p align="center"><strong>Repoda düzelttin. Production hâlâ açık mı?</strong></p>
 
-## Bugün uygulananlar
+<p align="center">
+  <a href="https://github.com/umitaltinozzz/security-monitor/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/umitaltinozzz/security-monitor/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="Lisans: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <img alt="Platformlar: Windows, macOS, Linux" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <a href="https://umitaltinozzz.github.io/security-monitor/"><img alt="Belgeler" src="https://img.shields.io/badge/docs-site-informational"></a>
+</p>
 
-- Çapraz platform CI içeren Cargo ve pnpm çalışma alanları.
-- Rust alan türleri, SQLite migration'ları, tür güvenli repository'ler ve üretilmiş TypeScript sözleşmeleri.
-- Desteklenen lockfile'lar, monorepo keşfi, Dockerfile/workflow algılama ve PURL üretimi için yerel envanter kitaplığı.
-- Artımlı cve.now kayıtları, çevrimdışı OSV arşivleri, GHSA çapraz kontrolü, CISA KEV, FIRST EPSS, kaynak birleştirme, önbellek güncelliği ve tutucu yerel eşleştirme için advisory kitaplığı.
-- OSV-Scanner, Trivy ve Semgrep algılama, onaylı sabit sürümlü indirme, çevrimdışı çalıştırma ve çıktı normalleştirme için tarayıcı adaptörü; ayrıca yerel bulgu korelasyonu.
-- Mevcut bulguları doğrulanmış referans dalı ve dağıtım envanterleriyle karşılaştıran; çalışma kopyasındaki commit edilmemiş değişiklikleri ayrı tutan ve düzeltme için güncel, eksiksiz kanıt isteyen drift kitaplığı.
-- Sınırlı kuyruk, kaynak kotaları, hızlı/tam profiller, üç saniyelik dosya izleyici gecikmesi, başlangıç hash kontrolü ve önbellekteki envanterle advisory yeniden eşleştirme içeren orkestrasyon kitaplığı.
-- Masaüstü, kullanıcı onaylı HTTPS webhook/Slack/Discord ve TLS SMTP bildirimleri; sırlar OS anahtarlığında tutulur, hedef onayı kaydedilir, tekilleştirme ve erteleme desteklenir.
-- Sürümlemeli sunucu envanter protokolü, salt okunur ve root gerektirmeyen Linux ajanı, OS anahtarlığında SSH eşleştirme anahtarı, zorunlu komut kısıtlamaları, host-key sabitleme, SSH yapılandırmasından host keşfi ve sabit komutlu ajansız toplama API'si.
-- Tauri masaüstü uygulaması: proje ekleme/tarama, bulgu inceleme, sunucu eşleştirme ve envanter onayı, AI sağlayıcı ayarları, redakte istem incelemesi, bütçe sınırları ve yerel MCP sunucusu.
-- Yerel tarama/raporlama, advisory önbelleği güncelleme, tanılama, onaylı sunucu toplama, Git hook'ları ve Claude Code/Codex/OpenCode entegrasyonları sunan `secmon` CLI.
-- Linux sunucu envanterinde çalışan/kurulu kernel farkı, silinmiş paylaşımlı kütüphaneleri kullanan süreçler ve `/opt` ile `/usr/local` altındaki izinli manuel binary'ler görünür; eksik veya tanınmayan kanıt kısmi/doğrulanmamış kalır.
-- RSS/Atom güvenlik haberleri ürün adıyla yerel eşleştirilir, bulgulardan ayrı gösterilir ve yalnızca tam CVE/GHSA kimliği geldiğinde advisory'ye bağlanır; tek başına zafiyet bulgusu üretmez.
-- Düzeltme istekleri onaylı izole Git worktree'lerinde hazırlanır; testler ağ kapalı sandbox içinde ve kullanıcı onayıyla çalışır.
+<p align="center"><a href="README.md">English</a></p>
 
-Raporlama, `secmon hook` ve `secmon integrate` CLI akışları uygulanmıştır. Paylaşılan yerel hafıza ile Claude Code, Codex ve OpenCode eklentileri eklendi; notlar cihazda kalır, gizli değerlerden arındırılır ve süre sonunda sona erer. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Demo: proje ekleyip yerel hızlı tarama, bir bulgunun neden önemli olduğu ve host key doğrulandıktan sonra production sunucusu eşleştirme" width="900">
+  <br><sub>Demo, masaüstü arayüzünden örnek veriyle kaydedildi (lodash 4.17.20, GHSA-35jh-r3h4-6jhm); gerçek bir tarama veya sunucu değildir.</sub>
+</p>
 
-## Yol haritası
+Security Monitor (`secmon`), projelerin ve Linux sunucuların için açık kaynaklı, yerel öncelikli bir güvenlik izleme aracıdır. Bağımlılıklarını güvenlik duyurularıyla kendi bilgisayarında eşleştirir, sonra production'da gerçekte neyin çalıştığına bakar. Böylece deploy edilmemiş bir düzeltme bitmiş gibi görünmez.
 
-Kalan v1.0 kapsamı bu kitaplıkları masaüstü/CLI yönetim akışlarına bağlama, AI/MCP, onaylı düzeltme ve raporlamadır. İş milestone'lar halinde ilerler; özellikler kullanılabilir oldukça belgelenir.
+Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli bir aktarımı onaylamadıkça cihazından çıkmaz.
 
-## Yaklaşımın karşılaştırması
+> **Durum: yayın öncesi.** v1.0'ın kodu tamamlandı; imzalı kurulum paketleri henüz yayımlanmadı. Denemek için kaynaktan derleyin. Eksik, eski veya doğrulanmamış veri her zaman *doğrulanamadı* olarak gösterilir, asla güvenli olarak değil.
 
-| Araç | Temel odak | Security Monitor ile ilişkisi |
-| --- | --- | --- |
-| [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Depo bağımlılıklarındaki açıklara uyarı verir ve güvenlik güncelleme pull request'leri açabilir. | Security Monitor bir bağımlılık güncelleyici değildir; hedefi yerel envanteri dağıtım kanıtlarıyla ilişkilendirmektir. |
-| [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Security Monitor'ın yerel tarama akışı Trivy adaptörünü kullanabilir ve sonucu dağıtım kanıtıyla ilişkilendirir. |
-| [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor yerel envanter, önbelleğe alınmış advisory verisi ve tarayıcı kanıtını aynı bulgu akışında birleştirir. |
+## Ne yapar
 
-Security Monitor yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirir. Eksik, eski veya doğrulanmamış veri temiz sonuç sayılmaz.
+- **Açıklı bağımlılıkları yerelde bulur.** Lockfile envanteri, çevrimdışı OSV verisi, GHSA, CISA KEV ve EPSS; ayrıca OSV-Scanner, Trivy ve Semgrep adaptörleri.
+- **Repoyu production ile karşılaştırır.** Salt okunur Linux ajanı (veya ajansız SSH) neyin kurulu olduğunu ve çalıştığını bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil.
+- **Açıklı kod push edilmeden önce uyarır.** `secmon hook` yalnızca değişen lockfile'lara, çevrimdışı ve üç saniyenin altında bakar.
+- **Kodlama ajanınla çalışır.** Tek komut Claude Code, Codex veya OpenCode'u yerel MCP sunucusuna ve Security Monitor skill'lerine bağlar.
+- **Senin onayladığın düzeltmeleri hazırlar.** Düzeltmeler izole bir Git worktree'de hazırlanır ve ağı kapalı bir sandbox'ta test edilir; onayın olmadan hiçbir şey uygulanmaz.
 
-## Hedef mimari
+## Neden farklı
+
+| | Security Monitor | Tipik SaaS tarayıcılar | Repo tarayıcıları (Dependabot, OSV-Scanner, Trivy) |
+| --- | --- | --- | --- |
+| Hesap gerekir mi | Hayır | Evet | Değişir |
+| Kaynak kod cihazdan çıkar mı | Yalnızca açık onayla | Genellikle | Hayır |
+| Sunucunda çalışanı görür mü | Evet, salt okunur | Bazıları, bulut ajanlarıyla | Hayır |
+| "Repoda düzeldi, production'da hâlâ çalışıyor" | Evet | Nadiren | Hayır |
+| Eksik veriyi güvenli gösterir mi | Asla | Değişir | Değişir |
+| Maliyet | Ücretsiz, Apache-2.0 | Ücretli planlar | Ücretsiz |
+
+Security Monitor; OSV-Scanner, Trivy ve Semgrep'i yerel adaptör olarak kullanır. Onların yerine geçmez, üzerine kurulur.
+
+## Nasıl çalışır
 
 ```mermaid
 flowchart LR
-  Repo[Yerel depolar ve lockfile'lar] --> Inventory[Yerel envanter ve eşleştirme]
-  Inventory --> Store[(Yerel SQLite veritabanı)]
-  Agent[SSH üzerinden salt okunur Linux ajanı] --> Store
-  Feed[Güvenlik duyurusu ve istismar verisi sağlayıcıları] --> Store
-  Store --> Desktop[Masaüstü uygulaması]
-  Store --> CLI[secmon CLI]
-  Store --> MCP[Açıkça izin verilen MCP araçları]
-  MCP --> Model[İsteğe bağlı, kullanıcı seçimi yapay zekâ sağlayıcısı]
+  Repo[Yerel projeler ve lockfile'lar] --> Local[Yerel envanter ve eşleştirme]
+  Host[SSH ile onaylı, salt okunur Linux envanteri] --> Local
+  Feeds[Güvenlik duyurusu ve RSS/Atom akışları] --> Local
+  Local --> Store[(Yerel SQLite veritabanı)]
+  Store --> Desktop[Masaüstü uygulaması ve tepsi]
+  Store --> CLI[secmon CLI ve Git hook'ları]
+  Store --> MCP[Yerel MCP araçları]
+  MCP --> AI[Seçtiğin isteğe bağlı AI sağlayıcısı]
 ```
 
-Masaüstü uygulaması yerel iş akışlarını ve MCP araç izinlerini sunar. AI sağlayıcıya istek göndermeden önce redakte edilmiş istem, hedef, veri kategorisi, araçlar ve maliyet üst sınırı kullanıcıya gösterilir.
+Ajanda uzaktan komut çalıştırma özelliği yoktur: yalnızca derleme zamanında sabitlenmiş, salt okunur toplayıcıları çalıştırır ve root yetkisi istemez.
 
-## Gizlilik
+## Gizlilik: cihazından ne çıkar
 
-Tarayıcılar yerelde çalışır; kamuya açık advisory güncellemeleri kullanıcı ayarına ve açık eyleme bağlıdır. AI istekleri ortak HTTP sarmalayıcısını kullanır, yönlendirmeleri izlemez ve yalnızca inceleme/onaydan sonra gönderilir. Kaynak dosya araçları varsayılan olarak kapalıdır; CLI MCP üzerinden kaynak okumak için proje başına ayrı ve denetim günlüğüne kaydedilen onay gerekir. Sırlar yalnızca işletim sistemi anahtarlığında tutulur. Ayrıntılar için [Gizlilik](docs/privacy.md), [AI sağlayıcıları](docs/ai-providers.md) ve [Yerel MCP](docs/local-mcp.md) belgelerine bakın.
+| Veri | Cihazdan çıkar mı? |
+| --- | --- |
+| Kaynak kod, lockfile'lar, proje envanteri | Hayır; belirli bir AI isteğini veya dışa aktarımı onaylamadıkça |
+| Sunucu envanteri | Her toplamayı onayladıktan sonra, sabitlenmiş SSH bağlantısıyla sunucundan cihazına gelir |
+| Duyuru ve akış güncellemeleri | Yalnızca genel indirmeler açıksa; OSV isteği paketlerini değil, ekosistemi belirtir |
+| AI istekleri | Yalnızca redakte edilmiş istemi, hedefi, araçları ve maliyet sınırını inceledikten sonra; bütçeler varsayılan olarak sıfırdır |
+| Sırlar (SSH anahtarları, API anahtarları, webhook'lar) | Yalnızca işletim sisteminin kimlik deposunda |
+| Telemetri | Yok |
 
-## Hızlı başlangıç
+Ayrıntılar için [Gizlilik](docs/privacy.md).
 
-### Masaüstü kabuğu (geliştirme)
+## Hızlı başlangıç (kaynaktan)
 
-Rust, Node.js 22 veya üzeri, pnpm 10.27.0 ve [Tauri önkoşullarını](https://v2.tauri.app/start/prerequisites/) kurun:
+Rust, Node.js 22 veya üzeri, pnpm 10.27.0 ve [Tauri önkoşullarını](https://v2.tauri.app/start/prerequisites/) kurun.
 
 ```text
 pnpm install --frozen-lockfile
 pnpm -C apps/desktop tauri dev
 ```
 
-Bu komut masaüstü uygulamasını geliştirme modunda açar.
-
-### CLI
-
-`rust-toolchain.toml` dosyasındaki Rust araç zincirini kurup çalıştırın:
+CLI:
 
 ```text
-cargo run -p secmon -- --help
-cargo run -p secmon -- --version
-cargo run -p secmon -- scan <project-path> --offline
-cargo run -p secmon -- mcp
+cargo run -p secmon -- scan <proje-yolu> --offline
+cargo run -p secmon -- report --format sarif
+cargo run -p secmon -- hook install --pre-push --mode warn
+cargo run -p secmon -- integrate claude-code --dry-run
 ```
 
-`secmon scan`, yerel advisory önbelleğini kullanarak tarama yapar; rapor, tanılama, hook ve ajan entegrasyonu komutları için [CLI](docs/cli.md) belgesine bakın. `secmon mcp`, mevcut SQLite veritabanını salt okunur açıp yalnızca AI ayarlarında etkin ve kullanıcı denetim günlüğüyle onaylanmış araçları stdio üzerinden sunar. Ajan kurulum adımları [Entegrasyonlar](docs/integrations.md) belgesindedir.
+Linux ajanı: statik binary'yi derleyin, checksum'ını doğrulayın ve verilen betikle kurun. Eşleştirmeden önce SSH host-key parmak izini bağımsız olarak doğrulayın. Bkz. [Linux ajan kurulumu](docs/agent-install.md).
 
-### Linux ajanı
-
-Salt okunur Linux sunucu ajanı masaüstünden SSH ile eşleştirilip ayrıca onaylanan envanter toplamaları için kullanılabilir. Linux'ta derleyip checksum'ı doğrulayın:
+## Kodlama ajanlarıyla
 
 ```text
-rustup target add x86_64-unknown-linux-musl
-cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
-sha256sum target/x86_64-unknown-linux-musl/release/secmon-agent
-sudo ./install.sh --binary target/x86_64-unknown-linux-musl/release/secmon-agent --sha256 <verified-sha256>
+secmon integrate <claude-code|codex|opencode> --dry-run
+secmon integrate <claude-code|codex|opencode>
+secmon integrate remove <claude-code|codex|opencode>
 ```
 
-Host-key parmak izini bağımsız doğrulamadan ve envanter aktarımını gözden geçirmeden onaylamayın. Tam adımlar için [Linux ajan kurulumu](docs/agent-install.md) belgesine bakın.
+Bu komut yerel MCP sunucusunu, Security Monitor skill'lerini ve destekleniyorsa ajan push etmeden önce `secmon hook run` çalıştıran bir hook ekler. `--dry-run` tam diff'i gösterir, `remove` önceki dosyaları geri yükler. Ajanlar bulguları okuyup not bırakabilir; bir bulgunun durumunu veya önceliğini değiştiremez. Bkz. [Kodlama ajanı entegrasyonları](docs/integrations.md).
 
-### Yapay zekâ
+## Ekran görüntüleri
 
-OpenAI-compatible HTTPS, Anthropic ve loopback yerel sağlayıcılar kullanıcı tarafından yapılandırılır. Bütçeler varsayılan olarak sıfırdır; her istek redakte istemi, hedefi, araçları ve maliyet üst sınırını onay ekranında gösterir. [AI sağlayıcıları](docs/ai-providers.md) ve [Yerel MCP](docs/local-mcp.md) belgelerine bakın.
+<p align="center">
+  <img src="docs/screenshots/review-dark.png" alt="Koyu temada inceleme ekranı" width="820">
+</p>
 
-## Güvenlik verisi ve kaynak gösterimi
+<details>
+<summary>Diğer ekranlar (açık ve koyu)</summary>
 
-Masaüstü ve CLI, kullanıcı ayarlarında kamuya açık indirmeler etkinleştirilip güncelleme açıkça başlatıldığında güvenlik duyurusu verilerini indirebilir. Kullanılan kaynaklar, güncellik kuralları ve atıflar [Veri kaynakları](docs/data-sources.md) belgesindedir. cve.now özeti gösterildiğinde [cve.now](https://cve.now/) atfı ve [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) lisans bağlantısı verilmelidir. cve.now tarafından birleştirilen diğer veriler farklı kaynak koşullarına tabi olabilir. NVD verisi kullanıldığında şu bildirim gösterilmelidir: “This product uses data from the NVD API but is not endorsed or certified by the NVD.” Eksik, eski veya doğrulanmamış veri temiz sonuç sayılmamalıdır.
+| Ekran | Açık | Koyu |
+| --- | --- | --- |
+| Bulgular | ![Açık temada bulgular](docs/screenshots/findings-light.png) | ![Koyu temada bulgular](docs/screenshots/findings-dark.png) |
+| Projeler | ![Açık temada projeler](docs/screenshots/projects-light.png) | ![Koyu temada projeler](docs/screenshots/projects-dark.png) |
+| Sunucular | ![Açık temada sunucular](docs/screenshots/servers-light.png) | ![Koyu temada sunucular](docs/screenshots/servers-dark.png) |
+| Geçmiş | ![Açık temada geçmiş](docs/screenshots/history-light.png) | ![Koyu temada geçmiş](docs/screenshots/history-dark.png) |
+| Ayarlar | ![Açık temada ayarlar](docs/screenshots/settings-light.png) | ![Koyu temada ayarlar](docs/screenshots/settings-dark.png) |
+
+</details>
+
+Ekran görüntüleri gerçek bir taramadan veya sunucudan değil, deterministik test fixture'ından alınmıştır.
 
 ## Belgeler
 
-- [Mimari](docs/architecture.md)
-- [Tehdit modeli](docs/threat-model.md)
-- [Gizlilik](docs/privacy.md)
-- [Veri kaynakları](docs/data-sources.md)
-- [Tarayıcı adaptörleri](docs/scanners.md)
-- [Bulgu korelasyonu](docs/correlation.md)
-- [Repo-production drift karşılaştırması](docs/drift.md)
-- [Tarama orkestrasyonu ve bildirimler](docs/orchestration.md)
-- [Linux ajan kurulumu](docs/agent-install.md)
-- [Deploy ID](docs/deploy-id.md)
-- [Yapay zekâ sağlayıcıları](docs/ai-providers.md)
-- [Yerel MCP](docs/local-mcp.md)
-- [CLI](docs/cli.md)
-- [Kodlama ajanı entegrasyonları](docs/integrations.md)
-- [Katkıda bulunma](CONTRIBUTING.md)
+Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-## Katkıda bulunma ve güvenlik
+- Kullanım: [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
+- Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu ve bildirimler](docs/orchestration.md)
+- Güven: [Gizlilik](docs/privacy.md) · [Tehdit modeli](docs/threat-model.md) · [Veri kaynakları](docs/data-sources.md) · [İmzalı sürümler ve güncellemeler](docs/release.md) · [Performans bütçeleri](docs/performance.md)
 
-Değişiklik yapmadan önce [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun. Güvenlik açıklarını herkese açık issue olarak değil, [SECURITY.md](SECURITY.md) belgesindeki özel bildirim yöntemiyle iletin.
+## Katkı ve güvenlik
 
-## Lisans ve sorumluluk reddi
+Değişiklik yapmadan önce [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun. Hata, özellik isteği ve yanlış pozitif bildirimleri için issue formlarını kullanın. Güvenlik açıklarını herkese açık issue olarak değil, [SECURITY.md](SECURITY.md) belgesindeki özel yöntemle bildirin.
 
-Security Monitor kaynak kodu Apache-2.0 lisanslıdır; ayrıntılar [LICENSE](LICENSE) dosyasındadır. Üçüncü taraf güvenlik verileri kendi lisans ve koşullarını korur. Eksik bulgu, yazılımın veya ortamın güvenli olduğunun kanıtı değildir. Sonuçları güvenlik kararı vermeden önce özgün duyurular ve kendi ortamınızla doğrulayın.
+## Lisans, veri ve sorumluluk reddi
+
+Kaynak kod [Apache-2.0](LICENSE) lisanslıdır. Güvenlik açığı ve duyuru verileri kendi kaynak lisanslarını korur; bkz. [Veri kaynakları](docs/data-sources.md). cve.now özetleri [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) kapsamında [cve.now](https://cve.now/) kaynağına atfedilir. This product uses data from the NVD API but is not endorsed or certified by the NVD.
+
+Eksik bulgu, yazılımın veya ortamın güvenli olduğunun kanıtı değildir. Güvenlik kararı vermeden önce sonuçları özgün duyurular ve kendi ortamınızla doğrulayın.
