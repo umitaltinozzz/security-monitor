@@ -4,7 +4,7 @@ mod app_state;
 mod ipc;
 mod ipc_types;
 
-use std::{fs, path::PathBuf};
+use std::{fs, io, path::PathBuf};
 
 use app_state::{AppState, load_settings};
 use security_monitor_database::Database;
@@ -13,6 +13,43 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+
+fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let window = match app.get_webview_window("main") {
+        Some(window) => window,
+        None => {
+            let config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::NotFound, "main_window_config_missing")
+                })?;
+            tauri::WebviewWindowBuilder::from_config(app, config)?.build()?
+        }
+    };
+    window.show()?;
+    window.set_focus()?;
+    Ok(())
+}
+
+fn destroy_main_window(window: &tauri::Window) {
+    let window = window.clone();
+    let app = window.app_handle().clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        if let Err(error) = window.destroy() {
+            tracing::error!(%error, "failed to destroy the main webview for tray mode");
+        }
+    }) {
+        tracing::error!(%error, "failed to schedule main webview destruction");
+    }
+}
+
+fn should_keep_tray_process_alive(exit_code: Option<i32>) -> bool {
+    exit_code.is_none()
+}
 
 fn main() {
     let builder = tauri::Builder::default();
@@ -27,7 +64,7 @@ fn main() {
     } else {
         builder
     };
-    builder
+    let app = builder
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             fs::create_dir_all(&app_data_dir)?;
@@ -58,9 +95,13 @@ fn main() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        let window_app = app.clone();
+                        if let Err(error) = app.run_on_main_thread(move || {
+                            if let Err(error) = show_main_window(&window_app) {
+                                tracing::error!(%error, "failed to show the main window from the tray");
+                            }
+                        }) {
+                            tracing::error!(%error, "failed to schedule showing the main window");
                         }
                     }
                     "quit" => app.exit(0),
@@ -72,7 +113,7 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                destroy_main_window(window);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -127,6 +168,24 @@ fn main() {
             ipc::collect_server_inventory,
             ipc::get_server_inventory_summary,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Security Monitor");
+        .build(tauri::generate_context!())
+        .expect("failed to build Security Monitor");
+    app.run(|_, event| {
+        if let tauri::RunEvent::ExitRequested { code, api, .. } = event
+            && should_keep_tray_process_alive(code)
+        {
+            api.prevent_exit();
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_keep_tray_process_alive;
+
+    #[test]
+    fn tray_close_keeps_process_alive_but_explicit_exit_does_not() {
+        assert!(should_keep_tray_process_alive(None));
+        assert!(!should_keep_tray_process_alive(Some(0)));
+    }
 }

@@ -47,4 +47,14 @@ Release-mode 50k fixture on Windows 11, Intel Core i7-11800H (8 cores / 16 logic
 
 The initial scan completed in 66.9 seconds. The unchanged startup path completed in 10.2 seconds, below the 30-second target. SQLite used about 95.9 MiB, below the 500 MiB target. The run intentionally had no advisory database, so its partial result is expected and remains unverified; this is a performance measurement, not a security-clean result. One working-set sample during the scan was about 159.6 MiB; this was not a sampled peak, so a stable peak-memory figure remains unverified.
 
-Desktop idle CPU/memory, tray memory, and real Linux agent measurements still need platform-specific runs. Those targets remain unverified until evidence is recorded.
+The Windows desktop/tray sample below records one platform. macOS and Linux desktop samples and real Linux agent measurements remain pending.
+
+## Windows desktop and tray sample
+
+Release-mode Windows 11 sample on the same Intel Core i7-11800H workstation, 2026-10-24. After 30 seconds of warmup and 60 seconds idle with the window open, the desktop process plus six WebView2 descendants used 372.8 MiB summed working set, 82.3 MiB private working set, and 166.7 MiB private commit. Normalized CPU was 0.018% of system capacity. The summed working set is above the 250 MiB target; the result does not pass that conservative measurement. Summed working sets can count shared WebView pages more than once, so all three memory figures are recorded rather than treating the private figure as a substitute.
+
+After closing the window into the tray, the WebView2 descendants exited. A 30-second idle sample contained only `security-monitor-desktop.exe`: 33 MiB working set, 7.8 MiB private commit, and 0% measured normalized CPU. The process remained running with no window. The 33 MiB tray working set is below the 60 MiB target. The tray sample used an isolated app-identifier overlay; the user's default application database was not opened or changed.
+
+The close-to-tray runtime sample used the equivalent exit-policy build before the final switch to Tauri main-thread dispatch. The current dispatch implementation passes workspace tests and a release build, but still needs interactive verification.
+
+These measurements cover one Windows workstation only. macOS and Linux desktop samples, real Linux agent collection time/RSS, and an interactive tray restore/quit check remain pending. The tray restore path is implemented, but the sample verifies close-to-tray process retention and resource use only.
