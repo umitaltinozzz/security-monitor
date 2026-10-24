@@ -1439,7 +1439,7 @@ mod tests {
         assert!(compile.success());
         fs::write(
             context.join("Dockerfile"),
-            "FROM scratch\nCOPY cargo /cargo\n",
+            "FROM scratch\nCOPY cargo /cargo\nENV PATH=/\n",
         )
         .unwrap();
 
