@@ -1,12 +1,12 @@
-name: Signed release
+name: Security Monitor release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "nightly"]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing semantic version tag to build and publish
+        description: Existing semantic version tag or the exact nightly tag
         required: true
         type: string
 
@@ -35,12 +35,18 @@ jobs:
             artifact: macos-aarch64
             platform: darwin
             arch: aarch64
+          - os: macos-latest
+            target: universal-apple-darwin
+            artifact: macos-universal
+            platform: darwin
+            arch: universal
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: linux-x86_64
             platform: linux
             arch: x86_64
     env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       SECMON_UPDATE_PUBLIC_KEY: ${{ vars.SECMON_UPDATE_PUBLIC_KEY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -77,12 +83,18 @@ jobs:
 
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          target: ${{ matrix.target }}
+
+      - name: Install Rust target
+        if: matrix.arch != 'universal'
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install universal macOS Rust targets
+        if: matrix.arch == 'universal'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf musl-tools
 
       - name: Verify release signing configuration
         run: node scripts/release/verify-config.mjs ${{ matrix.platform }}
@@ -100,7 +112,7 @@ jobs:
         run: sudo apt-get install -y minisign
 
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.RELEASE_TAG != 'nightly'
         shell: pwsh
         run: |
           $certificateDirectory = Join-Path $env:RUNNER_TEMP 'security-monitor-signing'
@@ -114,7 +126,7 @@ jobs:
           Remove-Item -LiteralPath $certificateDirectory -Recurse -Force
 
       - name: Import Apple signing certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.RELEASE_TAG != 'nightly'
         shell: bash
         run: |
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/security-monitor.p12"
@@ -132,28 +144,85 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build CLI
+        if: matrix.platform != 'linux' && matrix.arch != 'universal'
         run: cargo build -p secmon --release --target ${{ matrix.target }}
 
-      - name: Build Linux server agent
+      - name: Build static Linux CLI and server agent
         if: matrix.platform == 'linux'
-        run: rustup target add x86_64-unknown-linux-musl && cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          cargo build -p secmon --release --target x86_64-unknown-linux-musl
+          cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
 
       - name: Write Windows signing overlay
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.RELEASE_TAG != 'nightly'
         run: node scripts/release/write-tauri-config.mjs windows target/tauri.release.json
 
-      - name: Build signed desktop packages
-        if: runner.os == 'Windows'
+      - name: Write universal macOS overlay
+        if: matrix.arch == 'universal' && env.RELEASE_TAG != 'nightly'
+        run: node scripts/release/write-tauri-config.mjs universal target/tauri.universal.json
+
+      - name: Write nightly overlay
+        if: env.RELEASE_TAG == 'nightly'
+        run: node scripts/release/write-tauri-config.mjs nightly target/tauri.nightly.json
+
+      - name: Build signed Windows desktop packages
+        if: runner.os == 'Windows' && env.RELEASE_TAG != 'nightly'
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
+      - name: Build signed universal macOS DMG
+        if: matrix.arch == 'universal' && env.RELEASE_TAG != 'nightly'
+        run: pnpm -C apps/desktop tauri build --target universal-apple-darwin --bundles dmg --config ../../target/tauri.universal.json
+
+      - name: Build nightly universal macOS DMG
+        if: matrix.arch == 'universal' && env.RELEASE_TAG == 'nightly'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          WINDOWS_CERTIFICATE: ''
+          WINDOWS_CERTIFICATE_PASSWORD: ''
+          APPLE_CERTIFICATE: ''
+          APPLE_CERTIFICATE_PASSWORD: ''
+          APPLE_SIGNING_IDENTITY: ''
+          APPLE_ID: ''
+          APPLE_PASSWORD: ''
+          APPLE_TEAM_ID: ''
+          APPLE_API_ISSUER: ''
+          APPLE_API_KEY: ''
+          APPLE_API_KEY_CONTENT: ''
+          APPLE_API_KEY_PATH: ''
+          KEYCHAIN_PASSWORD: ''
+        run: pnpm -C apps/desktop tauri build --target universal-apple-darwin --bundles dmg --no-sign --config ../../target/tauri.nightly.json
+
+      - name: Build nightly desktop packages
+        if: matrix.arch != 'universal' && env.RELEASE_TAG == 'nightly'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+          WINDOWS_CERTIFICATE: ''
+          WINDOWS_CERTIFICATE_PASSWORD: ''
+          APPLE_CERTIFICATE: ''
+          APPLE_CERTIFICATE_PASSWORD: ''
+          APPLE_SIGNING_IDENTITY: ''
+          APPLE_ID: ''
+          APPLE_PASSWORD: ''
+          APPLE_TEAM_ID: ''
+          APPLE_API_ISSUER: ''
+          APPLE_API_KEY: ''
+          APPLE_API_KEY_CONTENT: ''
+          APPLE_API_KEY_PATH: ''
+          KEYCHAIN_PASSWORD: ''
+        run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --no-sign --config ../../target/tauri.nightly.json
+
       - name: Build signed desktop packages
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.arch != 'universal' && env.RELEASE_TAG != 'nightly'
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
 
       - name: Stage release files
-        run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }}
+        run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }} ${{ env.RELEASE_TAG == 'nightly' && 'nightly' || 'stable' }}
 
       - name: Sign and verify CLI and agent binaries
+        if: matrix.arch != 'universal'
         run: node scripts/release/sign-binaries.mjs target/release-out/${{ matrix.artifact }}
 
       - name: Upload release files
@@ -172,6 +241,7 @@ jobs:
       contents: write
       actions: read
     env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
       MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
     steps:
@@ -195,9 +265,12 @@ jobs:
           path: target/release-assets
 
       - name: Create signed updater manifest and checksums
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        if: env.RELEASE_TAG != 'nightly'
         run: node scripts/release/create-manifest.mjs target/release-assets "$RELEASE_TAG"
+
+      - name: Create nightly checksums
+        if: env.RELEASE_TAG == 'nightly'
+        run: node scripts/release/create-checksums.mjs target/release-assets
 
       - name: Sign and verify release checksums
         run: node scripts/release/sign-binaries.mjs target/release-assets --checksums
