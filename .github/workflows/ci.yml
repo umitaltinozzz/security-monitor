@@ -55,7 +55,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $env:CARGO_TARGET_DIR | Out-Null
+          $testTemp = Join-Path $env:CARGO_TARGET_DIR 'test-temp'
+          New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $env:CARGO_TARGET_DIR, $testTemp | Out-Null
+          Add-Content -Path $env:GITHUB_ENV -Value "TEMP=$testTemp"
+          Add-Content -Path $env:GITHUB_ENV -Value "TMP=$testTemp"
 
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v2
