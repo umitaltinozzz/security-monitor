@@ -44,6 +44,8 @@ jobs:
       SECMON_UPDATE_PUBLIC_KEY: ${{ vars.SECMON_UPDATE_PUBLIC_KEY }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+      MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
       WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
       SECMON_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.SECMON_WINDOWS_CERTIFICATE_THUMBPRINT }}
@@ -84,6 +86,18 @@ jobs:
 
       - name: Verify release signing configuration
         run: node scripts/release/verify-config.mjs ${{ matrix.platform }}
+
+      - name: Install minisign on Windows
+        if: runner.os == 'Windows'
+        run: choco install minisign --yes --no-progress
+
+      - name: Install minisign on macOS
+        if: runner.os == 'macOS'
+        run: brew install minisign
+
+      - name: Install minisign on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y minisign
 
       - name: Import Windows signing certificate
         if: runner.os == 'Windows'
@@ -139,6 +153,9 @@ jobs:
       - name: Stage release files
         run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }}
 
+      - name: Sign and verify CLI and agent binaries
+        run: node scripts/release/sign-binaries.mjs target/release-out/${{ matrix.artifact }}
+
       - name: Upload release files
         uses: actions/upload-artifact@v5.0.0
         with:
@@ -154,6 +171,9 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+      MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -165,6 +185,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
       - name: Download platform release files
         uses: actions/download-artifact@v6.0.0
         with:
@@ -175,6 +198,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: node scripts/release/create-manifest.mjs target/release-assets "$RELEASE_TAG"
+
+      - name: Sign and verify release checksums
+        run: node scripts/release/sign-binaries.mjs target/release-assets --checksums
 
       - name: Publish GitHub release
         env:

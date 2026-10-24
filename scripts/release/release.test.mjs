@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { signReleaseBinaries, signReleaseChecksums } from './sign-binaries.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const scripts = join(repositoryRoot, 'scripts', 'release');
@@ -33,6 +35,86 @@ test('Windows release config accepts a certificate thumbprint without writing si
   assert.equal(JSON.stringify(config).includes('PASSWORD'), false);
 });
 
+test('signed releases require minisign keys without echoing secret values', () => {
+  const common = {
+    SECMON_UPDATE_PUBLIC_KEY: 'updater-public-fixture',
+    TAURI_SIGNING_PRIVATE_KEY: 'updater-private-fixture',
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'updater-password-fixture',
+  };
+  const missing = run('verify-config.mjs', ['linux'], {
+    env: { ...common, MINISIGN_PRIVATE_KEY: '', MINISIGN_PUBLIC_KEY: '' },
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /MINISIGN_PRIVATE_KEY, MINISIGN_PUBLIC_KEY/);
+  assert.equal(missing.stderr.includes('fixture'), false);
+
+  const configured = run('verify-config.mjs', ['linux'], {
+    env: { ...common, MINISIGN_PRIVATE_KEY: 'minisign-private-fixture', MINISIGN_PUBLIC_KEY: 'minisign-public-fixture' },
+  });
+  assert.equal(configured.status, 0, configured.stderr);
+});
+
+test('CLI and agent binaries receive minisign signatures that are verified before staging', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'secmon-minisign-binaries-'));
+  const cli = join(directory, 'secmon-windows-x86_64.exe');
+  const agent = join(directory, 'secmon-agent-linux-x86_64');
+  const packageFile = join(directory, 'security-monitor-windows-x86_64-setup.msi');
+  await Promise.all([
+    writeFile(cli, 'cli fixture'),
+    writeFile(agent, 'agent fixture'),
+    writeFile(packageFile, 'package fixture'),
+  ]);
+  const calls = [];
+  const privateKey = 'private fixture key';
+  let privateKeyPath;
+  const runMinisignFixture = (executable, args) => {
+    assert.equal(executable, 'minisign');
+    calls.push(args);
+    if (args[0] === '-S') {
+      assert.ok(args.includes('-W'));
+      privateKeyPath = args[args.indexOf('-s') + 1];
+      assert.equal(readFileSync(privateKeyPath, 'utf8').trim(), privateKey);
+      writeFileSync(args[args.indexOf('-x') + 1], 'fixture signature');
+    } else {
+      assert.equal(args[0], '-V');
+      assert.ok(readFileSync(args[args.indexOf('-x') + 1], 'utf8').length > 0);
+      assert.ok(readFileSync(args[args.indexOf('-p') + 1], 'utf8').includes('public fixture key'));
+    }
+    return { status: 0 };
+  };
+
+  await signReleaseBinaries(directory, {
+    env: { MINISIGN_PRIVATE_KEY: privateKey, MINISIGN_PUBLIC_KEY: 'public fixture key' },
+    run: runMinisignFixture,
+  });
+
+  assert.equal(calls.filter((args) => args[0] === '-S').length, 2);
+  assert.equal(calls.filter((args) => args[0] === '-V').length, 2);
+  assert.ok(calls.every((args) => !args.includes(privateKey)));
+  assert.ok((await readFile(`${cli}.minisig`, 'utf8')).length > 0);
+  assert.ok((await readFile(`${agent}.minisig`, 'utf8')).length > 0);
+  await assert.rejects(readFile(privateKeyPath, 'utf8'));
+  await assert.rejects(readFile(`${packageFile}.minisig`, 'utf8'));
+});
+
+test('release checksum manifest is minisign signed and verified', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'secmon-minisign-checksums-'));
+  const checksumFile = join(directory, 'SHA256SUMS');
+  await writeFile(checksumFile, 'abc  secmon-linux-x86_64\n');
+  const calls = [];
+  await signReleaseChecksums(directory, {
+    env: { MINISIGN_PRIVATE_KEY: 'private fixture key', MINISIGN_PUBLIC_KEY: 'public fixture key' },
+    run: (_executable, args) => {
+      calls.push(args);
+      if (args[0] === '-S') writeFileSync(args[args.indexOf('-x') + 1], 'checksum signature');
+      return { status: 0 };
+    },
+  });
+
+  assert.deepEqual(calls.map((args) => args[0]), ['-S', '-V']);
+  assert.ok((await readFile(`${checksumFile}.minisig`, 'utf8')).length > 0);
+});
+
 test('release manifest requires all signed targets and writes offline checksums', async () => {
   const root = await mkdtemp(join(tmpdir(), 'secmon-release-manifest-'));
   const artifacts = join(root, 'release-assets');
@@ -57,6 +139,12 @@ test('release manifest requires all signed targets and writes offline checksums'
       mapped[target] = { asset, signature: `signature:${target}` };
     }
     await writeFile(join(directory, `${artifact}.updater.json`), JSON.stringify(mapped));
+    if (artifact === 'linux-x86_64') {
+      await writeFile(join(directory, 'secmon-linux-x86_64'), 'CLI binary');
+      await writeFile(join(directory, 'secmon-linux-x86_64.minisig'), 'CLI Minisign signature');
+      await writeFile(join(directory, 'secmon-agent-linux-x86_64'), 'agent binary');
+      await writeFile(join(directory, 'secmon-agent-linux-x86_64.minisig'), 'agent Minisign signature');
+    }
   }
 
   const result = run('create-manifest.mjs', [artifacts, 'v0.1.0'], { cwd: root });
@@ -69,6 +157,8 @@ test('release manifest requires all signed targets and writes offline checksums'
   const sums = await readFile(join(artifacts, 'SHA256SUMS'), 'utf8');
   assert.match(sums, /latest\.json/);
   assert.match(sums, /linux\.AppImage/);
+  assert.match(sums, /secmon-linux-x86_64\.minisig/);
+  assert.match(sums, /secmon-agent-linux-x86_64\.minisig/);
 });
 
 test('release manifest rejects an incomplete platform matrix', async () => {

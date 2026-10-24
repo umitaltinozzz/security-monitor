@@ -1,5 +1,11 @@
 const [, , platform] = process.argv;
-const required = ['SECMON_UPDATE_PUBLIC_KEY', 'TAURI_SIGNING_PRIVATE_KEY', 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD'];
+const required = [
+  'SECMON_UPDATE_PUBLIC_KEY',
+  'TAURI_SIGNING_PRIVATE_KEY',
+  'TAURI_SIGNING_PRIVATE_KEY_PASSWORD',
+  'MINISIGN_PRIVATE_KEY',
+  'MINISIGN_PUBLIC_KEY',
+];
 if (!['windows', 'darwin', 'linux'].includes(platform)) throw new Error('Release platform is invalid.');
 
 const missing = required.filter((name) => !process.env[name]?.trim());

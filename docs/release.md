@@ -13,11 +13,13 @@ Add these repository Actions variables and secrets before creating a release tag
 
 | Platform | Required configuration |
 | --- | --- |
-| All | Variable `SECMON_UPDATE_PUBLIC_KEY`; secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` |
+| All | Variables `SECMON_UPDATE_PUBLIC_KEY` and `MINISIGN_PUBLIC_KEY`; secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and `MINISIGN_PRIVATE_KEY` |
 | Windows | Variable `SECMON_WINDOWS_CERTIFICATE_THUMBPRINT`; secrets `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD` |
 | macOS | Variables `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`, `APPLE_API_ISSUER`; secrets `APPLE_CERTIFICATE` (base64 P12), `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_API_KEY` (key ID), `APPLE_API_KEY_CONTENT` (base64 API key file), and `KEYCHAIN_PASSWORD` |
 
-The update public key must match the private key used by Tauri. Windows packages use Authenticode signing. macOS packages are signed and notarized. Linux update payloads use Tauri's signed updater metadata; Linux desktop packages themselves are not Authenticode-style signed. `SHA256SUMS` covers published files for independent transfer checks.
+The update public key must match the private key used by Tauri. Windows packages use Authenticode signing. macOS packages are signed and notarized. Linux update payloads use Tauri's signed updater metadata; Linux desktop packages themselves are not Authenticode-style signed. Release CLI and agent binaries are accompanied by `.minisig` signatures. The published `SHA256SUMS` manifest is also signed as `SHA256SUMS.minisig`.
+
+Use Minisign 0.11 or newer to create an unencrypted signing key pair for CI (`minisign -G -W`). Keep the private key only in the `MINISIGN_PRIVATE_KEY` Actions secret and the public key in the `MINISIGN_PUBLIC_KEY` Actions variable. Verify downloaded CLI or agent binaries and the checksum manifest with `minisign -Vm <file> -p <minisign.pub>` before using them; then compare package hashes with `SHA256SUMS`.
 
 ## Create a release
 
