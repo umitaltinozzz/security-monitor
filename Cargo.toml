@@ -16,6 +16,8 @@ members = [
     "crates/agent-protocol",
     "crates/agent-transport",
     "crates/remediation",
+    "crates/reporting",
+    "crates/integrations",
     "agents/linux",
 ]
 resolver = "3"

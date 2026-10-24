@@ -13,12 +13,22 @@ path = "src/main.rs"
 [dependencies]
 chrono = { workspace = true }
 clap = { workspace = true }
+hex = { workspace = true }
+security-monitor-advisory-providers = { version = "0.1.0", path = "../../crates/advisory-providers" }
+security-monitor-agent-protocol = { version = "0.1.0", path = "../../crates/agent-protocol" }
+security-monitor-agent-transport = { version = "0.1.0", path = "../../crates/agent-transport" }
 security-monitor-ai = { version = "0.1.0", path = "../../crates/ai" }
 security-monitor-core = { version = "0.1.0", path = "../../crates/core" }
 security-monitor-database = { version = "0.1.0", path = "../../crates/database" }
+security-monitor-integrations = { version = "0.1.0", path = "../../crates/integrations" }
+security-monitor-inventory = { version = "0.1.0", path = "../../crates/inventory" }
 security-monitor-mcp-server = { version = "0.1.0", path = "../../crates/mcp-server" }
+security-monitor-reporting = { version = "0.1.0", path = "../../crates/reporting" }
+security-monitor-scanner-adapters = { version = "0.1.0", path = "../../crates/scanner-adapters" }
+security-monitor-scan-orchestrator = { version = "0.1.0", path = "../../crates/scan-orchestrator" }
+serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
-
-[dev-dependencies]
+sha2 = { workspace = true }
 tempfile = "3"
+tokio = { workspace = true }
+uuid = { workspace = true }

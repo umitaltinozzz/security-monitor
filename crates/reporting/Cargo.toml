@@ -1,0 +1,21 @@
+[package]
+name = "security-monitor-reporting"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Offline JSON, SARIF, CycloneDX and OpenVEX reports for Security Monitor"
+
+[dependencies]
+chrono = { workspace = true }
+jsonschema = { version = "0.60.1", default-features = false }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-database = { version = "0.1.0", path = "../database" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

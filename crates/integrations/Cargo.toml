@@ -1,0 +1,21 @@
+[package]
+name = "security-monitor-integrations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local configuration and lifecycle hooks for AI coding agent integrations"
+
+[dependencies]
+hex = { workspace = true }
+security-monitor-agent-transport = { version = "0.1.0", path = "../agent-transport" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tempfile = "3"
+thiserror = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }
+zeroize = "1"

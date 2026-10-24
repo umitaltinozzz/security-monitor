@@ -5,7 +5,7 @@ description: Alias merging, version matching, fingerprints, deterministic priori
 
 # Finding correlation
 
-The `correlation` crate combines advisory records with local component inventory. It is a Rust library; the current desktop and CLI do not yet invoke the full scan workflow.
+The `correlation` crate combines advisory records with local component inventory. The desktop scan workflow and CLI quick scan use the local orchestration and reporting services to surface these findings. Scanner coverage and advisory freshness still determine whether a result is verified.
 
 ## Advisory aliases
 

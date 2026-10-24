@@ -13,6 +13,6 @@ hero:
       variant: minimal
 ---
 
-> **Development status:** the product is under active development. The current build includes local Rust libraries for dependency inventory, advisory ingestion, scanner adapters, and finding correlation, plus a desktop shell and a CLI with help/version output. The desktop app and CLI do not yet connect these libraries into an end-to-end scan workflow.
+> **Development status:** the product is under active development. The desktop app and `secmon` CLI provide local project scans and review, reports, advisory refresh, diagnostics, approved server collection, Git hooks, coding-agent integrations, AI request review, and a read-only MCP server. Missing, stale, partial, or unverified evidence remains `needs_review`; the current build is not a guarantee of complete protection.
 
-These pages describe implemented libraries and clearly mark planned application behavior. A library feature is not yet available as an end-user workflow until the desktop app or CLI connects and verifies it.
+These pages describe implemented workflows and clearly mark their limits. Some deeper orchestration and agent-to-agent shared-memory features remain out of scope for the current build.

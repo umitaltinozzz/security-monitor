@@ -16,12 +16,12 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - Masaüstü, kullanıcı onaylı HTTPS webhook/Slack/Discord ve TLS SMTP bildirimleri; sırlar OS anahtarlığında tutulur, hedef onayı kaydedilir, tekilleştirme ve erteleme desteklenir.
 - Sürümlemeli sunucu envanter protokolü, salt okunur ve root gerektirmeyen Linux ajanı, OS anahtarlığında SSH eşleştirme anahtarı, zorunlu komut kısıtlamaları, host-key sabitleme, SSH yapılandırmasından host keşfi ve sabit komutlu ajansız toplama API'si.
 - Tauri masaüstü uygulaması: proje ekleme/tarama, bulgu inceleme, sunucu eşleştirme ve envanter onayı, AI sağlayıcı ayarları, redakte istem incelemesi, bütçe sınırları ve yerel MCP sunucusu.
-- `secmon --help`, `secmon --version` ve salt okunur veritabanıyla çalışan `secmon mcp` CLI komutları.
+- Yerel tarama/raporlama, advisory önbelleği güncelleme, tanılama, onaylı sunucu toplama, Git hook'ları ve Claude Code/Codex/OpenCode entegrasyonları sunan `secmon` CLI.
 - Linux sunucu envanterinde çalışan/kurulu kernel farkı, silinmiş paylaşımlı kütüphaneleri kullanan süreçler ve `/opt` ile `/usr/local` altındaki izinli manuel binary'ler görünür; eksik veya tanınmayan kanıt kısmi/doğrulanmamış kalır.
 - RSS/Atom güvenlik haberleri ürün adıyla yerel eşleştirilir, bulgulardan ayrı gösterilir ve yalnızca tam CVE/GHSA kimliği geldiğinde advisory'ye bağlanır; tek başına zafiyet bulgusu üretmez.
 - Düzeltme istekleri onaylı izole Git worktree'lerinde hazırlanır; testler ağ kapalı sandbox içinde ve kullanıcı onayıyla çalışır.
 
-Rapor biçimleri, `secmon hook`, `secmon integrate` ve ajanlar arası ortak hafıza yol haritasındadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
+Raporlama, `secmon hook` ve `secmon integrate` CLI akışları uygulanmıştır. Ajanlar arası ortak hafıza ve kalan sürüm kapsamı yol haritasındadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
 
 ## Yol haritası
 
@@ -32,10 +32,10 @@ Kalan v1.0 kapsamı bu kitaplıkları masaüstü/CLI yönetim akışlarına bağ
 | Araç | Temel odak | Security Monitor ile ilişkisi |
 | --- | --- | --- |
 | [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Depo bağımlılıklarındaki açıklara uyarı verir ve güvenlik güncelleme pull request'leri açabilir. | Security Monitor bir bağımlılık güncelleyici değildir; hedefi yerel envanteri dağıtım kanıtlarıyla ilişkilendirmektir. |
-| [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Security Monitor'da Trivy adaptör kitaplığı vardır; mevcut uygulama henüz bu adaptörü çağırmaz. Ürün hedefi ayrıca repo ile production kanıtını ilişkilendirir. |
-| [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor'da envanter, advisory ve tarayıcı adaptör kitaplıkları vardır; mevcut uygulama henüz bunları çağırmaz. |
+| [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Security Monitor'ın yerel tarama akışı Trivy adaptörünü kullanabilir ve sonucu dağıtım kanıtıyla ilişkilendirir. |
+| [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor yerel envanter, önbelleğe alınmış advisory verisi ve tarayıcı kanıtını aynı bulgu akışında birleştirir. |
 
-Security Monitor'ın hedefi yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirmektir. Envanter, advisory, tarayıcı adaptörü, korelasyon ve orkestrasyon kitaplıkları vardır; ancak bunları dağıtım kanıtlarına ve arayüze bağlayan kullanıcı iş akışı henüz uygulanmadı.
+Security Monitor yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirir. Eksik, eski veya doğrulanmamış veri temiz sonuç sayılmaz.
 
 ## Hedef mimari
 
@@ -68,7 +68,7 @@ pnpm install --frozen-lockfile
 pnpm -C apps/desktop tauri dev
 ```
 
-Bu komut mevcut masaüstü kabuğunu açar; proje izleme ekranları henüz uygulanmadı.
+Bu komut masaüstü uygulamasını geliştirme modunda açar.
 
 ### CLI
 
@@ -77,10 +77,11 @@ Bu komut mevcut masaüstü kabuğunu açar; proje izleme ekranları henüz uygul
 ```text
 cargo run -p secmon -- --help
 cargo run -p secmon -- --version
+cargo run -p secmon -- scan <project-path> --offline
 cargo run -p secmon -- mcp
 ```
 
-`secmon mcp`, mevcut SQLite veritabanını salt okunur açıp yalnızca AI ayarlarında etkin araçları stdio üzerinden sunar. Ayrıntılar için [Yerel MCP](docs/local-mcp.md) belgesine bakın.
+`secmon scan`, yerel advisory önbelleğini kullanarak tarama yapar; rapor, tanılama, hook ve ajan entegrasyonu komutları için [CLI](docs/cli.md) belgesine bakın. `secmon mcp`, mevcut SQLite veritabanını salt okunur açıp yalnızca AI ayarlarında etkin ve kullanıcı denetim günlüğüyle onaylanmış araçları stdio üzerinden sunar. Ajan kurulum adımları [Entegrasyonlar](docs/integrations.md) belgesindedir.
 
 ### Linux ajanı
 
@@ -101,7 +102,7 @@ OpenAI-compatible HTTPS, Anthropic ve loopback yerel sağlayıcılar kullanıcı
 
 ## Güvenlik verisi ve kaynak gösterimi
 
-Sağlayıcı kitaplığı kamuya açık güvenlik duyurusu verilerini indirebilir; ancak mevcut masaüstü uygulaması ve CLI bu kitaplığı çağırmaz. Kullanılan kaynaklar, güncellik kuralları ve atıflar [Veri kaynakları](docs/data-sources.md) belgesindedir. cve.now özeti gösterildiğinde [cve.now](https://cve.now/) atfı ve [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) lisans bağlantısı verilmelidir. cve.now tarafından birleştirilen diğer veriler farklı kaynak koşullarına tabi olabilir. NVD verisi kullanıldığında şu bildirim gösterilmelidir: “This product uses data from the NVD API but is not endorsed or certified by the NVD.” Eksik, eski veya doğrulanmamış veri temiz sonuç sayılmamalıdır.
+Masaüstü ve CLI, kullanıcı ayarlarında kamuya açık indirmeler etkinleştirilip güncelleme açıkça başlatıldığında güvenlik duyurusu verilerini indirebilir. Kullanılan kaynaklar, güncellik kuralları ve atıflar [Veri kaynakları](docs/data-sources.md) belgesindedir. cve.now özeti gösterildiğinde [cve.now](https://cve.now/) atfı ve [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) lisans bağlantısı verilmelidir. cve.now tarafından birleştirilen diğer veriler farklı kaynak koşullarına tabi olabilir. NVD verisi kullanıldığında şu bildirim gösterilmelidir: “This product uses data from the NVD API but is not endorsed or certified by the NVD.” Eksik, eski veya doğrulanmamış veri temiz sonuç sayılmamalıdır.
 
 ## Belgeler
 
@@ -118,6 +119,7 @@ Sağlayıcı kitaplığı kamuya açık güvenlik duyurusu verilerini indirebili
 - [Yapay zekâ sağlayıcıları](docs/ai-providers.md)
 - [Yerel MCP](docs/local-mcp.md)
 - [CLI](docs/cli.md)
+- [Kodlama ajanı entegrasyonları](docs/integrations.md)
 - [Katkıda bulunma](CONTRIBUTING.md)
 
 ## Katkıda bulunma ve güvenlik

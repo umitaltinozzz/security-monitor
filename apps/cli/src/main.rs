@@ -1,6 +1,9 @@
-use std::{env, path::PathBuf, sync::Arc};
+mod commands;
+mod hooks;
 
-use clap::{Parser, Subcommand};
+use std::{env, io::Write, path::PathBuf, sync::Arc};
+
+use clap::{Parser, Subcommand, ValueEnum};
 use security_monitor_ai::{AiSettings, ToolPermission};
 use security_monitor_core::{AuditEvent, AuditResult};
 use security_monitor_database::Database;
@@ -9,6 +12,9 @@ use security_monitor_mcp_server::{McpServer, WorkspaceTools, supported_tools};
 #[derive(Debug, Parser)]
 #[command(version, about = "Security Monitor command-line interface")]
 struct Arguments {
+    /// Use a specific Security Monitor database.
+    #[arg(long, global = true)]
+    database: Option<PathBuf>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -16,21 +22,181 @@ struct Arguments {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Start the local stdio MCP server. Tools come from local AI permissions.
-    Mcp {
-        /// Use a specific existing Security Monitor database.
+    Mcp {},
+    /// Scan a local project using its cached inventory and advisory data.
+    Scan {
+        path: PathBuf,
+        #[arg(long, default_value = "table")]
+        format: String,
         #[arg(long)]
-        database: Option<PathBuf>,
+        fail_on: Option<String>,
+        #[arg(long)]
+        offline: bool,
     },
+    /// Export a report from the local database.
+    Report {
+        #[arg(long, default_value = "json")]
+        format: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Manage local advisory databases.
+    Db {
+        #[command(subcommand)]
+        command: DatabaseCommand,
+    },
+    /// Check the local database, advisory cache, and scanner availability.
+    Doctor,
+    /// Collect an explicitly approved inventory from a paired server.
+    Server {
+        #[command(subcommand)]
+        command: ServerCommand,
+    },
+    /// Manage repository Git hooks.
+    Hook {
+        #[command(subcommand)]
+        command: HookCommand,
+    },
+    /// Install or remove a coding-agent integration.
+    Integrate {
+        #[arg(required = true, num_args = 1..=2)]
+        parts: Vec<String>,
+        #[arg(long, value_enum, default_value = "user")]
+        scope: IntegrationScope,
+        #[arg(long)]
+        project: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
+        /// Confirm installation without an interactive prompt.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DatabaseCommand {
+    /// Download OSV archives for configured ecosystems. Requires public downloads to be enabled.
+    Update {
+        #[arg(long, value_delimiter = ',')]
+        ecosystems: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ServerCommand {
+    Collect {
+        asset: String,
+        /// Confirm transfer of this server's inventory to the local device.
+        #[arg(long)]
+        approve_transfer: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum HookCommand {
+    Install {
+        #[arg(long, group = "hook_kind")]
+        pre_push: bool,
+        #[arg(long, group = "hook_kind")]
+        pre_commit: bool,
+        #[arg(long, value_enum, default_value = "warn")]
+        mode: HookMode,
+        #[arg(long, default_value = "high")]
+        fail_on: String,
+    },
+    Uninstall {
+        #[arg(long, group = "hook_kind")]
+        pre_push: bool,
+        #[arg(long, group = "hook_kind")]
+        pre_commit: bool,
+    },
+    Run {
+        #[arg(long, value_enum, default_value = "warn")]
+        mode: HookMode,
+        #[arg(long, default_value = "high")]
+        fail_on: String,
+        #[arg(long, group = "hook_kind")]
+        pre_push: bool,
+        #[arg(long, group = "hook_kind")]
+        pre_commit: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum HookMode {
+    Warn,
+    Block,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum IntegrationScope {
+    User,
+    Project,
 }
 
 #[tokio::main]
 async fn main() {
     let arguments = Arguments::parse();
-    if let Some(Command::Mcp { database }) = arguments.command
-        && let Err(error) = run_mcp(database).await
-    {
+    let database_path = arguments.database;
+    let result = match arguments.command {
+        Some(Command::Mcp {}) => run_mcp(database_path).await.map(|()| 0),
+        Some(Command::Scan {
+            path,
+            format,
+            fail_on,
+            offline,
+        }) => commands::run_scan(path, database_path, &format, fail_on.as_deref(), offline).await,
+        Some(Command::Report { format, project }) => {
+            commands::run_report(database_path, &format, project.as_deref()).await
+        }
+        Some(Command::Db { command }) => match command {
+            DatabaseCommand::Update { ecosystems } => {
+                commands::run_database_update(database_path, ecosystems).await
+            }
+        },
+        Some(Command::Doctor) => commands::run_doctor(database_path).await,
+        Some(Command::Server { command }) => match command {
+            ServerCommand::Collect {
+                asset,
+                approve_transfer,
+            } => commands::run_server_collect(database_path, &asset, approve_transfer).await,
+        },
+        Some(Command::Hook { command }) => match command {
+            HookCommand::Install {
+                pre_push,
+                pre_commit,
+                mode,
+                fail_on,
+            } => commands::run_hook_install(pre_push, pre_commit, mode, &fail_on),
+            HookCommand::Uninstall {
+                pre_push,
+                pre_commit,
+            } => commands::run_hook_uninstall(pre_push, pre_commit),
+            HookCommand::Run {
+                mode,
+                fail_on,
+                pre_push,
+                pre_commit,
+            } => commands::run_hook(database_path, mode, &fail_on, pre_push, pre_commit).await,
+        },
+        Some(Command::Integrate {
+            parts,
+            scope,
+            project,
+            dry_run,
+            yes,
+        }) => commands::run_integrate(parts, scope, project, dry_run, yes),
+        None => Ok(0),
+    };
+    if let Err(error) = result {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+    if let Ok(code) = result
+        && code != 0
+    {
+        let _ = std::io::stdout().flush();
+        std::process::exit(code);
     }
 }
 
@@ -136,7 +302,8 @@ async fn workspace_tools(
     }) {
         let enabled = match event.action.as_str() {
             "mcp_source_access_permission_enabled" => true,
-            "mcp_source_access_permission_revoked" => false,
+            "mcp_source_access_permission_revocation_requested"
+            | "mcp_source_access_permission_revoked" => false,
             _ => continue,
         };
         let Some(project_id) = event.scope.resource_id else {
@@ -413,6 +580,30 @@ mod tests {
         let response = server.process(&call).await.unwrap();
         assert_eq!(response.pointer("/result/isError"), Some(&json!(false)));
         assert!(response.to_string().contains("approved content"));
+
+        database
+            .repository::<AuditEvent>()
+            .create(&AuditEvent {
+                id: "audit-revoke-requested".into(),
+                timestamp: Utc::now(),
+                actor: "user".into(),
+                action: "mcp_source_access_permission_revocation_requested".into(),
+                scope: AuditScope {
+                    resource_type: "project".into(),
+                    resource_id: Some("project-1".into()),
+                },
+                result: AuditResult::Succeeded,
+            })
+            .await
+            .unwrap();
+        let server = McpServer::new(
+            Arc::new(workspace_tools(&database, &settings, root.path()).await),
+            audited_enabled_tool_names(&database, &settings)
+                .await
+                .unwrap(),
+        );
+        let response = server.process(&call).await.unwrap();
+        assert_eq!(response.pointer("/result/isError"), Some(&json!(true)));
     }
 
     #[tokio::test]

@@ -5,7 +5,7 @@ description: Supported local scanners, data handling, offline behavior, and outp
 
 # Scanner adapters
 
-`security-monitor-scanner-adapters` is a local Rust library for detecting scanner installations, running supported scan modes, downloading pinned scanner binaries after explicit approval, and normalizing recorded JSON output. The `scan-orchestrator` library invokes it for full-profile scans; the desktop app and CLI do not invoke that workflow yet.
+`security-monitor-scanner-adapters` is a local Rust library for detecting scanner installations, running supported scan modes, downloading pinned scanner binaries after explicit approval, and normalizing recorded JSON output. The desktop full-scan workflow uses these adapters through `scan-orchestrator`. The CLI currently runs the Quick profile, which parses manifests and matches the local advisory cache without starting external scanners.
 
 ## Supported engines
 
@@ -21,7 +21,7 @@ Engine detection reports missing, outdated, unsupported, or unverified engines e
 
 `NormalizedScan.complete` means the process returned parseable output without detected path or process errors. It is not a safety verdict and does not verify vulnerability database freshness. Consumers must combine it with verified, current scanner data and must never turn an absent or stale data source into a green state. Scanner output paths are canonicalized and kept inside the selected project; secret values and code excerpts are not retained.
 
-Golden normalization fixtures are under `tests/fixtures/scanner-adapters/`. The orchestration library can run the adapters locally, but the current desktop and CLI do not start project scans.
+Golden normalization fixtures are under `tests/fixtures/scanner-adapters/`. The desktop app can start full project scans; `secmon scan` starts a local Quick scan and does not currently expose the external scanner modes.
 
 ## Upstream references
 

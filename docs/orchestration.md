@@ -5,7 +5,7 @@ description: Local scan queues, scheduling, file watching, startup checks, and p
 
 # Scan orchestration and notifications
 
-`security-monitor-scan-orchestrator` coordinates local project scans. It does not start scans from the current desktop shell or CLI yet; applications can use the library through its typed Rust API.
+`security-monitor-scan-orchestrator` coordinates local project scans. The desktop app can start quick and full scans; `secmon scan` currently starts the Quick profile using local inventory and cached advisory data.
 
 ## Queue and profiles
 

@@ -20,6 +20,7 @@ const publicPages = [
   'ai-providers.md',
   'local-mcp.md',
   'cli.md',
+  'integrations.md',
   'contributing.md',
   'security.md',
 ];

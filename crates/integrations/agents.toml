@@ -1,0 +1,32 @@
+[agents.claude-code]
+display_name = "Claude Code"
+mcp_format = "claude_json"
+mcp_path_project = ".mcp.json"
+mcp_path_user = ".claude.json"
+skill_path_project = ".claude/skills/secmon/SKILL.md"
+skill_path_user = ".claude/skills/secmon/SKILL.md"
+hook_format = "claude_json"
+hook_path_project = ".claude/settings.json"
+hook_path_user = ".claude/settings.json"
+
+[agents.codex]
+display_name = "Codex"
+mcp_format = "codex_toml"
+mcp_path_project = ".codex/config.toml"
+mcp_path_user = ".codex/config.toml"
+skill_path_project = ".agents/skills/secmon/SKILL.md"
+skill_path_user = ".agents/skills/secmon/SKILL.md"
+hook_format = "codex_json"
+hook_path_project = ".codex/hooks.json"
+hook_path_user = ".codex/hooks.json"
+
+[agents.opencode]
+display_name = "OpenCode"
+mcp_format = "opencode_json"
+mcp_path_project = "opencode.json"
+mcp_path_user = ".config/opencode/opencode.json"
+skill_path_project = ".opencode/skills/secmon/SKILL.md"
+skill_path_user = ".config/opencode/skills/secmon/SKILL.md"
+hook_format = "opencode_plugin"
+hook_path_project = ".opencode/plugins/secmon.js"
+hook_path_user = ".config/opencode/plugins/secmon.js"

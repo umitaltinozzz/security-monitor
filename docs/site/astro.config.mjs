@@ -35,6 +35,7 @@ export default defineConfig({
             { label: 'AI providers', link: '/ai-providers/' },
             { label: 'Local MCP', link: '/local-mcp/' },
             { label: 'CLI', link: '/cli/' },
+            { label: 'Coding-agent integrations', link: '/integrations/' },
           ],
         },
         {

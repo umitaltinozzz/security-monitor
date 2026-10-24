@@ -48,9 +48,10 @@ impl CredentialStore for OsCredentialStore {
         validate_reference(reference)?;
         let entry =
             Entry::new(SERVICE, reference).map_err(|_| CredentialError::StoreUnavailable)?;
-        entry
-            .delete_credential()
-            .map_err(|_| CredentialError::StoreUnavailable)
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(_) => Err(CredentialError::StoreUnavailable),
+        }
     }
 }
 

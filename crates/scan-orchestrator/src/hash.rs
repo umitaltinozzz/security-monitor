@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeSet,
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use sha2::{Digest, Sha256};
@@ -141,47 +141,8 @@ fn collect_files(
 }
 
 pub(crate) fn is_dependency_input(path: &Path, root: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    if matches!(
-        name,
-        "package.json"
-            | "package-lock.json"
-            | "pnpm-lock.yaml"
-            | "yarn.lock"
-            | "bun.lock"
-            | "poetry.lock"
-            | "uv.lock"
-            | "Pipfile.lock"
-            | "Pipfile"
-            | "pyproject.toml"
-            | "composer.json"
-            | "composer.lock"
-            | "go.mod"
-            | "go.sum"
-            | "Cargo.toml"
-            | "Cargo.lock"
-    ) || (name.starts_with("requirements")
-        && Path::new(name)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("txt")))
-    {
-        return true;
-    }
-    if name == "Dockerfile" || name.starts_with("Dockerfile.") {
-        return true;
-    }
-    let Ok(relative) = path.strip_prefix(root) else {
-        return false;
-    };
-    let components = relative.components().collect::<Vec<_>>();
-    components.windows(2).any(|pair| {
-        pair[0] == Component::Normal(".github".as_ref())
-            && pair[1] == Component::Normal("workflows".as_ref())
-    }) && Path::new(name)
-        .extension()
-        .is_some_and(|extension| matches!(extension.to_str(), Some("yml" | "yaml")))
+    path.strip_prefix(root)
+        .is_ok_and(security_monitor_inventory::is_dependency_file)
 }
 
 fn is_pruned_directory(name: &str) -> bool {

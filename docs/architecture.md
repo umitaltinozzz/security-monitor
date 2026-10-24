@@ -7,7 +7,7 @@ description: Current implementation, target components, and trust boundaries.
 
 ## Current implementation
 
-The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains a Tauri 2 + React shell, and `apps/cli` contains the `secmon` binary, which currently exposes help and version output. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local orchestration and notifications, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). The desktop and CLI do not yet run the end-to-end workflow; user-facing findings, server pairing, AI, and remediation remain future milestones.
+The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains the Tauri 2 + React application, and `apps/cli` contains the `secmon` binary for local scans, reports, advisory refresh, diagnostics, approved server collection, Git hooks, agent integrations, and the read-only local MCP server. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local orchestration and notifications, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). The desktop and CLI connect these services into local workflows; agent-to-agent shared memory remains future work.
 
 | Component | Responsibility |
 | --- | --- |
