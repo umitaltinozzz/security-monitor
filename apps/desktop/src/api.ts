@@ -35,6 +35,7 @@ import type { ScanRun } from "./generated/ScanRun";
 import type { ScannerAvailability } from "./generated/ScannerAvailability";
 import type { SshHostSummary } from "./generated/SshHostSummary";
 import type { SshTargetInput } from "./generated/SshTargetInput";
+import type { UpdateCheckResult } from "./generated/UpdateCheckResult";
 
 export type WorkspaceData = {
   settings: AppSettings;
@@ -121,6 +122,8 @@ export const api = {
   installScanner: (engine: string, userApprovedDownload: boolean) =>
     invoke<void>("install_scanner", { engine, userApprovedDownload }),
   updateAdvisories: () => invoke<AdvisoryUpdateStatus[]>("update_advisory_data"),
+  checkForUpdates: () => invoke<UpdateCheckResult>("check_for_updates"),
+  installUpdate: (expectedVersion: string) => invoke<void>("install_update", { expectedVersion }),
   sshHosts: () => invoke<SshHostSummary[]>("list_ssh_config_hosts"),
   inspectHost: (input: SshTargetInput) => invoke<string>("inspect_server_host_key", { input }),
   pairServer: (input: SshTargetInput, fingerprint: string, fingerprintConfirmed: boolean, deviceLabel: string) =>

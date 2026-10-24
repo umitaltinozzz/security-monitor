@@ -226,3 +226,11 @@ pub struct AiConfigurationView {
     pub providers: Vec<security_monitor_core::AiProvider>,
     pub runs: Vec<security_monitor_core::AiRun>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateCheckResult {
+    pub available: bool,
+    pub version: Option<String>,
+    pub notes: Option<String>,
+}

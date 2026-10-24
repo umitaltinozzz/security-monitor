@@ -15,7 +15,19 @@ use tauri::{
 };
 
 fn main() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    let builder = if let Some(public_key) =
+        option_env!("SECMON_UPDATE_PUBLIC_KEY").filter(|key| !key.trim().is_empty())
+    {
+        builder.plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(public_key)
+                .build(),
+        )
+    } else {
+        builder
+    };
+    builder
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             fs::create_dir_all(&app_data_dir)?;
@@ -107,6 +119,8 @@ fn main() {
             ipc::detect_scanners,
             ipc::install_scanner,
             ipc::update_advisory_data,
+            ipc::check_for_updates,
+            ipc::install_update,
             ipc::list_ssh_config_hosts,
             ipc::inspect_server_host_key,
             ipc::pair_server,

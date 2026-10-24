@@ -37,6 +37,8 @@ export default defineConfig({
             { label: 'CLI', link: '/cli/' },
             { label: 'Coding-agent integrations', link: '/integrations/' },
             { label: 'Shared local memory', link: '/shared-memory/' },
+            { label: 'Signed releases and updates', link: '/release/' },
+            { label: 'Performance budgets', link: '/performance/' },
           ],
         },
         {

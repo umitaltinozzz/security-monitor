@@ -257,6 +257,9 @@ td:first-child { color: var(--text); } .cell-subtitle { display: block; max-widt
 .privacy-details { margin-top: 14px; color: var(--muted); font-size: .84rem; }
 .privacy-details summary { cursor: pointer; color: var(--accent); }
 .privacy-details p { margin: 9px 0 0; }
+.update-notes { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.update-notes h3 { margin: 0 0 8px; font-size: .95rem; }
+.update-notes p { margin: 0; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .onboarding-card h1 { margin: 13px 0 9px; font-size: clamp(1.6rem, 4vw, 2.3rem); letter-spacing: -.04em; }.onboarding-description { max-width: 570px; margin-bottom: 24px; }.onboarding-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }.onboarding-footnote { justify-self: center; font-size: .78rem; }
 .form-error { color: var(--red); }.scanner-list li { justify-content: flex-start; }.scanner-list small { margin-left: auto; color: var(--dim); }.onboarding-card .callout p { margin: 0 0 10px; }
 

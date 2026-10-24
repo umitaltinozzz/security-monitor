@@ -1,0 +1,183 @@
+name: Signed release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing semantic version tag to build and publish
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: windows-x86_64
+            platform: windows
+            arch: x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: macos-x86_64
+            platform: darwin
+            arch: x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: macos-aarch64
+            platform: darwin
+            arch: aarch64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: linux-x86_64
+            platform: linux
+            arch: x86_64
+    env:
+      SECMON_UPDATE_PUBLIC_KEY: ${{ vars.SECMON_UPDATE_PUBLIC_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      SECMON_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.SECMON_WINDOWS_CERTIFICATE_THUMBPRINT }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.27.0
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Verify release signing configuration
+        run: node scripts/release/verify-config.mjs ${{ matrix.platform }}
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $certificateDirectory = Join-Path $env:RUNNER_TEMP 'security-monitor-signing'
+          New-Item -ItemType Directory -Force -Path $certificateDirectory | Out-Null
+          $certificateText = Join-Path $certificateDirectory 'certificate.txt'
+          $certificatePath = Join-Path $certificateDirectory 'certificate.pfx'
+          Set-Content -LiteralPath $certificateText -Value $env:WINDOWS_CERTIFICATE -NoNewline
+          certutil -decode $certificateText $certificatePath | Out-Null
+          Remove-Item -LiteralPath $certificateText -Force
+          Import-PfxCertificate -FilePath $certificatePath -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText) | Out-Null
+          Remove-Item -LiteralPath $certificateDirectory -Recurse -Force
+
+      - name: Import Apple signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/security-monitor.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/security-monitor.keychain"
+          security default-keychain -s "$RUNNER_TEMP/security-monitor.keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/security-monitor.keychain"
+          security set-keychain-settings -t 3600 -u "$RUNNER_TEMP/security-monitor.keychain"
+          security import "$RUNNER_TEMP/security-monitor.p12" -k "$RUNNER_TEMP/security-monitor.keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/security-monitor.keychain"
+          rm -f "$RUNNER_TEMP/security-monitor.p12"
+          printf '%s' "$APPLE_API_KEY_CONTENT" | base64 --decode > "$RUNNER_TEMP/security-monitor-notary.p8"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/security-monitor-notary.p8" >> "$GITHUB_ENV"
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build CLI
+        run: cargo build -p secmon --release --target ${{ matrix.target }}
+
+      - name: Build Linux server agent
+        if: matrix.platform == 'linux'
+        run: rustup target add x86_64-unknown-linux-musl && cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
+
+      - name: Write Windows signing overlay
+        if: runner.os == 'Windows'
+        run: node scripts/release/write-tauri-config.mjs windows target/tauri.release.json
+
+      - name: Build signed desktop packages
+        if: runner.os == 'Windows'
+        run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
+
+      - name: Build signed desktop packages
+        if: runner.os != 'Windows'
+        run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
+
+      - name: Stage release files
+        run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - name: Upload release files
+        uses: actions/upload-artifact@v5.0.0
+        with:
+          name: release-${{ matrix.artifact }}
+          path: target/release-out/${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish signed release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download platform release files
+        uses: actions/download-artifact@v6.0.0
+        with:
+          pattern: release-*
+          path: target/release-assets
+
+      - name: Create signed updater manifest and checksums
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: node scripts/release/create-manifest.mjs target/release-assets "$RELEASE_TAG"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: node scripts/release/publish.mjs target/release-assets "$RELEASE_TAG"

@@ -28,6 +28,44 @@ pub struct PublicDataHttp {
     allow_loopback: bool,
 }
 
+/// Build the updater plugin's HTTP client with the same host logging and redirect
+/// restrictions as the public data client.
+pub fn configure_updater_client(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    builder
+        .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
+        .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.stop();
+            }
+            if is_allowed_updater_url(attempt.url()) {
+                if let Some(host) = attempt.url().host_str() {
+                    tracing::info!(destination_host = %host, "following updater redirect");
+                }
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+}
+
+/// Authorize and log an updater destination before the updater plugin sends a request.
+pub fn authorize_updater_destination(
+    address: &str,
+    policy: HttpPolicy,
+) -> Result<String, ProviderError> {
+    if !policy.public_downloads_enabled {
+        return Err(ProviderError::NetworkDisabled);
+    }
+    let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
+    if !is_allowed_updater_url(&url) {
+        return Err(ProviderError::DestinationNotAllowed);
+    }
+    let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
+    tracing::info!(destination_host = %host, "requesting signed application update");
+    Ok(host)
+}
+
 pub struct ApprovedAiRequest<'a> {
     pub address: &'a str,
     pub approved_origin: &'a str,
@@ -57,6 +95,7 @@ impl PublicDataHttp {
     }
 
     fn build(policy: HttpPolicy, allow_loopback: bool) -> Result<Self, ProviderError> {
+        ensure_rustls_crypto_provider()?;
         let redirect_loopback = allow_loopback;
         let client = reqwest::Client::builder()
             .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
@@ -411,6 +450,18 @@ impl PublicDataHttp {
     }
 }
 
+fn ensure_rustls_crypto_provider() -> Result<(), ProviderError> {
+    if rustls::crypto::CryptoProvider::get_default().is_some() {
+        return Ok(());
+    }
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    if rustls::crypto::CryptoProvider::get_default().is_some() {
+        Ok(())
+    } else {
+        Err(ProviderError::HttpClient)
+    }
+}
+
 async fn collect_bounded_body<S, C, E>(
     mut stream: S,
     max_bytes: u64,
@@ -471,6 +522,20 @@ fn is_allowed_url(url: &Url, allow_loopback: bool, allow_release_asset_redirect:
         || host == "cisa.gov"
         || host == "api.first.org"
         || host == "epss.empiricalsecurity.com"
+}
+
+fn is_allowed_updater_url(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    (host == "github.com"
+        && url
+            .path()
+            .starts_with("/umitaltinozzz/security-monitor/releases/"))
+        || host == "release-assets.githubusercontent.com"
 }
 
 fn is_valid_feed_url(url: &Url, allow_loopback: bool) -> bool {
@@ -612,7 +677,118 @@ mod tests {
         matchers::{body_json, method, path},
     };
 
-    use super::{ProviderError, PublicDataHttp, collect_bounded_body, is_allowed_url};
+    use super::{
+        HttpPolicy, ProviderError, PublicDataHttp, authorize_updater_destination,
+        collect_bounded_body, configure_updater_client, is_allowed_updater_url, is_allowed_url,
+    };
+
+    #[test]
+    fn shared_http_client_installs_the_ring_crypto_provider() {
+        let _http = PublicDataHttp::new(HttpPolicy {
+            public_downloads_enabled: false,
+        })
+        .expect("shared HTTP client initializes");
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+    }
+
+    #[test]
+    fn updater_requests_require_download_consent_and_stay_on_release_hosts() {
+        let endpoint = "https://github.com/umitaltinozzz/security-monitor/releases/latest/download/latest.json";
+        let asset = "https://release-assets.githubusercontent.com/downloads/release";
+        let other_repository = "https://github.com/another/project/releases/download/v1/update";
+        let insecure =
+            "http://github.com/umitaltinozzz/security-monitor/releases/latest/download/latest.json";
+
+        assert!(matches!(
+            authorize_updater_destination(
+                endpoint,
+                HttpPolicy {
+                    public_downloads_enabled: false
+                }
+            ),
+            Err(ProviderError::NetworkDisabled)
+        ));
+        assert_eq!(
+            authorize_updater_destination(
+                endpoint,
+                HttpPolicy {
+                    public_downloads_enabled: true
+                }
+            )
+            .unwrap(),
+            "github.com"
+        );
+        assert!(is_allowed_updater_url(&Url::parse(asset).unwrap()));
+        assert!(!is_allowed_updater_url(
+            &Url::parse(other_repository).unwrap()
+        ));
+        assert!(!is_allowed_updater_url(&Url::parse(insecure).unwrap()));
+    }
+
+    #[tokio::test]
+    async fn disabled_public_downloads_send_no_http_request() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("unexpected"))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let http = PublicDataHttp::for_tests_with_policy(HttpPolicy {
+            public_downloads_enabled: false,
+        });
+        assert!(matches!(
+            http.get(&format!("{}/feed.xml", server.uri())).await,
+            Err(ProviderError::NetworkDisabled)
+        ));
+        assert!(
+            server
+                .received_requests()
+                .await
+                .expect("wiremock records requests")
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn updater_client_stops_redirects_to_unapproved_hosts() {
+        let origin = MockServer::start().await;
+        let target = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/manifest"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/asset", target.uri())),
+            )
+            .expect(1)
+            .mount(&origin)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/asset"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&target)
+            .await;
+
+        let client = configure_updater_client(reqwest::Client::builder())
+            .build()
+            .expect("configured updater client");
+        let response = client
+            .get(format!("{}/manifest", origin.uri()))
+            .send()
+            .await
+            .expect("initial response is returned without following an unapproved redirect");
+        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
+        assert_eq!(
+            target
+                .received_requests()
+                .await
+                .expect("wiremock records target requests")
+                .len(),
+            0
+        );
+    }
 
     #[test]
     fn github_downloads_are_restricted_to_the_two_pinned_scanner_repositories() {

@@ -6,6 +6,7 @@ import type { Finding } from "./generated/Finding";
 import type { FindingDispositionReason } from "./generated/FindingDispositionReason";
 import type { FindingStatus } from "./generated/FindingStatus";
 import type { Project } from "./generated/Project";
+import type { UpdateCheckResult } from "./generated/UpdateCheckResult";
 import type { WorkspaceData } from "./api";
 import { api, loadWorkspace } from "./api";
 import { AiSettingsPanel } from "./AiSettings";
@@ -491,6 +492,9 @@ function Settings({ data, t, saveSettings, setNotice, refresh }: { data: Workspa
   const settings = data.settings;
   const [scanners, setScanners] = useState<{ engine: string; status: string; version: string | null }[]>([]);
   const [busyEngine, setBusyEngine] = useState<string | null>(null);
+  const [update, setUpdate] = useState<UpdateCheckResult | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
   const ecosystemChoices = ["npm", "pypi", "cargo", "golang", "composer", "maven", "rubygems", "nuget"];
   async function updateAdvisories() {
     try {
@@ -513,6 +517,32 @@ function Settings({ data, t, saveSettings, setNotice, refresh }: { data: Workspa
     } catch (error) { setNotice({ kind: "error", message: safeError(error, t) }); }
     finally { setBusyEngine(null); }
   }
+  async function checkForUpdates() {
+    setCheckingUpdate(true);
+    setUpdate(null);
+    try {
+      const result = await api.checkForUpdates();
+      setUpdate(result);
+      if (!result.available) setNotice({ kind: "success", message: t("settings.noUpdateAvailable") });
+    } catch (error) {
+      setNotice({ kind: "error", message: safeError(error, t) });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+  async function installUpdate() {
+    const version = update?.version;
+    if (!version) return;
+    setInstallingUpdate(true);
+    try {
+      await api.installUpdate(version);
+      setNotice({ kind: "success", message: t("settings.updateInstalled") });
+    } catch (error) {
+      setNotice({ kind: "error", message: safeError(error, t) });
+    } finally {
+      setInstallingUpdate(false);
+    }
+  }
   function toggleEcosystem(ecosystem: string, enabled: boolean) {
     const ecosystems = enabled ? [...new Set([...settings.ecosystems, ecosystem])] : settings.ecosystems.filter((item) => item !== ecosystem);
     void saveSettings({ ...settings, ecosystems });
@@ -525,6 +555,15 @@ function Settings({ data, t, saveSettings, setNotice, refresh }: { data: Workspa
       {settings.public_downloads_enabled && <div className="setting-row"><span>{t("onboarding.advisoryBody")}</span><button className="button secondary" onClick={() => void updateAdvisories()}>{t("actions.updateAdvisories")}</button></div>}
       <label className="setting-row"><span><strong>{t("settings.notifications")}</strong></span><input type="checkbox" checked={settings.notifications_enabled} onChange={(event) => void saveSettings({ ...settings, notifications_enabled: event.target.checked })} /></label>
       <label className="setting-row"><span><strong>{t("settings.scanInterval")}</strong></span><span className="inline-control"><input className="number-input" type="number" min={1} max={168} value={settings.scan_interval_hours} onChange={(event) => void saveSettings({ ...settings, scan_interval_hours: Number(event.target.value) })} /><span>{t("settings.hours")}</span></span></label>
+    </section>
+    <section className="panel settings-panel"><h2>{t("settings.applicationUpdates")}</h2>
+      <p>{t("settings.applicationUpdatesHelp")}</p>
+      <div className="button-row">
+        <button className="button secondary" disabled={!settings.public_downloads_enabled || checkingUpdate || installingUpdate} onClick={() => void checkForUpdates()}>{checkingUpdate ? t("settings.checkingUpdates") : t("actions.checkUpdates")}</button>
+        {update?.available && update.version && <button className="button primary" disabled={!settings.public_downloads_enabled || checkingUpdate || installingUpdate} onClick={() => void installUpdate()}>{installingUpdate ? t("common.loading") : t("actions.installUpdate")} {update.version}</button>}
+      </div>
+      {!settings.public_downloads_enabled && <p className="privacy-details">{t("settings.updatesNeedDownloads")}</p>}
+      {update?.available && update.notes && <div className="update-notes"><h3>{t("settings.releaseNotes")}</h3><p>{update.notes}</p></div>}
     </section>
     <section className="panel settings-panel"><div className="panel-heading"><h2>{t("settings.scanners")}</h2><button className="button secondary" onClick={() => void detect()}>{t("onboarding.scannerCheck")}</button></div>
       {scanners.length === 0 ? <p>{t("common.unverified")}</p> : <ul className="scanner-list">{scanners.map((scanner) => <li key={scanner.engine}><span>{t(`scanner.${scanner.engine.replaceAll("-", "_")}`)}</span><span className={`tag ${scanner.status === "available" ? "verified" : "unverified"}`}>{t(`scanner.${scanner.status}`)}</span>{scanner.version && <small>{scanner.version}</small>}{scanner.status === "missing" && ["osv-scanner", "trivy", "semgrep"].includes(scanner.engine) && <button className="button secondary" disabled={!settings.public_downloads_enabled || busyEngine === scanner.engine} onClick={() => void install(scanner.engine)}>{busyEngine === scanner.engine ? t("common.loading") : t("actions.install")}</button>}</li>)}</ul>}

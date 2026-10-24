@@ -53,6 +53,7 @@ pub struct AppState {
     pub settings: RwLock<AppSettings>,
     pub ai_settings: RwLock<AiSettings>,
     pub ai_run_guard: Mutex<()>,
+    pub update_run_guard: Mutex<()>,
     pub scans: RwLock<ScanServices>,
     pub scan_results: Arc<Mutex<HashMap<String, ScanResult>>>,
 }
@@ -73,6 +74,7 @@ impl AppState {
             settings: RwLock::new(settings),
             ai_settings: RwLock::new(ai_settings),
             ai_run_guard: Mutex::new(()),
+            update_run_guard: Mutex::new(()),
             scans: RwLock::new(scans),
             scan_results: Arc::new(Mutex::new(HashMap::new())),
         })

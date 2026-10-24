@@ -15,6 +15,7 @@ hex = { workspace = true }
 httpdate = { workspace = true }
 quick-xml = "0.42"
 reqwest = { workspace = true }
+rustls = { workspace = true }
 sha2 = { workspace = true }
 security-monitor-core = { version = "0.1.0", path = "../core" }
 security-monitor-correlation = { version = "0.1.0", path = "../correlation" }

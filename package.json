@@ -4,5 +4,8 @@
   "packageManager": "pnpm@10.27.0",
   "engines": {
     "node": ">=22"
+  },
+  "scripts": {
+    "test:release": "node --test scripts/release/release.test.mjs"
   }
 }

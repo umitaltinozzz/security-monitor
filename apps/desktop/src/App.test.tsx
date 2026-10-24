@@ -90,4 +90,26 @@ describe("Security Monitor first-run experience", () => {
     expect(screen.getByText("Next.js security update")).toBeVisible();
     expect(screen.getByText("A middleware issue affects Next.js deployments.")).toBeVisible();
   });
+
+  it("keeps updater checks disabled until the user enables public downloads", async () => {
+    apiMocks.loadWorkspace.mockResolvedValue({
+      settings: {
+        language: "en",
+        theme: "system",
+        onboarding_completed: true,
+        public_downloads_enabled: false,
+        notifications_enabled: true,
+        scan_interval_hours: 24,
+        ecosystems: ["npm", "pypi", "cargo"],
+      },
+      projects: [], assets: [], findings: [], advisories: [], newsSignals: [],
+      components: [], instances: [], evidence: [], runs: [], audit: [],
+    });
+
+    render(<App />);
+
+    (await screen.findByRole("button", { name: /^Settings$/ })).click();
+    expect(await screen.findByRole("button", { name: "Check for updates" })).toBeDisabled();
+    expect(screen.getByText(/Update checks are manual/)).toBeVisible();
+  });
 });

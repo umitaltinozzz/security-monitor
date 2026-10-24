@@ -22,6 +22,8 @@ const publicPages = [
   'cli.md',
   'integrations.md',
   'shared-memory.md',
+  'release.md',
+  'performance.md',
   'contributing.md',
   'security.md',
 ];

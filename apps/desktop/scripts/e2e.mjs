@@ -35,6 +35,13 @@ try {
 
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1500 }, deviceScaleFactor: 1 });
+  const externalRequests = new Set();
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.protocol !== "data:" && url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+      externalRequests.add(url.origin);
+    }
+  });
   await page.addInitScript((initial) => {
     const state = {
       settings: initial.settings,
@@ -198,7 +205,12 @@ try {
     for (const [label, slug] of mainPages) {
       await page.getByRole("button", { name: label, exact: label !== "Review" }).first().click();
       await page.waitForTimeout(80);
-      if (slug === "settings") await page.getByText("No AI providers are configured.").waitFor();
+      if (slug === "settings") {
+        await page.getByText("No AI providers are configured.").waitFor();
+        const updateButton = page.getByRole("button", { name: "Check for updates" });
+        await updateButton.waitFor();
+        assert.equal(await updateButton.isDisabled(), true);
+      }
       await page.addScriptTag({ path: axePath });
       const accessibility = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } }));
       assert.equal(accessibility.violations.length, 0, `${theme} ${label} axe violations: ${JSON.stringify(accessibility.violations.map((item) => ({ id: item.id, nodes: item.nodes.map((node) => ({ target: node.target, checks: node.any.map((check) => check.data) })) })))}`);
@@ -219,6 +231,7 @@ try {
   await page.getByRole("dialog").getByRole("textbox", { name: "Search", exact: true }).fill("Settings");
   await page.getByRole("dialog").getByRole("button", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "Settings" }).waitFor();
+  assert.deepEqual([...externalRequests], [], "default startup, scans, and settings must not contact third-party hosts");
 } finally {
   await browser?.close();
   server.kill();
