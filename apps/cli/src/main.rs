@@ -229,6 +229,27 @@ mod tests {
             .await
             .unwrap();
 
+        for (id, tool_name) in [
+            ("audit-read-enabled", "read_project_file"),
+            ("audit-search-enabled", "search_project"),
+        ] {
+            database
+                .repository::<AuditEvent>()
+                .create(&AuditEvent {
+                    id: id.into(),
+                    timestamp: Utc::now(),
+                    actor: "user".into(),
+                    action: "ai_tool_permission_enabled".into(),
+                    scope: AuditScope {
+                        resource_type: "ai_tool".into(),
+                        resource_id: Some(tool_name.into()),
+                    },
+                    result: AuditResult::Succeeded,
+                })
+                .await
+                .unwrap();
+        }
+
         let settings = AiSettings {
             enabled_tools: vec!["read_project_file".into(), "search_project".into()],
             ..AiSettings::default()
