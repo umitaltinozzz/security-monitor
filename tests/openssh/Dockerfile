@@ -3,6 +3,7 @@ FROM ubuntu:24.04
 RUN ["apt-get", "update"]
 RUN ["apt-get", "install", "-y", "--no-install-recommends", "openssh-server", "ca-certificates"]
 RUN ["useradd", "--create-home", "--shell", "/bin/sh", "secmon"]
+RUN ["usermod", "--password", "NP", "secmon"]
 RUN ["install", "-d", "-m", "0700", "-o", "secmon", "-g", "secmon", "/home/secmon/.ssh"]
 RUN ["install", "-d", "-m", "0755", "/run/sshd"]
 

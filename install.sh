@@ -66,6 +66,15 @@ if ! getent passwd secmon >/dev/null; then
   fi
 fi
 
+if command -v usermod >/dev/null; then
+  usermod --password NP secmon
+elif command -v chpasswd >/dev/null; then
+  printf '%s\n' 'secmon:NP' | chpasswd -e
+else
+  printf '%s\n' 'usermod or chpasswd is required to disable password login for secmon.' >&2
+  exit 1
+fi
+
 install -d -o root -g root -m 0755 /etc/secmon /etc/secmon/deployments.d
 config_path=/etc/secmon/agent.toml
 if [[ -L $config_path || ( -e $config_path && ! -f $config_path ) ]]; then

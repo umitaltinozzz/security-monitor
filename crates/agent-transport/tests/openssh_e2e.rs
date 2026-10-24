@@ -178,15 +178,24 @@ async fn forced_command_collects_from_an_unprivileged_openssh_user() {
         ),
         "a changed host key must be rejected before authentication"
     );
-    let inventory = collect_agent(
+    let collection = collect_agent(
         &target,
         &candidate.fingerprint,
         &SshIdentity::PrivateKeyRef(pairing.private_key_ref),
         &store,
         approval,
     )
-    .await
-    .expect("forced command should return a valid agent inventory");
+    .await;
+    let inventory = match collection {
+        Ok(inventory) => inventory,
+        Err(error) => {
+            let logs = docker_output(["logs", container_id.as_str()]);
+            panic!(
+                "forced command should return a valid agent inventory: {error}; sshd logs: {}",
+                String::from_utf8_lossy(&logs.stdout)
+            );
+        }
+    };
     inventory
         .inventory
         .validate()
