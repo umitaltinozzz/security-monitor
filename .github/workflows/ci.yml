@@ -89,4 +89,4 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2.1.1
         with:
           command: check
-          arguments: ""
+          rust-version: stable
