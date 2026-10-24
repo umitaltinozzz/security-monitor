@@ -149,6 +149,10 @@ jobs:
       - name: Run desktop smoke test
         run: pnpm -C apps/desktop e2e
 
+      - name: Free Windows test build artifacts
+        if: runner.os == 'Windows'
+        run: cargo clean --profile test
+
       - name: Build Tauri shell (debug)
         if: github.event_name != 'push'
         run: pnpm -C apps/desktop tauri build --debug --no-bundle
