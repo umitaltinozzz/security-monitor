@@ -13,6 +13,7 @@ use sqlx::{
 use thiserror::Error;
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+const CREDENTIAL_REF_PREFIX: &str = "secmon-keyring:v1:";
 
 #[derive(Clone)]
 pub struct Database {
@@ -171,6 +172,8 @@ pub enum DatabaseError {
     Serialization(#[source] serde_json::Error),
     #[error("database record contains a credential-bearing URL")]
     CredentialInUrl,
+    #[error("database record contains an invalid credential reference")]
+    InvalidCredentialReference,
 }
 
 impl From<sqlx::Error> for DatabaseError {
@@ -215,6 +218,17 @@ fn decode_record<T: DeserializeOwned>(json: String) -> Result<T, DatabaseError> 
 
 fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     let record: serde_json::Value = serde_json::from_str(json)?;
+    let credential_ref = match table {
+        "ai_providers" => record.get("keychain_ref"),
+        "notification_channels" => record.get("config_ref"),
+        _ => None,
+    }
+    .and_then(serde_json::Value::as_str);
+
+    if credential_ref.is_some_and(|value| !is_credential_reference(value)) {
+        return Err(DatabaseError::InvalidCredentialReference);
+    }
+
     let url = match table {
         "projects" => record.get("git_remote"),
         "ai_providers" => record.get("base_url"),
@@ -242,6 +256,21 @@ fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     }
 
     Ok(())
+}
+
+fn is_credential_reference(value: &str) -> bool {
+    let Some(identifier) = value.strip_prefix(CREDENTIAL_REF_PREFIX) else {
+        return false;
+    };
+    let bytes = identifier.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()
+            }
+        })
 }
 
 macro_rules! entity {

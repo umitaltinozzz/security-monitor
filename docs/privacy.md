@@ -7,7 +7,9 @@ description: Current data behavior and the product's privacy requirements.
 
 ## Current behavior
 
-The current desktop shell and CLI do not scan projects, contact advisory providers, send telemetry, or upload repository data at runtime. Dependency installation and development tooling may access their configured package registries while being run by a developer.
+The current desktop shell and CLI do not scan projects or invoke advisory providers at runtime. The `advisory-providers` Rust library can download public feeds and databases only when a caller constructs it with `public_downloads_enabled: true`. It has no user settings UI or persisted approval record yet, so the shell and CLI must not enable it until that user-facing consent and audit record exist. Dependency installation and development tooling may access their configured package registries while being run by a developer.
+
+When the library is explicitly enabled, cve.now requests use its global status, entry cursor, and public advisory IDs; filtered feeds and stack-check uploads are not used. OSV archive URLs include an ecosystem slug selected from local inventory, which discloses that ecosystem to OSV. GHSA requests contain public GHSA IDs discovered from the public advisory feed. CISA KEV and FIRST EPSS are full public catalog downloads. Requests do not contain source code, lockfiles, package names, package versions, or a package list. Provider caches and results are stored locally. The desktop and CLI currently do not initiate any of these requests.
 
 ## Product requirements
 
@@ -21,8 +23,8 @@ The current desktop shell and CLI do not scan projects, contact advisory provide
 
 ## cve.now and package lists
 
-Public advisory feeds can be read without sending a project's package list. cve.now's stack-check feature accepts lockfiles and stores uploads for analytics and feed generation; anyone holding the resulting stack-feed link can see matches. Security Monitor must keep that path disabled unless the user explicitly approves and the approval is recorded. The target integration may use public feed endpoints without using stack-check.
+The global incremental feed can be read without sending a project's package list. Filtered feeds that encode local ecosystem or technology names are not used because their query parameters reveal inventory-derived data. cve.now's stack-check feature accepts lockfiles and stores uploads for analytics and feed generation; anyone holding the resulting stack-feed link can see matches. Security Monitor does not use stack-check or lockfile upload. Any future package-list transfer requires a clear, specific user approval and a recorded audit event before the request is sent.
 
 ## Data lifecycle
 
-The current implementation has no product telemetry or provider data lifecycle. Before provider and AI features ship, their settings and documentation must describe the data sent, destination, purpose, retention terms where known, and how to revoke approval or delete local records.
+There is no product telemetry. Provider cache files, downloaded public records, and freshness metadata are stored on-device; current provider code does not upload these caches. Before the desktop or CLI invokes providers, settings must explain the destination, purpose, ecosystem disclosure for OSV archive requests, retention terms where known, and how to disable downloads or delete local cache data. AI and external notification delivery are not implemented; before they ship, their settings must describe data sent, destination, purpose, retention terms where known, and how to revoke approval or delete local records.

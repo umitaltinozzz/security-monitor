@@ -351,7 +351,7 @@ pub struct AiProvider {
     pub price_in: Option<f64>,
     pub price_out: Option<f64>,
     pub data_region: Option<String>,
-    // Store only an OS credential-store reference, never the credential itself.
+    // Store only `secmon-keyring:v1:<lowercase UUID>`, never credential material.
     pub keychain_ref: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -377,7 +377,7 @@ pub struct AiRun {
 pub struct NotificationChannel {
     pub id: String,
     pub kind: NotificationChannelKind,
-    // Store only an OS credential-store reference, never a webhook URL or password.
+    // Store only `secmon-keyring:v1:<lowercase UUID>`, never a URL or password.
     pub config_ref: Option<String>,
     pub min_priority: u8,
     pub enabled: bool,

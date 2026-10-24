@@ -1,6 +1,6 @@
 use std::{path::Path, time::Duration};
 
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use reqwest::{StatusCode, header::RETRY_AFTER};
 use thiserror::Error;
 use tokio::{fs::File, io::AsyncWriteExt};
@@ -99,14 +99,8 @@ impl PublicDataHttp {
         {
             return Err(ProviderError::DownloadTooLarge);
         }
-        let body = response
-            .bytes()
-            .await
-            .map_err(|_| ProviderError::Network { host })?
-            .to_vec();
-        if body.len() as u64 > MAX_BUFFERED_RESPONSE_BYTES {
-            return Err(ProviderError::DownloadTooLarge);
-        }
+        let body = collect_bounded_body(response.bytes_stream(), MAX_BUFFERED_RESPONSE_BYTES, host)
+            .await?;
         Ok(HttpResponse { body })
     }
 
@@ -163,6 +157,30 @@ impl PublicDataHttp {
             Err(ProviderError::NetworkDisabled)
         }
     }
+}
+
+async fn collect_bounded_body<S, C, E>(
+    mut stream: S,
+    max_bytes: u64,
+    host: String,
+) -> Result<Vec<u8>, ProviderError>
+where
+    S: Stream<Item = Result<C, E>> + Unpin,
+    C: AsRef<[u8]>,
+{
+    let mut body = Vec::new();
+    let mut total = 0_u64;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| ProviderError::Network { host: host.clone() })?;
+        total = total
+            .checked_add(chunk.as_ref().len() as u64)
+            .ok_or(ProviderError::DownloadTooLarge)?;
+        if total > max_bytes {
+            return Err(ProviderError::DownloadTooLarge);
+        }
+        body.extend_from_slice(chunk.as_ref());
+    }
+    Ok(body)
 }
 
 fn rate_limited_error(response: &reqwest::Response, host: String) -> ProviderError {
@@ -254,5 +272,34 @@ impl From<csv::Error> for ProviderError {
 impl From<zip::result::ZipError> for ProviderError {
     fn from(error: zip::result::ZipError) -> Self {
         Self::Zip(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures_util::stream;
+
+    use super::{ProviderError, collect_bounded_body};
+
+    #[tokio::test]
+    async fn streamed_response_without_a_length_header_is_bounded() {
+        let response = stream::iter([Ok::<_, ()>(vec![1_u8, 2, 3]), Ok::<_, ()>(vec![4, 5, 6])]);
+
+        let error = collect_bounded_body(response, 5, "fixture.invalid".to_owned())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, ProviderError::DownloadTooLarge));
+    }
+
+    #[tokio::test]
+    async fn streamed_response_at_the_limit_is_collected() {
+        let response = stream::iter([Ok::<_, ()>(vec![1_u8, 2, 3]), Ok::<_, ()>(vec![4, 5, 6])]);
+
+        let body = collect_bounded_body(response, 6, "fixture.invalid".to_owned())
+            .await
+            .unwrap();
+
+        assert_eq!(body, [1, 2, 3, 4, 5, 6]);
     }
 }

@@ -348,3 +348,62 @@ async fn credential_bearing_project_remotes_are_rejected_before_storage() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn ai_provider_credential_material_is_rejected_before_storage() {
+    let database = Database::in_memory().await.unwrap();
+    let mut provider = records().ai_provider;
+    let secret = "sk_live_example_secret";
+    provider.keychain_ref = Some(secret.to_owned());
+
+    let error = database
+        .repository::<AiProvider>()
+        .create(&provider)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "database record contains an invalid credential reference"
+    );
+    assert!(!error.to_string().contains(secret));
+    assert!(
+        database
+            .repository::<AiProvider>()
+            .list()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn notification_channel_secrets_are_rejected_on_create_and_update() {
+    let database = Database::in_memory().await.unwrap();
+    let channel = records().notification_channel;
+    let repository = database.repository::<NotificationChannel>();
+    repository.create(&channel).await.unwrap();
+
+    let secret = "https://hooks.example.invalid/private-secret";
+    let mut updated = channel.clone();
+    updated.config_ref = Some(secret.to_owned());
+    let error = repository.update(&updated).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "database record contains an invalid credential reference"
+    );
+    assert!(!error.to_string().contains(secret));
+    assert_eq!(repository.get(&channel.id).await.unwrap(), Some(channel));
+
+    let mut created = records().notification_channel;
+    created.id = "channel-with-secret".to_owned();
+    created.config_ref = Some(secret.to_owned());
+    let error = repository.create(&created).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "database record contains an invalid credential reference"
+    );
+    assert!(!error.to_string().contains(secret));
+    assert_eq!(repository.list().await.unwrap().len(), 1);
+}

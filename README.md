@@ -1,24 +1,32 @@
 # Security Monitor
 
-Security Monitor (`secmon`) is an open-source project for local-first security monitoring of software projects and deployed environments. Its goal is to connect dependency advisories with deployment evidence while keeping source code, lockfiles, and inventory on the user's device by default.
+Security Monitor (`secmon`) is an open-source project to connect software vulnerability advisories with evidence from local projects and deployed environments in a local-first workflow.
 
-> **Current state:** this repository is under active development. The current release contains the Rust workspace, typed core and SQLite data layer, a desktop shell, and a CLI that reports its version. Dependency inventory, vulnerability matching, scanners, agents, AI workflows, and the product UI are roadmap work; do not use the current build as a security scanner or as evidence that a system is safe.
+> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, a dependency inventory library, and an advisory-provider library with deterministic matching and local caches. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
 
 ## Implemented today
 
 - Cargo and pnpm workspaces with cross-platform CI.
 - Rust domain types, SQLite migrations, typed repositories, and generated TypeScript contracts.
+- A local inventory library for supported lockfiles, monorepo discovery, Dockerfile/workflow detection, and PURL generation.
+- An advisory library for incremental cve.now records, offline OSV archives, GHSA cross-checks, CISA KEV, FIRST EPSS, source merging, cache freshness, and conservative local matching.
 - A Tauri desktop shell and the `secmon --help` / `secmon --version` CLI.
 
-These are engineering foundations; they do not yet monitor a project or production environment.
+These libraries are not yet connected to a project scanning workflow in the desktop app or CLI. Server collection, scanner execution, finding correlation, AI, remediation, and product screens are not available.
 
 ## Roadmap
 
-The planned v1.0 scope adds local inventory parsing, advisory matching and provenance, scanner adapters, finding correlation, read-only Linux collection over SSH, optional approved AI workflows, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and these features will be described as they become available.
+The remaining v1.0 work adds scanner adapters, finding correlation and lifecycle, orchestration, read-only Linux collection over SSH, AI/MCP, approved remediation, reporting, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
 
 ## How it compares
 
-Dependency update bots help propose version changes. Lockfile scanners focus on known vulnerable packages. Container and host scanners inspect deployed software or configuration. Security Monitor's planned difference is to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. That integration is not implemented yet; current functionality is limited to the engineering foundations listed above.
+| Tool | Main focus | How Security Monitor relates |
+| --- | --- | --- |
+| [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Alerts on vulnerable repository dependencies and can open security-update pull requests. | Security Monitor is not a dependency updater; its target is to connect local inventory with deployment evidence. |
+| [Trivy](https://trivy.dev/docs/latest/) | Scans packages, images, secrets, and misconfigurations. | Trivy is a scanner Security Monitor plans to adapt; the product target also tracks repo-to-production evidence. |
+| [OSV-Scanner](https://google.github.io/osv-scanner/) | Extracts project or image packages and matches them to OSV advisories. | Security Monitor includes an inventory/advisory library, but its scanner integration is still roadmap work. |
+
+Security Monitor aims to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. Inventory and advisory libraries now exist, but the end-user workflow that connects them to scanners, deployment evidence, and the UI is not implemented yet.
 
 ## Planned architecture
 
@@ -34,11 +42,11 @@ flowchart LR
   MCP --> Model[Optional user-selected AI provider]
 ```
 
-The diagram describes the target product architecture, not features available in the current build. The Linux agent, providers, matching engine, MCP tools, and functional UI are not implemented yet.
+The diagram describes the target product architecture. Inventory and advisory provider libraries are implemented, but the Linux agent, scanner integration, orchestration, MCP tools, and functional UI are not implemented yet.
 
 ## Privacy
 
-Security Monitor is designed to keep project source, lockfiles, and inventory local by default. The current application shell and CLI do not upload them or make runtime network requests. Future provider and AI features must use the approval and privacy controls described in [Privacy](docs/privacy.md); no upload of source, lockfiles, or inventory is planned without explicit recorded approval. Optional AI is planned for advisory metadata, with credentials kept in the operating system credential store.
+The current desktop shell and CLI do not run scans or make runtime network requests. The advisory library can download public data only when its caller explicitly enables `public_downloads_enabled`. Its requests do not contain source code, lockfiles, package names, or package versions. An OSV archive request includes the selected ecosystem in its URL, which reveals that coarse ecosystem to OSV; cve.now filtered feeds that would disclose inventory-derived filters are not used. Provider caches stay local. AI integration is not implemented. See [Privacy](docs/privacy.md) for details.
 
 ## Quick start
 
@@ -74,9 +82,7 @@ AI provider integration is not implemented yet. See [AI providers](docs/ai-provi
 
 ## Data sources and attribution
 
-No advisory data is fetched by the current application. Planned sources and their intended roles are documented in [Data sources](docs/data-sources.md). The application must retain source attribution and must not treat missing, stale, or unverified data as a clean result.
-
-If a future version displays cve.now summaries, those summaries are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and require attribution to [cve.now](https://cve.now/). Data combined by cve.now may have separate source terms. For any NVD-derived data, the required notice is: “This product uses data from the NVD API but is not endorsed or certified by the NVD.”
+The provider library supports public advisory downloads, but the current application and CLI do not invoke it. Supported sources, freshness rules, and current attributions are documented in [Data sources](docs/data-sources.md). When displaying cve.now summaries, attribute [cve.now](https://cve.now/) under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Data combined by cve.now may have separate source terms. For NVD-derived data, display: “This product uses data from the NVD API but is not endorsed or certified by the NVD.” Missing, stale, or unverified data must not be treated as a clean result.
 
 ## Documentation
 

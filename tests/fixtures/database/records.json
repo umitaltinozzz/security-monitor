@@ -136,7 +136,7 @@
     "price_in": 0.1,
     "price_out": 0.2,
     "data_region": "local-fixture",
-    "keychain_ref": "keychain:fixture-provider",
+    "keychain_ref": "secmon-keyring:v1:00000000-0000-4000-8000-000000000001",
     "created_at": "2026-01-01T00:00:00Z",
     "updated_at": "2026-01-01T00:00:00Z"
   },
