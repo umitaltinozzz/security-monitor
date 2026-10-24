@@ -53,23 +53,29 @@ jobs:
         uses: samypr100/setup-dev-drive@v4
         with:
           drive-size: 10GB
-          mount-path: .dev-drive
           env-mapping: |
             CARGO_HOME,{{ DEV_DRIVE }}/cargo-home
+            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/cargo-target
 
       - name: Set Windows Cargo target directory
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $cargoTargetDir = Join-Path $env:GITHUB_WORKSPACE '.dev-drive\cargo-target'
-          New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $cargoTargetDir | Out-Null
-          "CARGO_TARGET_DIR=$cargoTargetDir" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $env:CARGO_TARGET_DIR | Out-Null
 
       - name: Cache Rust build artifacts
+        if: runner.os != 'Windows'
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: security-monitor-${{ runner.os }}
-          workspaces: . -> ${{ runner.os == 'Windows' && '.dev-drive/cargo-target' || 'target' }}
+
+      - name: Cache Windows Rust build artifacts
+        if: runner.os == 'Windows'
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: security-monitor-Windows-devdrive-v2
+          cache-targets: false
+          cache-directories: ${{ env.CARGO_TARGET_DIR }}
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
