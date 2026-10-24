@@ -2,8 +2,9 @@ use std::{marker::PhantomData, path::Path, time::Duration};
 
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
-    ComponentInstance, Deployment, Finding, FindingEvidence, NewsSignal, NotificationChannel,
-    NotificationDeliveryState, Project, ProjectScanCheckpoint, Remediation, ScanRun, Service,
+    ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
+    NotificationChannel, NotificationDeliveryState, Project, ProjectScanCheckpoint, Remediation,
+    ScanRun, Service, is_source_code_like,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -52,6 +53,26 @@ impl Database {
         Ok(Self { pool })
     }
 
+    /// Opens an existing database for constrained local MCP memory operations without migrating it.
+    pub async fn open_existing_read_write(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .create_if_missing(false)
+            .foreign_keys(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(3)
+            .connect_with(options)
+            .await?;
+        let database = Self { pool };
+        if database.schema_version().await? < 9 {
+            database.close().await;
+            return Err(DatabaseError::MemorySchemaUnavailable);
+        }
+        Ok(database)
+    }
+
     /// Creates a single-connection in-memory database for deterministic tests and ephemeral use.
     pub async fn in_memory() -> Result<Self, DatabaseError> {
         let options = SqliteConnectOptions::new()
@@ -83,6 +104,60 @@ impl Database {
                 .fetch_one(&self.pool)
                 .await?,
         )
+    }
+
+    /// Returns non-expired memories ordered with pinned and newer notes first.
+    pub async fn search_memories(
+        &self,
+        query: &str,
+        now: chrono::DateTime<chrono::Utc>,
+        limit: u32,
+    ) -> Result<Vec<Memory>, DatabaseError> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT record_json FROM memories \
+             WHERE (expires_at IS NULL OR julianday(expires_at) > julianday(?1)) \
+               AND (?2 = '' OR instr(lower(content), lower(?2)) > 0) \
+             ORDER BY pinned DESC, created_at DESC LIMIT ?3",
+        )
+        .bind(timestamp(now))
+        .bind(query)
+        .bind(i64::from(limit.clamp(1, 10_000)))
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(decode_record).collect()
+    }
+
+    pub async fn delete_expired_memories(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<u64, DatabaseError> {
+        let result =
+            sqlx::query("DELETE FROM memories WHERE expires_at IS NOT NULL AND julianday(expires_at) <= julianday(?1)")
+                .bind(timestamp(now))
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// Deletes a note only while it is still authored by the requesting agent.
+    pub async fn delete_memory_authored_by(
+        &self,
+        id: &str,
+        author: &str,
+    ) -> Result<bool, DatabaseError> {
+        let result = sqlx::query("DELETE FROM memories WHERE id = ?1 AND author = ?2")
+            .bind(id)
+            .bind(author)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    pub async fn delete_all_memories(&self) -> Result<u64, DatabaseError> {
+        let result = sqlx::query("DELETE FROM memories")
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
     }
 
     /// Checks the current AI run ledger and inserts a cost reservation under a SQLite write lock.
@@ -422,6 +497,10 @@ pub enum DatabaseError {
     InvalidNotificationDestination,
     #[error("canonical advisory is missing during rekey")]
     MissingAdvisoryTarget,
+    #[error("database schema does not support MCP memory writes")]
+    MemorySchemaUnavailable,
+    #[error("memory record is invalid")]
+    InvalidMemory,
 }
 
 impl From<sqlx::Error> for DatabaseError {
@@ -466,6 +545,47 @@ fn decode_record<T: DeserializeOwned>(json: String) -> Result<T, DatabaseError> 
 
 fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     let record: serde_json::Value = serde_json::from_str(json)?;
+    if table == "memories" {
+        let scope = record
+            .get("scope")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let scope_id = record.get("scope_id").filter(|value| !value.is_null());
+        let global_without_id = scope == "global" && scope_id.is_none();
+        let scoped_with_id = matches!(scope, "project" | "server" | "finding")
+            && scope_id
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| !id.trim().is_empty());
+        let author = record
+            .get("author")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let kind = record
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let content = record
+            .get("content")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let verified_at = record
+            .get("verified_at")
+            .filter(|value| !value.is_null())
+            .and_then(serde_json::Value::as_str);
+        let verified_by = record
+            .get("verified_by")
+            .filter(|value| !value.is_null())
+            .and_then(serde_json::Value::as_str);
+        if !(global_without_id || scoped_with_id)
+            || author.trim().is_empty()
+            || author.len() > 96
+            || (author.starts_with("agent:") && kind == "user_decision")
+            || is_source_code_like(content)
+            || verified_at.is_some() != (verified_by == Some("user"))
+        {
+            return Err(DatabaseError::InvalidMemory);
+        }
+    }
     if table == "findings" {
         validate_finding_disposition(&record)?;
     }
@@ -999,6 +1119,26 @@ entity!(
         ("action", "$.action"),
         ("scope_json", "$.scope"),
         ("result", "$.result"),
+    ]
+);
+entity!(
+    Memory,
+    id,
+    "memories",
+    "id",
+    [
+        ("id", "$.id"),
+        ("scope", "$.scope"),
+        ("scope_id", "$.scope_id"),
+        ("kind", "$.kind"),
+        ("content", "$.content"),
+        ("author", "$.author"),
+        ("source_run_id", "$.source_run_id"),
+        ("created_at", "$.created_at"),
+        ("expires_at", "$.expires_at"),
+        ("pinned", "$.pinned"),
+        ("verified_at", "$.verified_at"),
+        ("verified_by", "$.verified_by"),
     ]
 );
 

@@ -21,6 +21,10 @@ pub struct AiSettings {
     pub enabled_tools: Vec<String>,
     #[serde(default)]
     pub mcp_source_access_projects: Vec<String>,
+    #[serde(default = "default_memory_agent_writes_enabled")]
+    pub memory_agent_writes_enabled: bool,
+    #[serde(default = "default_memory_retention_days")]
+    pub memory_retention_days: u32,
 }
 
 impl AiSettings {
@@ -75,6 +79,9 @@ impl AiSettings {
         {
             return Err(AiSettingsError::DuplicatePermission);
         }
+        if !(1..=3650).contains(&self.memory_retention_days) {
+            return Err(AiSettingsError::InvalidMemoryRetention);
+        }
         Ok(())
     }
 }
@@ -93,6 +100,8 @@ pub fn load_default_settings() -> AiSettings {
             triage_code_enabled: false,
             enabled_tools: vec![],
             mcp_source_access_projects: vec![],
+            memory_agent_writes_enabled: default_memory_agent_writes_enabled(),
+            memory_retention_days: default_memory_retention_days(),
         }
     })
 }
@@ -108,6 +117,9 @@ fn is_known_tool(tool: &str) -> bool {
             | "read_project_file"
             | "search_project"
             | "analyze_impact"
+            | "recall"
+            | "remember"
+            | "forget"
     )
 }
 
@@ -119,8 +131,18 @@ pub enum AiSettingsError {
     DuplicateTier,
     #[error("AI permissions contain a duplicate or invalid project")]
     DuplicatePermission,
+    #[error("memory retention must be between 1 and 3650 days")]
+    InvalidMemoryRetention,
     #[error("AI tool is not supported in this milestone")]
     UnknownTool,
+}
+
+fn default_memory_agent_writes_enabled() -> bool {
+    true
+}
+
+fn default_memory_retention_days() -> u32 {
+    180
 }
 
 #[cfg(test)]
@@ -143,6 +165,8 @@ mod tests {
         let legacy = r#"{"assignments":[],"budget":{"daily_total_usd":0.0,"monthly_total_usd":0.0,"daily_by_provider_usd":{},"monthly_by_provider_usd":{}},"triage_code_enabled":false,"enabled_tools":["read_project_file"]}"#;
         let settings = serde_json::from_str::<AiSettings>(legacy).unwrap();
         assert!(settings.mcp_source_access_projects.is_empty());
+        assert!(settings.memory_agent_writes_enabled);
+        assert_eq!(settings.memory_retention_days, 180);
         assert!(settings.validate().is_ok());
     }
 
@@ -161,6 +185,14 @@ mod tests {
         assert_eq!(
             settings.validate(),
             Err(AiSettingsError::DuplicatePermission)
+        );
+        let settings = AiSettings {
+            memory_retention_days: 0,
+            ..AiSettings::default()
+        };
+        assert_eq!(
+            settings.validate(),
+            Err(AiSettingsError::InvalidMemoryRetention)
         );
         let settings = AiSettings {
             mcp_source_access_projects: vec!["project-1".into(), "project-1".into()],

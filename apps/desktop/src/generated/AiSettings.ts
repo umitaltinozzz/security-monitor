@@ -2,4 +2,4 @@
 import type { AiBudget } from "./AiBudget";
 import type { AiTierAssignment } from "./AiTierAssignment";
 
-export type AiSettings = { assignments: Array<AiTierAssignment>, budget: AiBudget, triage_code_enabled: boolean, enabled_tools: Array<string>, mcp_source_access_projects: Array<string>, };
+export type AiSettings = { assignments: Array<AiTierAssignment>, budget: AiBudget, triage_code_enabled: boolean, enabled_tools: Array<string>, mcp_source_access_projects: Array<string>, memory_agent_writes_enabled: boolean, memory_retention_days: number, };

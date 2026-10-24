@@ -29,6 +29,12 @@ The MCP server loads the project's current local database and tool permissions. 
 
 Agent hooks are a convenience check. The skill also instructs the agent to call `secmon hook run` before a Git commit or push. Install a repository Git hook with `secmon hook install` when you want the local Git workflow itself to perform the check; Git hooks support `warn` and `block` modes. Agent hooks do not replace that repository-level enforcement.
 
+## Plugin packages
+
+The repository includes native plugin packages for Claude Code (`plugins/claude-code`), Codex (`plugins/codex`), and OpenCode (`plugins/opencode`). The Claude and Codex marketplace descriptors are in `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`. Each package uses a fixed local `secmon mcp --agent <name>` command and includes the matching Security Monitor workflows. OpenCode also includes slash commands and a compaction hook that carries forward finding context without treating notes as trusted evidence.
+
+Plugin packages do not add a generic shell or remote-execution tool. MCP source reads still require the desktop's separately recorded per-project approval. Shared note behavior, archive handling, and the `recall`, `remember`, and `forget` tools are described in [Shared local memory](shared-memory.md).
+
 ## Vendor references
 
 - [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp) and [hooks](https://code.claude.com/docs/en/hooks)

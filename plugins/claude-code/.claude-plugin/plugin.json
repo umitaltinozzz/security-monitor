@@ -1,0 +1,8 @@
+{
+  "name": "secmon",
+  "description": "Investigate local Security Monitor findings and prepare reviewed fixes",
+  "version": "0.1.0",
+  "author": {
+    "name": "Security Monitor contributors"
+  }
+}

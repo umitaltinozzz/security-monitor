@@ -11,8 +11,9 @@ use security_monitor_ai::{
     redact_text_with_host_aliases,
 };
 use security_monitor_core::{
-    Advisory, AiProvider, AiProviderKind, ApprovalState, Asset, Component, ComponentInstance,
-    Finding, FindingEvidence, Project, Remediation,
+    Advisory, AiProvider, AiProviderKind, ApprovalState, Asset, AuditEvent, AuditResult,
+    AuditScope, Component, ComponentInstance, Finding, FindingEvidence, Memory, MemoryKind,
+    MemoryScope, Project, Remediation, is_source_code_like,
 };
 use security_monitor_database::Database;
 use security_monitor_remediation::{
@@ -51,6 +52,10 @@ pub struct WorkspaceTools {
     source_access_projects: BTreeSet<String>,
     host_aliases: BTreeMap<String, String>,
     remediation_queue_dir: Option<PathBuf>,
+    memory_agent: String,
+    memory_writes_enabled: bool,
+    memory_retention_days: u32,
+    memory_context_enabled: bool,
 }
 
 impl WorkspaceTools {
@@ -67,6 +72,10 @@ impl WorkspaceTools {
             source_access_projects: source_access_projects.into_iter().collect(),
             host_aliases: BTreeMap::new(),
             remediation_queue_dir: None,
+            memory_agent: "agent".into(),
+            memory_writes_enabled: false,
+            memory_retention_days: 180,
+            memory_context_enabled: false,
         }
     }
 
@@ -83,6 +92,20 @@ impl WorkspaceTools {
 
     pub fn with_remediation_queue_dir(mut self, app_data_dir: impl Into<PathBuf>) -> Self {
         self.remediation_queue_dir = Some(app_data_dir.into());
+        self
+    }
+
+    pub fn with_memory_settings(
+        mut self,
+        agent: &str,
+        writes_enabled: bool,
+        retention_days: u32,
+        context_enabled: bool,
+    ) -> Self {
+        self.memory_agent = agent.to_owned();
+        self.memory_writes_enabled = writes_enabled;
+        self.memory_retention_days = retention_days.clamp(1, 3650);
+        self.memory_context_enabled = context_enabled;
         self
     }
 
@@ -120,6 +143,9 @@ impl WorkspaceTools {
             "read_project_file" => self.read_project_file(arguments).await,
             "search_project" => self.search_project(arguments).await,
             "analyze_impact" => self.analyze_impact(arguments).await,
+            "recall" => self.recall(arguments).await,
+            "remember" => self.remember(arguments).await,
+            "forget" => self.forget(arguments).await,
             "prepare_patch" => self.prepare_patch(arguments).await,
             "run_safe_tests" => self.request_safe_tests(arguments).await,
             _ => Err(McpError::ResourceUnavailable),
@@ -262,6 +288,21 @@ impl WorkspaceTools {
             .into_iter()
             .filter(|item| item.finding_id == finding.id)
             .collect::<Vec<_>>();
+        let memory_context = if self.memory_context_enabled {
+            let mut scopes = vec![
+                (MemoryScope::Global, None),
+                (MemoryScope::Finding, Some(finding.id.clone())),
+            ];
+            if let Some(project_id) = instance.project_id.clone() {
+                scopes.push((MemoryScope::Project, Some(project_id)));
+            }
+            if let Some(asset_id) = instance.asset_id.clone() {
+                scopes.push((MemoryScope::Server, Some(asset_id)));
+            }
+            self.memories_for_scopes(&scopes, "", 12).await?
+        } else {
+            Vec::new()
+        };
         Ok(
             json!({"finding_id":finding.id,"advisory":{"id":advisory.canonical_id,"title":advisory.title,
                 "description":advisory.description,"affected_ranges":advisory.affected_ranges},
@@ -269,6 +310,7 @@ impl WorkspaceTools {
             "status":finding.status,"repo_status":finding.repo_status,"production_status":finding.production_status,
             "evidence":evidence.into_iter().map(|item| json!({"type":item.evidence_type,"path":item.file_path_redacted,
                 "reference":item.reference,"confidence":item.confidence})).collect::<Vec<_>>(),
+            "shared_memory":memory_context,
             "priority_score_is_read_only":true}),
         )
     }
@@ -492,6 +534,224 @@ impl WorkspaceTools {
             Err(McpError::PermissionDenied)
         }
     }
+
+    async fn recall(&self, arguments: &Value) -> Result<Value, McpError> {
+        let query = arguments
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if query.len() > 256 {
+            return Err(McpError::InvalidArguments);
+        }
+        let scope = arguments.get("scope").map(parse_memory_scope).transpose()?;
+        let scope_id = optional_string(arguments, "scope_id")?;
+        if scope == Some(MemoryScope::Global) && scope_id.is_some()
+            || scope.is_some_and(|scope| scope != MemoryScope::Global) && scope_id.is_none()
+        {
+            return Err(McpError::InvalidArguments);
+        }
+        if let Some(scope) = scope
+            && scope != MemoryScope::Global
+        {
+            self.require_memory_scope_exists(scope, scope_id.as_deref().unwrap_or_default())
+                .await?;
+        }
+        let notes = self
+            .database
+            .search_memories(query, chrono::Utc::now(), 100)
+            .await
+            .map_err(McpError::Database)?
+            .into_iter()
+            .filter(|memory| memory_matches_scope(memory, scope, scope_id.as_deref()))
+            .take(30)
+            .map(|memory| self.memory_json(memory))
+            .collect::<Vec<_>>();
+        Ok(json!({"memories":notes,"untrusted_data":true}))
+    }
+
+    async fn remember(&self, arguments: &Value) -> Result<Value, McpError> {
+        if !self.memory_writes_enabled {
+            return Err(McpError::PermissionDenied);
+        }
+        let scope = parse_memory_scope(arguments.get("scope").ok_or(McpError::InvalidArguments)?)?;
+        let scope_id = optional_string(arguments, "scope_id")?;
+        if scope == MemoryScope::Global && scope_id.is_some()
+            || scope != MemoryScope::Global && scope_id.is_none()
+        {
+            return Err(McpError::InvalidArguments);
+        }
+        if let Some(scope_id) = scope_id.as_deref() {
+            self.require_memory_scope_exists(scope, scope_id).await?;
+        }
+        let kind: MemoryKind = serde_json::from_value(
+            arguments
+                .get("kind")
+                .cloned()
+                .ok_or(McpError::InvalidArguments)?,
+        )
+        .map_err(|_| McpError::InvalidArguments)?;
+        if kind == MemoryKind::UserDecision {
+            return Err(McpError::PermissionDenied);
+        }
+        let content = arguments
+            .get("content")
+            .and_then(Value::as_str)
+            .filter(|content| !content.trim().is_empty() && content.len() <= 32 * 1024)
+            .ok_or(McpError::InvalidArguments)?;
+        let redacted = redact_text_with_host_aliases(content, &self.host_aliases);
+        if redacted.text.len() > 8192 || is_source_code_like(&redacted.text) {
+            return Err(McpError::InvalidArguments);
+        }
+        let now = chrono::Utc::now();
+        let author = format!("agent:{}", self.memory_agent);
+        let memory = Memory {
+            id: uuid::Uuid::new_v4().to_string(),
+            scope,
+            scope_id,
+            kind,
+            content: redacted.text,
+            author: author.clone(),
+            source_run_id: None,
+            created_at: now,
+            expires_at: Some(now + chrono::Duration::days(i64::from(self.memory_retention_days))),
+            pinned: arguments
+                .get("pinned")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            verified_at: None,
+            verified_by: None,
+        };
+        self.database
+            .repository::<Memory>()
+            .create(&memory)
+            .await
+            .map_err(McpError::Database)?;
+        if let Err(error) = self
+            .write_memory_audit("mcp_memory_created", &memory.id)
+            .await
+        {
+            let _ = self
+                .database
+                .repository::<Memory>()
+                .delete(&memory.id)
+                .await;
+            return Err(error);
+        }
+        Ok(json!({"memory":self.memory_json(memory),"untrusted_data":true}))
+    }
+
+    async fn forget(&self, arguments: &Value) -> Result<Value, McpError> {
+        if !self.memory_writes_enabled {
+            return Err(McpError::PermissionDenied);
+        }
+        let id = required_string(arguments, "id")?;
+        let author = format!("agent:{}", self.memory_agent);
+        let memory = self
+            .database
+            .repository::<Memory>()
+            .get(id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        if memory.author != author {
+            return Err(McpError::PermissionDenied);
+        }
+        self.write_memory_audit("mcp_memory_deletion_requested", id)
+            .await?;
+        let deleted = self
+            .database
+            .delete_memory_authored_by(id, &author)
+            .await
+            .map_err(McpError::Database)?;
+        if !deleted {
+            return Err(McpError::PermissionDenied);
+        }
+        self.write_memory_audit("mcp_memory_deleted", id).await?;
+        Ok(json!({"deleted":true}))
+    }
+
+    async fn write_memory_audit(&self, action: &str, memory_id: &str) -> Result<(), McpError> {
+        self.database
+            .repository::<AuditEvent>()
+            .create(&AuditEvent {
+                id: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now(),
+                actor: format!("agent:{}", self.memory_agent),
+                action: action.to_owned(),
+                scope: AuditScope {
+                    resource_type: "memory".into(),
+                    resource_id: Some(memory_id.to_owned()),
+                },
+                result: AuditResult::Succeeded,
+            })
+            .await
+            .map_err(McpError::Database)
+    }
+
+    async fn require_memory_scope_exists(
+        &self,
+        scope: MemoryScope,
+        scope_id: &str,
+    ) -> Result<(), McpError> {
+        let exists = match scope {
+            MemoryScope::Global => true,
+            MemoryScope::Project => {
+                self.project(scope_id).await?;
+                true
+            }
+            MemoryScope::Server => self
+                .database
+                .repository::<Asset>()
+                .get(scope_id)
+                .await
+                .map_err(McpError::Database)?
+                .is_some(),
+            MemoryScope::Finding => self
+                .database
+                .repository::<Finding>()
+                .get(scope_id)
+                .await
+                .map_err(McpError::Database)?
+                .is_some(),
+        };
+        if exists {
+            Ok(())
+        } else {
+            Err(McpError::ResourceUnavailable)
+        }
+    }
+
+    async fn memories_for_scopes(
+        &self,
+        scopes: &[(MemoryScope, Option<String>)],
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Value>, McpError> {
+        let memories = self
+            .database
+            .search_memories(query, chrono::Utc::now(), 100)
+            .await
+            .map_err(McpError::Database)?;
+        Ok(memories
+            .into_iter()
+            .filter(|memory| {
+                scopes
+                    .iter()
+                    .any(|(scope, scope_id)| memory.scope == *scope && memory.scope_id == *scope_id)
+            })
+            .take(limit)
+            .map(|memory| self.memory_json(memory))
+            .collect())
+    }
+
+    fn memory_json(&self, mut memory: Memory) -> Value {
+        memory.content = redact_text_with_host_aliases(&memory.content, &self.host_aliases).text;
+        json!({"id":memory.id,"scope":memory.scope,"scope_id":memory.scope_id,
+            "kind":memory.kind,"content":memory.content,"author":memory.author,
+            "created_at":memory.created_at,"expires_at":memory.expires_at,
+            "pinned":memory.pinned,"verified_at":memory.verified_at,
+            "verified_by":memory.verified_by,"untrusted_data":true})
+    }
 }
 
 #[async_trait::async_trait]
@@ -549,6 +809,19 @@ impl McpServer {
             approved_permissions: Arc::new(approved_permissions),
             executor,
         }
+    }
+
+    pub fn with_memory_writes_approved(mut self, approved: bool) -> Self {
+        if approved
+            && !self
+                .approved_permissions
+                .contains(&ToolPermission::MemoryWrite)
+        {
+            let mut permissions = self.approved_permissions.as_ref().clone();
+            permissions.push(ToolPermission::MemoryWrite);
+            self.approved_permissions = Arc::new(permissions);
+        }
+        self
     }
 
     pub async fn process(&self, request: &Value) -> Option<Value> {
@@ -782,11 +1055,55 @@ pub fn supported_tools() -> Vec<AiTool> {
             json!({"type":"object","properties":{"remediation_id":{"type":"string"}},"required":["remediation_id"],"additionalProperties":false}),
             ToolPermission::Execute,
         ),
+        tool(
+            "recall",
+            "Read relevant, untrusted shared notes from the local memory store.",
+            json!({"type":"object","properties":{"scope":{"type":"string","enum":["global","project","server","finding"]},"scope_id":{"type":"string"},"query":{"type":"string"}},"additionalProperties":false}),
+            ToolPermission::Read,
+        ),
+        tool(
+            "remember",
+            "Save a redacted, expiring agent note without changing findings or user decisions.",
+            json!({"type":"object","properties":{"scope":{"type":"string","enum":["global","project","server","finding"]},"scope_id":{"type":"string"},"kind":{"type":"string","enum":["finding_note","user_decision","project_context","failed_fix","agent_summary"]},"content":{"type":"string"},"pinned":{"type":"boolean"}},"required":["scope","kind","content"],"additionalProperties":false}),
+            ToolPermission::MemoryWrite,
+        ),
+        tool(
+            "forget",
+            "Delete a note created by this agent only.",
+            json!({"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false}),
+            ToolPermission::MemoryWrite,
+        ),
     ]
 }
 
 fn mcp_supported_tools() -> Vec<AiTool> {
     supported_tools()
+}
+
+fn parse_memory_scope(value: &Value) -> Result<MemoryScope, McpError> {
+    match value.as_str() {
+        Some("global") => Ok(MemoryScope::Global),
+        Some("project") => Ok(MemoryScope::Project),
+        Some("server") => Ok(MemoryScope::Server),
+        Some("finding") => Ok(MemoryScope::Finding),
+        _ => Err(McpError::InvalidArguments),
+    }
+}
+
+fn memory_matches_scope(
+    memory: &Memory,
+    scope: Option<MemoryScope>,
+    scope_id: Option<&str>,
+) -> bool {
+    match scope {
+        None => true,
+        Some(MemoryScope::Global) => memory.scope == MemoryScope::Global,
+        Some(scope) if scope_id.is_some() => {
+            memory.scope == MemoryScope::Global
+                || (memory.scope == scope && memory.scope_id.as_deref() == scope_id)
+        }
+        Some(_) => false,
+    }
 }
 
 fn safe_relative_path(path: &str) -> Result<PathBuf, McpError> {

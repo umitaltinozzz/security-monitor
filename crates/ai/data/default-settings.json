@@ -8,5 +8,7 @@
   },
   "triage_code_enabled": false,
   "enabled_tools": [],
-  "mcp_source_access_projects": []
+  "mcp_source_access_projects": [],
+  "memory_agent_writes_enabled": true,
+  "memory_retention_days": 180
 }

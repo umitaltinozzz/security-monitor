@@ -1,0 +1,6 @@
+{
+  "name": "secmon",
+  "version": "0.1.0",
+  "description": "Investigate local Security Monitor findings with MCP tools and reusable skills",
+  "skills": "./skills/"
+}

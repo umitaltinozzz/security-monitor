@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "security-monitor": {
+      "command": "secmon",
+      "args": ["mcp", "--agent", "claude-code"]
+    }
+  }
+}

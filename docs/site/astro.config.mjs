@@ -36,6 +36,7 @@ export default defineConfig({
             { label: 'Local MCP', link: '/local-mcp/' },
             { label: 'CLI', link: '/cli/' },
             { label: 'Coding-agent integrations', link: '/integrations/' },
+            { label: 'Shared local memory', link: '/shared-memory/' },
           ],
         },
         {

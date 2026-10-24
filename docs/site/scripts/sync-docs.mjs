@@ -21,6 +21,7 @@ const publicPages = [
   'local-mcp.md',
   'cli.md',
   'integrations.md',
+  'shared-memory.md',
   'contributing.md',
   'security.md',
 ];

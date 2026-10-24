@@ -1,0 +1,14 @@
+{
+  "name": "security-monitor",
+  "description": "Local Security Monitor agent tools and workflows",
+  "owner": {
+    "name": "Security Monitor contributors"
+  },
+  "plugins": [
+    {
+      "name": "secmon",
+      "source": "./plugins/claude-code",
+      "description": "Investigate findings with the local Security Monitor MCP server"
+    }
+  ]
+}

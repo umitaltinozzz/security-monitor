@@ -525,3 +525,159 @@ pub struct AuditEvent {
     pub scope: AuditScope,
     pub result: AuditResult,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemoryScope {
+    Global,
+    Project,
+    Server,
+    Finding,
+}
+
+impl MemoryScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Project => "project",
+            Self::Server => "server",
+            Self::Finding => "finding",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum MemoryKind {
+    FindingNote,
+    UserDecision,
+    ProjectContext,
+    FailedFix,
+    AgentSummary,
+}
+
+/// Local, untrusted context shared between the user and coding agents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Memory {
+    pub id: String,
+    pub scope: MemoryScope,
+    pub scope_id: Option<String>,
+    pub kind: MemoryKind,
+    pub content: String,
+    pub author: String,
+    pub source_run_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub pinned: bool,
+    pub verified_at: Option<DateTime<Utc>>,
+    pub verified_by: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MemoryArchiveEntry {
+    pub scope: MemoryScope,
+    pub scope_id: Option<String>,
+    pub kind: MemoryKind,
+    pub content: String,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MemoryArchive {
+    pub version: u32,
+    pub exported_at: DateTime<Utc>,
+    pub memories: Vec<MemoryArchiveEntry>,
+}
+
+/// Conservatively rejects code-shaped text from persistent shared notes.
+pub fn is_source_code_like(content: &str) -> bool {
+    let normalized = content.trim();
+    if normalized.is_empty()
+        || normalized.contains("-----BEGIN ")
+        || normalized.contains("-----END ")
+    {
+        return true;
+    }
+
+    let lower = normalized.to_ascii_lowercase();
+    let code_markers = [
+        "fn ",
+        "pub fn ",
+        "async fn ",
+        "function ",
+        "class ",
+        "def ",
+        "#include",
+        "package main",
+        "console.log(",
+        "std::",
+        "=> {",
+        "#!/",
+        "<?php",
+        "<script",
+        "select * from ",
+    ];
+    if code_markers.iter().any(|marker| lower.contains(marker)) {
+        return true;
+    }
+
+    let lines = normalized
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if lines.iter().any(|line| {
+        let line = line.to_ascii_lowercase();
+        line.starts_with("import ") || (line.starts_with("from ") && line.contains(" import "))
+    }) {
+        return true;
+    }
+    if lines.len() < 2 {
+        return normalized.ends_with(';')
+            || normalized.starts_with('{')
+            || normalized.starts_with("let ")
+            || normalized.starts_with("const ");
+    }
+
+    let code_shaped = lines
+        .iter()
+        .filter(|line| {
+            line.ends_with(';')
+                || line.ends_with('{')
+                || **line == "}"
+                || line.contains(" = ")
+                || line.contains("->")
+                || line.contains("=>")
+        })
+        .count();
+    code_shaped * 3 >= lines.len() * 2
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn source_code_notes_are_rejected_but_security_prose_is_allowed() {
+        for content in [
+            "fn main() { println!(\"secret\"); }",
+            "const token = \"abc\";",
+            "let user = await load_user();",
+            "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----",
+            "server {\n  listen 443;\n  proxy_pass http://upstream;\n}",
+        ] {
+            assert!(is_source_code_like(content), "{content}");
+        }
+        for content in [
+            "This finding is reachable only from the administrative code path.",
+            "The owner confirmed the service is not exposed to the public internet.",
+        ] {
+            assert!(!is_source_code_like(content), "{content}");
+        }
+    }
+}

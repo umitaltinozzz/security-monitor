@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { AiConfigurationView } from "./generated/AiConfigurationView";
 import type { AgentCliProduct } from "./generated/AgentCliProduct";
 import type { AiProviderInput } from "./generated/AiProviderInput";
 import type { AiSettings } from "./generated/AiSettings";
 import type { AiTier } from "./generated/AiTier";
+import type { MemoryArchive } from "./generated/MemoryArchive";
 import type { Project } from "./generated/Project";
 import type { WorkspaceData } from "./api";
 import { api } from "./api";
+import { MemoryNotes } from "./MemoryNotes";
 
 type T = (key: string) => string;
 type Notice = { message: string; kind: "error" | "success" } | null;
@@ -30,14 +32,19 @@ export function AiSettingsPanel({ data, t, setNotice, refresh }: {
   const [editId, setEditId] = useState<string | null>(null);
   const [toolCalling, setToolCalling] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [retentionDays, setRetentionDays] = useState(180);
   const tierOptions: AiTier[] = ["triage", "analysis", "patch"];
-  const toolOptions = ["list_projects", "list_assets", "list_findings", "get_finding_evidence", "compare_repo_deployment", "read_project_file", "search_project", "analyze_impact", "prepare_patch", "run_safe_tests"];
+  const toolOptions = ["list_projects", "list_assets", "list_findings", "get_finding_evidence", "compare_repo_deployment", "read_project_file", "search_project", "analyze_impact", "prepare_patch", "run_safe_tests", "recall", "remember", "forget"];
 
   const load = useCallback(async () => {
     try { setConfiguration(await api.aiConfiguration()); }
     catch { setNotice({ kind: "error", message: t("error.storage_unavailable") }); }
   }, [setNotice, t]);
   useEffect(() => { void load(); }, [load]);
+  const configuredRetentionDays = configuration?.settings.memory_retention_days;
+  useEffect(() => {
+    if (configuredRetentionDays !== undefined) setRetentionDays(configuredRetentionDays);
+  }, [configuredRetentionDays]);
 
   async function saveProvider(event: FormEvent) {
     event.preventDefault();
@@ -79,6 +86,45 @@ export function AiSettingsPanel({ data, t, setNotice, refresh }: {
       setConfiguration((current) => current ? { ...current, settings: next } : current);
       setNotice({ kind: "success", message: t("ai.settingsSaved") });
     } catch { setNotice({ kind: "error", message: t("error.invalid_input") }); }
+  }
+
+  async function exportMemoryArchive() {
+    try {
+      const archive = await api.exportMemories();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "security-monitor-memories.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setNotice({ kind: "error", message: t("ai.memoryExportFailed") });
+    }
+  }
+
+  async function importMemoryArchive(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    try {
+      const archive = JSON.parse(await file.text()) as MemoryArchive;
+      const imported = await api.importMemories(archive);
+      setNotice({ kind: "success", message: t("ai.memoryImported").replace("{count}", String(imported)) });
+      refresh();
+    } catch {
+      setNotice({ kind: "error", message: t("ai.memoryImportFailed") });
+    }
+  }
+
+  async function clearMemories() {
+    if (!window.confirm(t("ai.memoryClearConfirm"))) return;
+    try {
+      const count = await api.deleteAllMemories();
+      setNotice({ kind: "success", message: t("ai.memoryDeletedAll").replace("{count}", String(count)) });
+      refresh();
+    } catch {
+      setNotice({ kind: "error", message: t("error.storage_unavailable") });
+    }
   }
 
   async function setProjectProviders(project: Project, providerId: string, enabled: boolean) {
@@ -171,6 +217,12 @@ export function AiSettingsPanel({ data, t, setNotice, refresh }: {
     </section>
     <section className="panel settings-panel ai-panel"><h3>{t("ai.mcpSourceAccess")}</h3><p>{t("ai.mcpSourceAccessHelp")}</p>
       {data.projects.length === 0 ? <p>{t("projects.empty")}</p> : <div className="ecosystem-grid">{data.projects.map((project) => <label className="check-field" key={project.id}><input type="checkbox" checked={aiSettings.mcp_source_access_projects.includes(project.id)} onChange={(event) => toggleMcpSourceProject(project.id, event.target.checked)} />{project.name}</label>)}</div>}
+    </section>
+    <section className="panel settings-panel ai-panel"><h3>{t("ai.memoryTitle")}</h3><p>{t("ai.memoryDescription")}</p>
+      <label className="check-field"><input type="checkbox" checked={aiSettings.memory_agent_writes_enabled} onChange={(event) => void saveSettings({ ...aiSettings, memory_agent_writes_enabled: event.target.checked })} />{t("ai.memoryAgentWrites")}</label>
+      <label className="field"><span>{t("ai.memoryRetention")}</span><input type="number" min={1} max={3650} value={retentionDays} onChange={(event) => setRetentionDays(Number(event.target.value))} onBlur={() => { if (Number.isInteger(retentionDays) && retentionDays >= 1 && retentionDays <= 3650) void saveSettings({ ...aiSettings, memory_retention_days: retentionDays }); else setRetentionDays(aiSettings.memory_retention_days); }} /></label>
+      <div className="button-row"><button type="button" className="button secondary" onClick={() => void exportMemoryArchive()}>{t("ai.memoryExport")}</button><label className="button secondary file-button">{t("ai.memoryImport")}<input type="file" accept="application/json,.json" onChange={(event) => void importMemoryArchive(event)} /></label><button type="button" className="button danger" onClick={() => void clearMemories()}>{t("ai.memoryDeleteAll")}</button></div>
+      <MemoryNotes scope="global" t={t} setNotice={setNotice} />
     </section>
     <section className="panel settings-panel ai-panel"><h3>{t("ai.runHistory")}</h3>{configuration.runs.length === 0 ? <p>{t("common.noResults")}</p> : <div className="table-wrap"><table><thead><tr><th>{t("ai.modelId")}</th><th>{t("ai.tier")}</th><th>{t("ai.tokens")}</th><th>{t("ai.cost")}</th><th>{t("common.status")}</th></tr></thead><tbody>{[...configuration.runs].sort((a, b) => b.started_at.localeCompare(a.started_at)).map((run) => <tr key={run.id}><td>{run.model || t("common.unknown")}</td><td>{t(`ai.tiers.${run.tier}`)}</td><td>{run.tokens_in + run.tokens_out}</td><td>{run.cost === null ? t("common.unverified") : `$${run.cost.toFixed(4)}`}</td><td>{run.outcome}</td></tr>)}</tbody></table></div>}</section>
   </>;

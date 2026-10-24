@@ -1,8 +1,8 @@
 use chrono::{Duration, TimeZone, Utc};
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
-    ComponentInstance, Deployment, Finding, FindingEvidence, NotificationChannel,
-    NotificationDeliveryState, Project, Remediation, ScanRun, Service,
+    ComponentInstance, Deployment, Finding, FindingEvidence, Memory, MemoryKind, MemoryScope,
+    NotificationChannel, NotificationDeliveryState, Project, Remediation, ScanRun, Service,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -40,21 +40,21 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 8);
+    assert_eq!(database.schema_version().await.unwrap(), 9);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
           'component_instances', 'advisories', 'findings', 'finding_evidence', \
           'scan_runs', 'remediations', 'ai_providers', 'ai_runs', \
          'notification_channels', 'audit_events', 'project_scan_checkpoints', \
-          'notification_delivery_states', 'ai_transfer_approvals')",
+          'notification_delivery_states', 'ai_transfer_approvals', 'memories')",
     )
     .fetch_one(&database.pool)
     .await
     .unwrap()
     .try_get("count")
     .unwrap();
-    assert_eq!(count, 18);
+    assert_eq!(count, 19);
 }
 
 #[tokio::test]
@@ -71,7 +71,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 8);
+    assert_eq!(readonly.schema_version().await.unwrap(), 9);
     assert_eq!(
         readonly
             .repository::<Project>()
@@ -655,6 +655,127 @@ fn finding_dispositions_require_valid_reason_scope_and_consistent_expiry() {
         super::validate_record("findings", &mismatched_expiry),
         Err(DatabaseError::InvalidFindingDisposition)
     ));
+}
+
+fn memory(
+    id: &str,
+    content: &str,
+    pinned: bool,
+    created_at: chrono::DateTime<Utc>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    author: &str,
+) -> Memory {
+    Memory {
+        id: id.into(),
+        scope: MemoryScope::Global,
+        scope_id: None,
+        kind: MemoryKind::AgentSummary,
+        content: content.into(),
+        author: author.into(),
+        source_run_id: None,
+        created_at,
+        expires_at,
+        pinned,
+        verified_at: None,
+        verified_by: None,
+    }
+}
+
+#[tokio::test]
+async fn memory_search_prioritizes_pinned_notes_and_omits_expired_records() {
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 10, 24, 12, 0, 0).unwrap();
+    for note in [
+        memory("newest", "shared cache", false, now, None, "agent:codex"),
+        memory(
+            "pinned",
+            "shared cache is pinned",
+            true,
+            now - Duration::days(10),
+            None,
+            "user",
+        ),
+        memory(
+            "expired",
+            "shared cache expired",
+            true,
+            now - Duration::days(20),
+            Some(now),
+            "agent:claude-code",
+        ),
+    ] {
+        database.repository::<Memory>().create(&note).await.unwrap();
+    }
+    let matches = database
+        .search_memories("shared cache", now, 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        matches
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["pinned", "newest"]
+    );
+    assert_eq!(database.delete_expired_memories(now).await.unwrap(), 1);
+    assert!(
+        database
+            .repository::<Memory>()
+            .get("expired")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn memory_delete_is_bound_to_the_original_agent_author() {
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc::now();
+    database
+        .repository::<Memory>()
+        .create(&memory(
+            "note",
+            "remember this",
+            false,
+            now,
+            None,
+            "agent:codex",
+        ))
+        .await
+        .unwrap();
+    assert!(
+        database
+            .delete_memory_authored_by("note", "agent:claude-code")
+            .await
+            .is_ok_and(|deleted| !deleted)
+    );
+    assert!(
+        database
+            .repository::<Memory>()
+            .get("note")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        database
+            .delete_memory_authored_by("note", "agent:codex")
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn existing_read_write_open_requires_memory_schema_without_migrating() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db.sqlite3");
+    let database = Database::open(&path).await.unwrap();
+    assert!(database.schema_version().await.unwrap() >= 9);
+    database.close().await;
+    let existing = Database::open_existing_read_write(&path).await.unwrap();
+    assert!(existing.repository::<Memory>().list().await.is_ok());
+    existing.close().await;
 }
 
 #[tokio::test]

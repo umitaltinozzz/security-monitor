@@ -26,6 +26,10 @@ import type { Remediation } from "./generated/Remediation";
 import type { RemediationSandboxStatus } from "./generated/RemediationSandboxStatus";
 import type { SafeTestInput } from "./generated/SafeTestInput";
 import type { McpRemediationRequest } from "./generated/McpRemediationRequest";
+import type { Memory } from "./generated/Memory";
+import type { MemoryArchive } from "./generated/MemoryArchive";
+import type { MemoryKind } from "./generated/MemoryKind";
+import type { MemoryScope } from "./generated/MemoryScope";
 import type { ScanResult } from "./generated/ScanResult";
 import type { ScanRun } from "./generated/ScanRun";
 import type { ScannerAvailability } from "./generated/ScannerAvailability";
@@ -102,6 +106,16 @@ export const api = {
     invoke<Remediation>("run_safe_tests", { remediationId, input, executeApproved }),
   setFindingStatus: (change: FindingStatusChange) =>
     invoke<Finding>("set_finding_status", { change }),
+  memories: (scope: MemoryScope, scopeId?: string) =>
+    invoke<Memory[]>("list_memories", { scope, scopeId: scopeId ?? null }),
+  createMemory: (scope: MemoryScope, scopeId: string | null, kind: MemoryKind, content: string, pinned: boolean) =>
+    invoke<Memory>("create_memory", { scope, scopeId, kind, content, pinned }),
+  updateMemory: (memoryId: string, content: string | null, pinned: boolean | null, verified: boolean | null) =>
+    invoke<Memory>("update_memory", { memoryId, content, pinned, verified }),
+  deleteMemory: (memoryId: string) => invoke<void>("delete_memory", { memoryId }),
+  exportMemories: () => invoke<MemoryArchive>("export_memories"),
+  importMemories: (archive: MemoryArchive) => invoke<number>("import_memories", { archive }),
+  deleteAllMemories: () => invoke<number>("delete_all_memories"),
   assets: () => invoke<Asset[]>("list_server_assets"),
   scanners: () => invoke<ScannerAvailability[]>("detect_scanners"),
   installScanner: (engine: string, userApprovedDownload: boolean) =>

@@ -21,7 +21,7 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - RSS/Atom güvenlik haberleri ürün adıyla yerel eşleştirilir, bulgulardan ayrı gösterilir ve yalnızca tam CVE/GHSA kimliği geldiğinde advisory'ye bağlanır; tek başına zafiyet bulgusu üretmez.
 - Düzeltme istekleri onaylı izole Git worktree'lerinde hazırlanır; testler ağ kapalı sandbox içinde ve kullanıcı onayıyla çalışır.
 
-Raporlama, `secmon hook` ve `secmon integrate` CLI akışları uygulanmıştır. Ajanlar arası ortak hafıza ve kalan sürüm kapsamı yol haritasındadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
+Raporlama, `secmon hook` ve `secmon integrate` CLI akışları uygulanmıştır. Paylaşılan yerel hafıza ile Claude Code, Codex ve OpenCode eklentileri eklendi; notlar cihazda kalır, gizli değerlerden arındırılır ve süre sonunda sona erer. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
 
 ## Yol haritası
 

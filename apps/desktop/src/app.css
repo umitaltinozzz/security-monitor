@@ -184,6 +184,15 @@ p { color: var(--muted); line-height: 1.6; }
 .project-subsection li > span { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .project-subsection li small { color: var(--dim); }
 .project-subsection .risk-summary { color: var(--muted); font-variant-numeric: tabular-nums; }
+.memory-notes { display: grid; gap: 10px; }
+.memory-notes .memory-create, .memory-notes .memory-list { display: grid; gap: 10px; margin: 0; }
+.memory-notes .memory-list > li { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
+.memory-notes .memory-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--dim); font-size: .72rem; }
+.memory-notes textarea { width: 100%; min-height: 64px; resize: vertical; }
+.memory-notes .button-row { margin-top: 0; }
+.button.danger { border: 1px solid var(--danger, #a33); color: var(--danger, #a33); background: transparent; }
+.file-button { position: relative; overflow: hidden; }
+.file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .subsection-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .subsection-title h3 { margin: 0; }
 .fingerprint-box, .pairing-result, .approval-box, .callout { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }

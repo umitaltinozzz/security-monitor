@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "secmon",
+  "version": "0.1.0",
+  "description": "Investigate local Security Monitor findings with MCP tools and reusable skills",
+  "author": {
+    "name": "Security Monitor contributors"
+  },
+  "repository": "https://github.com/umitaltinozzz/security-monitor",
+  "license": "Apache-2.0",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true
+    }
+  }
+}

@@ -22,7 +22,11 @@ struct Arguments {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Start the local stdio MCP server. Tools come from local AI permissions.
-    Mcp {},
+    Mcp {
+        /// Stable client identity used to enforce ownership of agent-authored notes.
+        #[arg(long, default_value = "security-monitor")]
+        agent: String,
+    },
     /// Scan a local project using its cached inventory and advisory data.
     Scan {
         path: PathBuf,
@@ -139,7 +143,7 @@ async fn main() {
     let arguments = Arguments::parse();
     let database_path = arguments.database;
     let result = match arguments.command {
-        Some(Command::Mcp {}) => run_mcp(database_path).await.map(|()| 0),
+        Some(Command::Mcp { agent }) => run_mcp(database_path, &agent).await.map(|()| 0),
         Some(Command::Scan {
             path,
             format,
@@ -200,7 +204,15 @@ async fn main() {
     }
 }
 
-async fn run_mcp(database: Option<PathBuf>) -> Result<(), &'static str> {
+async fn run_mcp(database: Option<PathBuf>, agent: &str) -> Result<(), &'static str> {
+    if agent.is_empty()
+        || agent.len() > 80
+        || !agent
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("invalid_agent");
+    }
     let database_path = database
         .unwrap_or_else(default_database_path)
         .canonicalize()
@@ -215,12 +227,24 @@ async fn run_mcp(database: Option<PathBuf>) -> Result<(), &'static str> {
         .and_then(|bytes| serde_json::from_slice::<AiSettings>(&bytes).ok())
         .filter(|settings| settings.validate().is_ok())
         .unwrap_or_default();
-    let database = Database::open_read_only(database_path)
+    let database = Database::open_existing_read_write(database_path)
         .await
         .map_err(|_| "database_unavailable")?;
     let enabled_tools = audited_enabled_tool_names(&database, &ai_settings).await?;
-    let executor = Arc::new(workspace_tools(&database, &ai_settings, &app_data).await);
-    let server = McpServer::new(executor, enabled_tools);
+    let memory_writes_enabled = ai_settings.memory_agent_writes_enabled;
+    let memory_context_enabled = enabled_tools.iter().any(|tool| tool == "recall");
+    let executor = Arc::new(
+        workspace_tools(&database, &ai_settings, &app_data)
+            .await
+            .with_memory_settings(
+                agent,
+                memory_writes_enabled,
+                ai_settings.memory_retention_days,
+                memory_context_enabled,
+            ),
+    );
+    let server =
+        McpServer::new(executor, enabled_tools).with_memory_writes_approved(memory_writes_enabled);
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     server
