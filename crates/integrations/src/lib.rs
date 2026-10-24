@@ -517,7 +517,16 @@ fn scoped_path(spec: &AgentSpec, kind: &str, scope: Scope) -> Result<PathBuf, In
 }
 
 fn validate_relative(path: &Path) -> Result<(), IntegrationError> {
-    if path.as_os_str().is_empty()
+    let value = path
+        .to_str()
+        .ok_or(IntegrationError::InvalidConfiguration)?;
+    let bytes = value.as_bytes();
+    let has_windows_drive_prefix =
+        bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    if value.is_empty()
+        || path.is_absolute()
+        || has_windows_drive_prefix
+        || value.contains('\\')
         || path
             .components()
             .any(|component| !matches!(component, PathComponent::Normal(_)))
@@ -1197,6 +1206,10 @@ mod tests {
         );
         assert!(validate_relative(Path::new("../outside")).is_err());
         assert!(validate_relative(Path::new("C:/outside")).is_err());
+        assert!(validate_relative(Path::new(r"C:\outside")).is_err());
+        assert!(validate_relative(Path::new(r"C:outside")).is_err());
+        assert!(validate_relative(Path::new(r"..\outside")).is_err());
+        assert!(validate_relative(Path::new(r"\server\share")).is_err());
         assert_eq!(Agent::parse("claude-code"), Some(Agent::ClaudeCode));
     }
 }
