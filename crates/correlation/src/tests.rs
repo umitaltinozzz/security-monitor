@@ -83,6 +83,21 @@ fn three_sources_with_transitive_aliases_collapse_to_one_stable_cve() {
 }
 
 #[test]
+fn alias_merge_never_advances_epss_freshness_without_a_valid_score() {
+    let mut advisories = fixture_advisories();
+    advisories[1].epss_date = Some(timestamp(22));
+    let merged = AliasMerger::new(advisories.clone()).into_records();
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].epss, Some(0.7));
+    assert_eq!(merged[0].epss_date, Some(timestamp(20)));
+
+    advisories[1].epss = Some(0.3);
+    let updated = AliasMerger::new(advisories).into_records();
+    assert_eq!(updated[0].epss, Some(0.3));
+    assert_eq!(updated[0].epss_date, Some(timestamp(22)));
+}
+
+#[test]
 fn three_alias_sources_produce_one_confirmed_finding_for_a_location() {
     let advisories = fixture_advisories();
     let component = component();

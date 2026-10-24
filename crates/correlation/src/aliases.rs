@@ -218,18 +218,24 @@ fn merge_epss(
     let current_date = record.epss_date;
     match (current_date, incoming_date) {
         (None, Some(date)) => {
-            record.epss = valid_epss(incoming_score).or_else(|| valid_epss(record.epss));
-            record.epss_date = Some(date);
+            if let Some(score) = valid_epss(incoming_score) {
+                record.epss = Some(score);
+                record.epss_date = Some(date);
+            }
         }
         (Some(current), Some(incoming)) if incoming > current => {
-            record.epss = valid_epss(incoming_score).or_else(|| valid_epss(record.epss));
-            record.epss_date = Some(incoming);
+            if let Some(score) = valid_epss(incoming_score) {
+                record.epss = Some(score);
+                record.epss_date = Some(incoming);
+            }
         }
         (Some(current), Some(incoming)) if incoming == current => {
-            record.epss = valid_epss(record.epss)
-                .into_iter()
-                .chain(valid_epss(incoming_score))
-                .max_by(f64::total_cmp);
+            if let Some(score) = valid_epss(incoming_score) {
+                record.epss = valid_epss(record.epss)
+                    .into_iter()
+                    .chain(Some(score))
+                    .max_by(f64::total_cmp);
+            }
         }
         (None, None) => {
             record.epss = valid_epss(record.epss)

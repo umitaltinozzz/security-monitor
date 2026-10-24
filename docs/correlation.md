@@ -38,7 +38,7 @@ Priority is deterministic and returns a score from 0 to 100 with sorted machine-
 | Fix available | +5 |
 | Medium / high test cost | +1 / +3 |
 
-EPSS older than 30 days is stale and contributes no points. Missing or stale signals add a reason code instead of lowering risk. Invalid and future-dated scores are rejected. Positive additions cap at 100; no missing signal marks a finding safe. These weights are rule-based triage guidance, not an exploitability proof.
+EPSS older than 30 days is stale and contributes no points. Alias merging keeps each EPSS score paired with its own date, so a newer date without a valid score cannot refresh an older score. Missing or stale signals add a reason code instead of lowering risk. Invalid and future-dated scores are rejected. Positive additions cap at 100; no missing signal marks a finding safe. These weights are rule-based triage guidance, not an exploitability proof.
 
 ## Finding status changes
 
