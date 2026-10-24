@@ -1,0 +1,6 @@
+{
+  "title": "CISA Known Exploited Vulnerabilities Catalog",
+  "vulnerabilities": [
+    {"cveID": "CVE-2026-7001", "vendorProject": "Fixture", "product": "fixture-package"}
+  ]
+}

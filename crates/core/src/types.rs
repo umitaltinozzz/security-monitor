@@ -219,13 +219,37 @@ pub struct RangeEvent {
 #[ts(export)]
 pub struct AffectedRange {
     pub ecosystem: String,
+    #[serde(default)]
+    pub package: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub range_type: Option<String>,
     pub events: Vec<RangeEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AdvisorySource {
+    pub name: String,
+    pub url: String,
+    pub license: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Advisory {
     pub canonical_id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub summary_model: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub source_attributions: Vec<AdvisorySource>,
     pub aliases: Vec<String>,
     pub affected_ranges: Vec<AffectedRange>,
     pub fixed_versions: Vec<String>,

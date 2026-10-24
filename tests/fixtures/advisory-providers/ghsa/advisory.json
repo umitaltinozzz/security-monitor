@@ -1,0 +1,15 @@
+{
+  "ghsa_id": "GHSA-abcd-efgh-ijkl",
+  "cve_id": "CVE-2026-7001",
+  "summary": "Fixture package issue",
+  "description": "Fixture GHSA description.",
+  "severity": "high",
+  "cvss": {"score": 8.1, "vector_string": "CVSS:3.1"},
+  "vulnerabilities": [{
+    "package": {"ecosystem": "npm", "name": "fixture-package"},
+    "vulnerable_version_range": ">= 1.0.0, < 1.1.0",
+    "first_patched_version": {"identifier": "1.1.0"}
+  }],
+  "published_at": "2026-10-24T09:00:00Z",
+  "updated_at": "2026-10-24T09:30:00Z"
+}

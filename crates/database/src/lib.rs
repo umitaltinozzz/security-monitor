@@ -364,6 +364,11 @@ entity!(
     "canonical_id",
     [
         ("canonical_id", "$.canonical_id"),
+        ("title", "$.title"),
+        ("summary", "$.summary"),
+        ("summary_model", "$.summary_model"),
+        ("description", "$.description"),
+        ("source_attributions", "$.source_attributions"),
         ("aliases", "$.aliases"),
         ("affected_ranges", "$.affected_ranges"),
         ("fixed_versions", "$.fixed_versions"),

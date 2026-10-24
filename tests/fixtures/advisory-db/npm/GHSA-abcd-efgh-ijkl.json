@@ -1,0 +1,19 @@
+{
+  "id": "GHSA-abcd-efgh-ijkl",
+  "modified": "2026-10-24T09:30:00Z",
+  "published": "2026-10-24T09:00:00Z",
+  "aliases": ["CVE-2026-7001"],
+  "summary": "Fixture package issue",
+  "details": "Fixture OSV description.",
+  "affected": [{
+    "package": {"ecosystem": "npm", "name": "fixture-package"},
+    "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.1.0"}]}],
+    "versions": ["1.0.0", "1.0.1"]
+  }],
+  "references": [{"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-abcd-efgh-ijkl"}],
+  "severity": [],
+  "database_specific": {
+    "severity": "HIGH",
+    "source": "https://github.com/advisories/GHSA-abcd-efgh-ijkl"
+  }
+}

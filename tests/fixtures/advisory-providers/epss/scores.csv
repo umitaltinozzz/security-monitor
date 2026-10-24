@@ -1,0 +1,4 @@
+#model_version: test, score_date: 2026-10-24
+cve,epss,percentile,date
+CVE-2026-7001,0.42,0.91,2026-10-24
+CVE-2026-7002,0.03,0.50,2026-10-24

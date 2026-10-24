@@ -1,0 +1,16 @@
+{
+  "id": "GHSA-deferred-aaaa-bbbb",
+  "modified": "2026-10-24T10:00:00Z",
+  "published": "2026-10-24T09:00:00Z",
+  "aliases": ["CVE-2026-7002"],
+  "summary": "Fixture product issue with package data",
+  "details": "Fixture OSV package range arrived after the initial product advisory.",
+  "affected": [{
+    "package": {"ecosystem": "npm", "name": "fixture-lib"},
+    "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "1.1.0"}]}],
+    "versions": []
+  }],
+  "references": [{"type": "ADVISORY", "url": "https://osv.dev/vulnerability/GHSA-deferred-aaaa-bbbb"}],
+  "severity": [],
+  "database_specific": {"severity": "HIGH"}
+}

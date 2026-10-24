@@ -13,7 +13,13 @@ skip-tree = []
 
 [licenses]
 confidence-threshold = 0.93
-allow = ["Apache-2.0", "MIT", "Unicode-3.0", "BSD-2-Clause", "BSD-3-Clause"]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+]
 exceptions = [
     { crate = "cssparser@0.37.0", allow = ["MPL-2.0"] },
     { crate = "cssparser-macros@0.7.1", allow = ["MPL-2.0"] },
@@ -21,10 +27,14 @@ exceptions = [
     { crate = "foldhash@0.1.5", allow = ["Zlib"] },
     { crate = "foldhash@0.2.0", allow = ["Zlib"] },
     { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
+    { crate = "ring@0.17.14", allow = ["Apache-2.0", "ISC"] },
+    { crate = "rustls-webpki@0.103.16", allow = ["ISC"] },
     { crate = "selectors@0.38.0", allow = ["MPL-2.0"] },
     { crate = "smartstring@1.0.1", allow = ["MPL-2.0"] },
     { crate = "target-lexicon@0.12.16", allow = ["Apache-2.0 WITH LLVM-exception"] },
+    { crate = "untrusted@0.9.0", allow = ["ISC"] },
     { crate = "version-ranges@0.1.3", allow = ["MPL-2.0"] },
+    { crate = "webpki-roots@1.0.11", allow = ["CDLA-Permissive-2.0"] },
 ]
 
 [sources]
