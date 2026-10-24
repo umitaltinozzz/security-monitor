@@ -1,15 +1,9 @@
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
 
-const [, , target, artifact, platform, arch, releaseMode] = process.argv;
-const valid = new Set(['windows-x86_64', 'macos-x86_64', 'macos-aarch64', 'macos-universal', 'linux-x86_64']);
-const nightly = releaseMode === 'nightly';
-const universal = arch === 'universal';
-const expectedArtifact = platform === 'darwin' ? `macos-${arch}` : `${platform}-${arch}`;
-if (!valid.has(artifact) || !target || !['windows', 'darwin', 'linux'].includes(platform) ||
-    !['x86_64', 'aarch64', 'universal'].includes(arch) || (universal !== (artifact === 'macos-universal')) ||
-    artifact !== expectedArtifact || (universal && (platform !== 'darwin' || target !== 'universal-apple-darwin')) ||
-    (releaseMode && !['stable', 'nightly'].includes(releaseMode))) {
+const [, , target, artifact, platform, arch] = process.argv;
+const valid = new Set(['windows-x86_64', 'macos-x86_64', 'macos-aarch64', 'linux-x86_64']);
+if (!valid.has(artifact) || !target || !['windows', 'darwin', 'linux'].includes(platform) || !['x86_64', 'aarch64'].includes(arch)) {
   throw new Error('Release target metadata is invalid.');
 }
 
@@ -31,15 +25,11 @@ async function filesUnder(directory) {
 
 const packageFiles = await filesUnder(bundle);
 if (packageFiles.length === 0) throw new Error('Tauri produced no desktop packages.');
-const payloadFiles = packageFiles.filter((path) => !path.toLowerCase().endsWith('.sig'));
-if (payloadFiles.some((path) => path.toLowerCase().endsWith('.zip'))) {
+if (packageFiles.some((path) => path.toLowerCase().endsWith('.zip'))) {
   throw new Error('ZIP updater bundles are outside the supported release formats.');
 }
-if (universal && payloadFiles.some((path) => !path.toLowerCase().endsWith('.dmg'))) {
-  throw new Error('The universal macOS artifact must contain only a DMG installer.');
-}
 const stagedNames = new Map();
-for (const source of payloadFiles) {
+for (const source of packageFiles) {
   const safeName = basename(source).normalize('NFKC').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/-+/g, '-');
   const name = `security-monitor-${artifact}-${safeName}`;
   const destination = join(output, name);
@@ -48,7 +38,7 @@ for (const source of payloadFiles) {
 }
 
 const updaterTargets = {};
-for (const signaturePath of nightly || universal ? [] : packageFiles.filter((path) => path.endsWith('.sig'))) {
+for (const signaturePath of packageFiles.filter((path) => path.endsWith('.sig'))) {
   const payloadPath = signaturePath.slice(0, -4);
   if (!packageFiles.includes(payloadPath)) continue;
   const payloadName = stagedNames.get(payloadPath);
@@ -63,19 +53,13 @@ for (const signaturePath of nightly || universal ? [] : packageFiles.filter((pat
     signature: (await readFile(signaturePath, 'utf8')).trim(),
   };
 }
-if (!nightly && !universal && Object.keys(updaterTargets).length === 0) {
-  throw new Error('No signed updater package was produced for this platform.');
-}
+if (Object.keys(updaterTargets).length === 0) throw new Error('No signed updater package was produced for this platform.');
 
-if (!universal) {
-  const cliSuffix = platform === 'windows' ? '.exe' : '';
-  const binaryDirectory = platform === 'linux'
-    ? join(root, 'target', 'x86_64-unknown-linux-musl', 'release')
-    : join(root, 'target', target, 'release');
-  const cliSource = join(binaryDirectory, `secmon${cliSuffix}`);
-  const cliName = `secmon-${artifact}${cliSuffix}`;
-  await copyFile(cliSource, join(output, cliName));
-}
+const binaryDirectory = join(root, 'target', target, 'release');
+const cliSuffix = platform === 'windows' ? '.exe' : '';
+const cliSource = join(binaryDirectory, `secmon${cliSuffix}`);
+const cliName = `secmon-${artifact}${cliSuffix}`;
+await copyFile(cliSource, join(output, cliName));
 
 if (platform === 'linux') {
   const agentSource = join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent');
@@ -83,9 +67,7 @@ if (platform === 'linux') {
   await copyFile(agentSource, join(output, agentName));
 }
 
-if (!nightly && !universal) {
-  await writeFile(join(output, `${artifact}.updater.json`), `${JSON.stringify(updaterTargets, null, 2)}\n`, { flag: 'wx' });
-}
+await writeFile(join(output, `${artifact}.updater.json`), `${JSON.stringify(updaterTargets, null, 2)}\n`, { flag: 'wx' });
 const names = await readdir(output);
 const paths = await Promise.all(names.map(async (name) => relative(root, join(output, name))));
 if (paths.some((path) => path.startsWith('..'))) throw new Error('Staged release path escaped the repository.');
