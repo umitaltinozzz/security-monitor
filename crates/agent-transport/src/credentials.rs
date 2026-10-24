@@ -1,0 +1,69 @@
+use keyring::Entry;
+use thiserror::Error;
+use uuid::Uuid;
+use zeroize::Zeroizing;
+
+const SERVICE: &str = "security-monitor";
+const KEY_REF_PREFIX: &str = "secmon-keyring:v1:";
+
+#[derive(Debug, Error)]
+pub enum CredentialError {
+    #[error("credential reference is invalid")]
+    InvalidReference,
+    #[error("operating-system credential store is unavailable")]
+    StoreUnavailable,
+}
+
+pub trait CredentialStore: Send + Sync {
+    fn put(&self, secret: &[u8]) -> Result<String, CredentialError>;
+    fn get(&self, reference: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError>;
+    fn delete(&self, reference: &str) -> Result<(), CredentialError>;
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct OsCredentialStore;
+
+impl CredentialStore for OsCredentialStore {
+    fn put(&self, secret: &[u8]) -> Result<String, CredentialError> {
+        let reference = format!("{KEY_REF_PREFIX}{}", Uuid::new_v4());
+        let entry =
+            Entry::new(SERVICE, &reference).map_err(|_| CredentialError::StoreUnavailable)?;
+        entry
+            .set_secret(secret)
+            .map_err(|_| CredentialError::StoreUnavailable)?;
+        Ok(reference)
+    }
+
+    fn get(&self, reference: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
+        validate_reference(reference)?;
+        let entry =
+            Entry::new(SERVICE, reference).map_err(|_| CredentialError::StoreUnavailable)?;
+        let value = entry
+            .get_secret()
+            .map_err(|_| CredentialError::StoreUnavailable)?;
+        Ok(Zeroizing::new(value))
+    }
+
+    fn delete(&self, reference: &str) -> Result<(), CredentialError> {
+        validate_reference(reference)?;
+        let entry =
+            Entry::new(SERVICE, reference).map_err(|_| CredentialError::StoreUnavailable)?;
+        entry
+            .delete_credential()
+            .map_err(|_| CredentialError::StoreUnavailable)
+    }
+}
+
+pub(crate) fn validate_reference(reference: &str) -> Result<(), CredentialError> {
+    let Some(identifier) = reference.strip_prefix(KEY_REF_PREFIX) else {
+        return Err(CredentialError::InvalidReference);
+    };
+    if Uuid::parse_str(identifier).is_ok()
+        && identifier.len() == 36
+        && identifier == identifier.to_ascii_lowercase()
+    {
+        Ok(())
+    } else {
+        Err(CredentialError::InvalidReference)
+    }
+}

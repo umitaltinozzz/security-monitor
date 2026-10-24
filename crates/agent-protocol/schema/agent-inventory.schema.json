@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentInventory",
+  "type": "object",
+  "properties": {
+    "agent_version": {
+      "type": "string"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CollectionCheck"
+      }
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "containers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ContainerRecord"
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DeploymentIdentity"
+      }
+    },
+    "hostname": {
+      "type": "string"
+    },
+    "operating_system": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperatingSystem"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PackageRecord"
+      }
+    },
+    "processes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProcessRecord"
+      }
+    },
+    "protocol_version": {
+      "type": "integer",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0
+    },
+    "runtimes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RuntimeRecord"
+      }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ServiceRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "agent_version",
+    "captured_at",
+    "hostname",
+    "packages",
+    "runtimes",
+    "processes",
+    "services",
+    "containers",
+    "deployments",
+    "checks",
+    "complete"
+  ],
+  "$defs": {
+    "CheckKind": {
+      "type": "string",
+      "enum": [
+        "operating_system",
+        "package_inventory",
+        "runtimes",
+        "processes",
+        "services",
+        "containers",
+        "deployments",
+        "dependency_files"
+      ]
+    },
+    "CheckStatus": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ]
+    },
+    "CollectionCheck": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiagnosticCode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "$ref": "#/$defs/CheckKind"
+        },
+        "status": {
+          "$ref": "#/$defs/CheckStatus"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "status",
+        "item_count"
+      ]
+    },
+    "ContainerRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "oci_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oci_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oci_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "image"
+      ]
+    },
+    "DeploymentIdentity": {
+      "type": "object",
+      "properties": {
+        "built_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "integrity_verified": {
+          "description": "An observed deploy ID identifies a build but does not prove its integrity.",
+          "type": "boolean"
+        },
+        "release_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repository": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/DeploymentSource"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "integrity_verified"
+      ]
+    },
+    "DeploymentSource": {
+      "type": "string",
+      "enum": [
+        "oci_label",
+        "application_file",
+        "system_file",
+        "service_environment",
+        "git_head",
+        "unknown"
+      ]
+    },
+    "DiagnosticCode": {
+      "type": "string",
+      "enum": [
+        "permission_denied",
+        "unsupported_platform",
+        "command_unavailable",
+        "command_failed",
+        "invalid_output",
+        "limit_reached",
+        "configuration_unavailable",
+        "no_allowlisted_paths",
+        "stale_observation"
+      ]
+    },
+    "OperatingSystem": {
+      "type": "object",
+      "properties": {
+        "architecture": {
+          "type": "string"
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kernel_release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pretty_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "architecture"
+      ]
+    },
+    "PackageRecord": {
+      "type": "object",
+      "properties": {
+        "architecture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ecosystem": {
+          "type": "string"
+        },
+        "evidence_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "purl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "ecosystem",
+        "source"
+      ]
+    },
+    "PackageSource": {
+      "type": "string",
+      "enum": [
+        "dpkg",
+        "rpm",
+        "apk",
+        "lockfile",
+        "container_image"
+      ]
+    },
+    "ProcessRecord": {
+      "type": "object",
+      "properties": {
+        "container_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executable_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "runtime_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "service_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pid"
+      ]
+    },
+    "RuntimeRecord": {
+      "type": "object",
+      "properties": {
+        "binary_path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "binary_path"
+      ]
+    },
+    "ServiceRecord": {
+      "type": "object",
+      "properties": {
+        "container_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deploy_identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeploymentIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "executable_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "pid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "unit_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    }
+  }
+}

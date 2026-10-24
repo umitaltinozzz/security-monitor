@@ -14,13 +14,14 @@ Security Monitor (`secmon`) is an open-source project to connect software vulner
 - A correlation library for advisory alias merging, version-range matching, stable finding fingerprints, deterministic priority explanations, and evidence-gated status changes.
 - A local scan orchestration library with a bounded queue, resource limits, quick/full profiles, a three-second file watcher debounce, startup hash checks, and cached-inventory advisory re-correlation.
 - Notification transports for desktop, approved HTTPS webhooks/Slack/Discord, and TLS SMTP, with OS-keyring secrets, recorded destination approvals, deduplication, and snoozing.
+- A versioned server inventory protocol, read-only root-free Linux collector, OS-keyring SSH pairing, forced-command restrictions, host-key pinning, SSH config discovery, and fixed-command agentless collection API.
 - A Tauri desktop shell and the `secmon --help` / `secmon --version` CLI.
 
-The orchestration and notification libraries are not yet connected to the desktop app or CLI. Server collection, AI, remediation, and product screens are not available.
+The scan, notification, and server collection libraries are not yet connected to the desktop app or CLI. AI, remediation, and product screens are not available.
 
 ## Roadmap
 
-The remaining v1.0 work connects the implemented libraries to desktop/CLI management flows, adds read-only Linux collection over SSH, AI/MCP, approved remediation, and reporting. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
+The remaining v1.0 work connects the implemented libraries to desktop/CLI management flows, adds AI/MCP, approved remediation, and reporting. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
 
 ## How it compares
 
@@ -46,11 +47,11 @@ flowchart LR
   MCP --> Model[Optional user-selected AI provider]
 ```
 
-The diagram describes the target product architecture. Inventory, advisory provider, scanner adapter, correlation, and orchestration libraries are implemented, but the Linux agent integration, MCP tools, and functional UI are not implemented yet.
+The diagram describes the target product architecture. Inventory, advisory provider, scanner adapter, correlation, orchestration, and Linux agent/SSH libraries are implemented. Their user workflows, MCP tools, and functional monitoring UI are not implemented yet.
 
 ## Privacy
 
-The current desktop shell and CLI do not run scans or make runtime network requests. The scanner adapter library runs tools offline; pinned binary downloads require caller approval and `public_downloads_enabled`. The advisory library can download public data only when its caller explicitly enables `public_downloads_enabled`. Its requests do not contain source code, lockfiles, package names, or package versions. An OSV archive request includes the selected ecosystem in its URL, which reveals that coarse ecosystem to OSV; cve.now filtered feeds that would disclose inventory-derived filters are not used. Provider caches stay local. AI integration is not implemented. See [Privacy](docs/privacy.md) and [Scanner adapters](docs/scanners.md) for details.
+The current desktop shell and CLI do not run scans or make runtime network requests. The SSH transport library connects only when called with a user-selected target, confirmed host-key fingerprint, and timestamped inventory approval returned to the caller for audit recording. The remote agent returns inventory over that SSH connection; it does not send it to a third party. Agentless collection requires explicit approval and runs only its compile-time command list. The scanner adapter library runs tools offline; pinned binary downloads require caller approval and `public_downloads_enabled`. The advisory library can download public data only when its caller explicitly enables `public_downloads_enabled`. Its requests do not contain source code, lockfiles, package names, or package versions. An OSV archive request includes the selected ecosystem in its URL, which reveals that coarse ecosystem to OSV; cve.now filtered feeds that would disclose inventory-derived filters are not used. Provider caches stay local. AI integration is not implemented. See [Privacy](docs/privacy.md) and [Scanner adapters](docs/scanners.md) for details.
 
 ## Quick start
 
@@ -78,7 +79,7 @@ The current CLI only provides its version and help output. Scan and management c
 
 ### Linux agent
 
-The read-only Linux server agent is not implemented yet. See [Linux agent installation](docs/agent-install.md) for its planned trust boundary. There is no agent install command to run in this version.
+The read-only Linux server agent and SSH transport libraries are implemented, but the desktop pairing workflow is not connected. See [Linux agent installation](docs/agent-install.md) for the checksum-verified installer and the direct-host developer harness.
 
 ### AI providers
 

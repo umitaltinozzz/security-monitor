@@ -10,6 +10,9 @@ members = [
     "crates/correlation",
     "crates/scan-orchestrator",
     "crates/notify",
+    "crates/agent-protocol",
+    "crates/agent-transport",
+    "agents/linux",
 ]
 resolver = "3"
 
@@ -34,15 +37,21 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 serde_yaml_ng = "0.10"
+schemars = { version = "1.2.3", features = ["chrono04"] }
+russh = { version = "0.64.1", default-features = false, features = ["ring"] }
+keyring = { version = "3.6", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service"] }
+libc = "0.2"
+rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 semver = "1"
 sqlx = { version = "0.8", default-features = false, features = ["chrono", "json", "macros", "migrate", "runtime-tokio", "sqlite"] }
 thiserror = "2"
-tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 toml = "0.9"
 ts-rs = { version = "11", features = ["chrono-impl", "serde-compat"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+zeroize = "1.8"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 yarn-lock-parser = "0.14"
 tracing = "0.1"

@@ -1,0 +1,30 @@
+{
+  "protocol_version": 1,
+  "agent_version": "0.1.0",
+  "captured_at": "2026-10-24T05:00:00Z",
+  "hostname": "fixture-containers",
+  "operating_system": { "id": "alpine", "name": "Alpine Linux", "version_id": "3.20", "pretty_name": "Alpine Linux v3.20", "kernel_release": "6.6.0-fixture", "architecture": "x86_64" },
+  "packages": [],
+  "runtimes": [],
+  "processes": [],
+  "services": [],
+  "containers": [
+    { "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "name": "web-a", "image": "acme/web:2.4", "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "oci_revision": "0123456789abcdef0123456789abcdef01234567", "oci_version": "2.4.1", "oci_source": "https://github.com/acme/web" },
+    { "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "name": "web-b", "image": "acme/web:2.4", "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "oci_revision": "89abcdef0123456789abcdef0123456789abcdef", "oci_version": "2.4.1", "oci_source": "https://github.com/acme/web" }
+  ],
+  "deployments": [
+    { "commit_sha": "0123456789abcdef0123456789abcdef01234567", "repository": "https://github.com/acme/web", "release_id": "2.4.1", "image_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "built_at": null, "source": "oci_label", "integrity_verified": false },
+    { "commit_sha": "89abcdef0123456789abcdef0123456789abcdef", "repository": "https://github.com/acme/web", "release_id": "2.4.1", "image_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222", "built_at": null, "source": "oci_label", "integrity_verified": false }
+  ],
+  "checks": [
+    { "kind": "operating_system", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "package_inventory", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "runtimes", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "processes", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "services", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "containers", "status": "complete", "diagnostic": null, "item_count": 2 },
+    { "kind": "deployments", "status": "complete", "diagnostic": null, "item_count": 2 },
+    { "kind": "dependency_files", "status": "partial", "diagnostic": "no_allowlisted_paths", "item_count": 0 }
+  ],
+  "complete": false
+}

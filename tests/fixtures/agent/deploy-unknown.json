@@ -1,0 +1,28 @@
+{
+  "protocol_version": 1,
+  "agent_version": "0.1.0",
+  "captured_at": "2026-10-24T05:00:00Z",
+  "hostname": "fixture-unknown-deploy",
+  "operating_system": null,
+  "packages": [],
+  "runtimes": [],
+  "processes": [],
+  "services": [
+    { "name": "unidentified", "unit_name": "unidentified.service", "pid": 88, "executable_path": "/opt/unidentified/bin/service", "user_name": "service", "container_id": null, "deploy_identity": { "commit_sha": null, "repository": null, "release_id": null, "image_digest": null, "built_at": null, "source": "unknown", "integrity_verified": false } }
+  ],
+  "containers": [],
+  "deployments": [
+    { "commit_sha": null, "repository": null, "release_id": null, "image_digest": null, "built_at": null, "source": "unknown", "integrity_verified": false }
+  ],
+  "checks": [
+    { "kind": "operating_system", "status": "unavailable", "diagnostic": "permission_denied", "item_count": 0 },
+    { "kind": "package_inventory", "status": "unavailable", "diagnostic": "command_unavailable", "item_count": 0 },
+    { "kind": "runtimes", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "processes", "status": "partial", "diagnostic": "permission_denied", "item_count": 1 },
+    { "kind": "services", "status": "partial", "diagnostic": "command_unavailable", "item_count": 0 },
+    { "kind": "containers", "status": "unavailable", "diagnostic": "command_unavailable", "item_count": 0 },
+    { "kind": "deployments", "status": "partial", "diagnostic": "stale_observation", "item_count": 1 },
+    { "kind": "dependency_files", "status": "partial", "diagnostic": "no_allowlisted_paths", "item_count": 0 }
+  ],
+  "complete": false
+}

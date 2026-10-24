@@ -1,0 +1,24 @@
+{
+  "protocol_version": 1,
+  "agent_version": "0.1.0",
+  "captured_at": "2025-10-24T05:00:00Z",
+  "hostname": "fixture-stale",
+  "operating_system": { "id": "debian", "name": "Debian GNU/Linux", "version_id": "12", "pretty_name": "Debian GNU/Linux 12", "kernel_release": "6.1.0-fixture", "architecture": "x86_64" },
+  "packages": [],
+  "runtimes": [],
+  "processes": [],
+  "services": [],
+  "containers": [],
+  "deployments": [],
+  "checks": [
+    { "kind": "operating_system", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "package_inventory", "status": "partial", "diagnostic": "stale_observation", "item_count": 0 },
+    { "kind": "runtimes", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "processes", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "services", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "containers", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "deployments", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "dependency_files", "status": "partial", "diagnostic": "no_allowlisted_paths", "item_count": 0 }
+  ],
+  "complete": false
+}

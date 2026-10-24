@@ -42,12 +42,6 @@ jobs:
         with:
           version: 10.27.0
 
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          components: rustfmt, clippy
-          cache: false
-
       - name: Set up Windows Dev Drive
         if: runner.os == 'Windows'
         uses: samypr100/setup-dev-drive@v4
@@ -62,6 +56,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $env:CARGO_TARGET_DIR | Out-Null
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          components: rustfmt, clippy
+          cache: false
 
       - name: Cache Rust build artifacts
         if: runner.os != 'Windows'
@@ -81,7 +81,29 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev musl-tools
+
+      - name: Add the Linux musl target
+        if: runner.os == 'Linux'
+        run: rustup target add x86_64-unknown-linux-musl
+
+      - name: Check the Linux installer syntax
+        if: runner.os == 'Linux'
+        run: bash -n install.sh
+
+      - name: Build the static Linux agent
+        if: runner.os == 'Linux'
+        run: cargo build -p secmon-agent --target x86_64-unknown-linux-musl --release
+
+      - name: Build the OpenSSH E2E container
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p target/openssh-e2e
+          cp tests/openssh/Dockerfile target/openssh-e2e/Dockerfile
+          cp tests/openssh/sshd_config target/openssh-e2e/sshd_config
+          cp target/x86_64-unknown-linux-musl/release/secmon-agent target/openssh-e2e/secmon-agent
+          docker build --tag security-monitor-openssh-e2e:${{ github.sha }} target/openssh-e2e
+          echo "SECMON_OPENSSH_E2E_IMAGE=security-monitor-openssh-e2e:${{ github.sha }}" >> "$GITHUB_ENV"
 
       - name: Check Rust formatting
         run: cargo fmt --all --check
@@ -102,9 +124,6 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build documentation site
-        run: pnpm -C docs/site build
 
       - name: Lint desktop
         run: pnpm -C apps/desktop lint

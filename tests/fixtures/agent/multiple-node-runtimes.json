@@ -1,0 +1,37 @@
+{
+  "protocol_version": 1,
+  "agent_version": "0.1.0",
+  "captured_at": "2026-10-24T05:00:00Z",
+  "hostname": "fixture-multi-runtime",
+  "operating_system": {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "version_id": "24.04",
+    "pretty_name": "Ubuntu 24.04 LTS",
+    "kernel_release": "6.8.0-fixture",
+    "architecture": "x86_64"
+  },
+  "packages": [],
+  "runtimes": [
+    { "name": "node", "version": "v20.12.0", "binary_path": "/usr/bin/node" },
+    { "name": "node", "version": "v22.1.0", "binary_path": "/home/app/.nvm/versions/node/v22.1.0/bin/node" }
+  ],
+  "processes": [
+    { "pid": 2001, "executable_path": "/usr/bin/node", "user_name": "system", "service_unit": "legacy.service", "container_id": null, "runtime_name": "node" },
+    { "pid": 2002, "executable_path": "/home/app/.nvm/versions/node/v22.1.0/bin/node", "user_name": "app", "service_unit": "web.service", "container_id": null, "runtime_name": "node" }
+  ],
+  "services": [],
+  "containers": [],
+  "deployments": [],
+  "checks": [
+    { "kind": "operating_system", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "package_inventory", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "runtimes", "status": "complete", "diagnostic": null, "item_count": 2 },
+    { "kind": "processes", "status": "complete", "diagnostic": null, "item_count": 2 },
+    { "kind": "services", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "containers", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "deployments", "status": "partial", "diagnostic": "stale_observation", "item_count": 0 },
+    { "kind": "dependency_files", "status": "partial", "diagnostic": "no_allowlisted_paths", "item_count": 0 }
+  ],
+  "complete": false
+}

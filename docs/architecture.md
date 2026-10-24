@@ -7,7 +7,13 @@ description: Current implementation, target components, and trust boundaries.
 
 ## Current implementation
 
-The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains a Tauri 2 + React shell, and `apps/cli` contains the `secmon` binary, which currently exposes help and version output. Rust libraries now provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), and finding correlation (`correlation`). The desktop and CLI do not yet run the end-to-end scan workflow; orchestration, user-facing findings workflows, SSH collection, AI, and remediation remain future milestones.
+The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains a Tauri 2 + React shell, and `apps/cli` contains the `secmon` binary, which currently exposes help and version output. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local orchestration and notifications, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). The desktop and CLI do not yet run the end-to-end workflow; user-facing findings, server pairing, AI, and remediation remain future milestones.
+
+| Component | Responsibility |
+| --- | --- |
+| `crates/agent-protocol` | Versioned bounded inventory document and generated JSON Schema. |
+| `crates/agent-transport` | Pinned SSH connections, dedicated key pairing, SSH config parsing, fixed-command agentless scans, and local project association suggestions. |
+| `agents/linux` | Root-free Linux collection for OS packages, runtimes, processes, services, containers, selected lockfiles, and deployment identity. |
 
 ## Target architecture
 
@@ -24,13 +30,13 @@ flowchart TD
   Orchestrator --> Providers[Advisory providers and scanner adapters]
   Providers --> Correlation
   Correlation --> DB
-  Orchestrator --> Agent[SSH pull from read-only Linux agent]
+  Orchestrator -->|SSH pull| Agent[Read-only Linux agent]
+  Agent -->|bounded inventory JSON| Orchestrator
   Providers --> DB
-  Agent --> DB
   DB --> AI[Optional approved AI workflow]
 ```
 
-This is the target, not a claim about current feature availability. Network-capable components must use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions.
+This is the target, not a claim that the desktop pairing flow exists. Network-capable components must use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions.
 
 ## Trust boundaries
 
