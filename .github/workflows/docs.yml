@@ -38,7 +38,7 @@ jobs:
           path: docs/site/dist
 
   deploy:
-    if: github.event_name != 'pull_request' && vars.GITHUB_PAGES_ENABLED == 'true'
+    if: github.event_name != 'pull_request' && vars.PAGES_ENABLED == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
