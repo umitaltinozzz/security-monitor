@@ -13,6 +13,6 @@ hero:
       variant: minimal
 ---
 
-> **Development status:** the product is under active development. The current build includes a Rust core and SQLite data layer, a desktop shell, and a CLI with help/version output. Scanning and monitoring features are not yet implemented.
+> **Development status:** the product is under active development. The current build includes local Rust libraries for dependency inventory, advisory ingestion, scanner adapters, and finding correlation, plus a desktop shell and a CLI with help/version output. The desktop app and CLI do not yet connect these libraries into an end-to-end scan workflow.
 
-These pages describe the current implementation and clearly mark planned behavior. A planned control is not a guarantee until it is implemented and verified.
+These pages describe implemented libraries and clearly mark planned application behavior. A library feature is not yet available as an end-user workflow until the desktop app or CLI connects and verifies it.

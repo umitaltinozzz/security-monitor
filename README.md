@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`) is an open-source project to connect software vulnerability advisories with evidence from local projects and deployed environments in a local-first workflow.
 
-> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, dependency inventory and advisory-provider libraries, and local scanner adapters. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
+> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, dependency inventory, advisory-provider, scanner-adapter, and finding-correlation libraries. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
 
 ## Implemented today
 
@@ -11,13 +11,14 @@ Security Monitor (`secmon`) is an open-source project to connect software vulner
 - A local inventory library for supported lockfiles, monorepo discovery, Dockerfile/workflow detection, and PURL generation.
 - An advisory library for incremental cve.now records, offline OSV archives, GHSA cross-checks, CISA KEV, FIRST EPSS, source merging, cache freshness, and conservative local matching.
 - A scanner adapter library for OSV-Scanner, Trivy, and Semgrep detection, offline invocation, pinned binary downloads, and output normalization.
+- A correlation library for advisory alias merging, version-range matching, stable finding fingerprints, deterministic priority explanations, and evidence-gated status changes.
 - A Tauri desktop shell and the `secmon --help` / `secmon --version` CLI.
 
-These libraries are not yet connected to a project scanning workflow in the desktop app or CLI. Server collection, finding correlation, AI, remediation, and product screens are not available.
+These libraries are not yet connected to a project scanning workflow in the desktop app or CLI. Server collection, orchestration, AI, remediation, and product screens are not available.
 
 ## Roadmap
 
-The remaining v1.0 work connects scanner adapters through finding correlation and orchestration, adds read-only Linux collection over SSH, AI/MCP, approved remediation, reporting, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
+The remaining v1.0 work connects inventory, advisory, scanner, and correlation libraries through orchestration, adds read-only Linux collection over SSH, AI/MCP, approved remediation, reporting, and usable desktop/CLI management flows. Work proceeds milestone by milestone, and each feature will be described as it becomes available.
 
 ## How it compares
 
@@ -27,7 +28,7 @@ The remaining v1.0 work connects scanner adapters through finding correlation an
 | [Trivy](https://trivy.dev/docs/latest/) | Scans packages, images, secrets, and misconfigurations. | Security Monitor has a local Trivy adapter library; the current app does not invoke it. The product target also tracks repo-to-production evidence. |
 | [OSV-Scanner](https://google.github.io/osv-scanner/) | Extracts project or image packages and matches them to OSV advisories. | Security Monitor has inventory, advisory, and scanner adapter libraries; the current app does not invoke them. |
 
-Security Monitor aims to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. Inventory, advisory, and scanner adapter libraries now exist, but the end-user workflow that connects them to advisory data, deployment evidence, and the UI is not implemented yet.
+Security Monitor aims to connect local project inventory with read-only deployment evidence, advisory provenance, and user-controlled triage in one local workflow. Inventory, advisory, scanner-adapter, and correlation libraries now exist, but the end-user workflow that connects them to advisory data, deployment evidence, and the UI is not implemented yet.
 
 ## Planned architecture
 
@@ -89,6 +90,7 @@ The provider library supports public advisory downloads, but the current applica
 
 - [Architecture](docs/architecture.md)
 - [Scanner adapters](docs/scanners.md)
+- [Finding correlation](docs/correlation.md)
 - [Threat model](docs/threat-model.md)
 - [Privacy](docs/privacy.md)
 - [Data sources](docs/data-sources.md)

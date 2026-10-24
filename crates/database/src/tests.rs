@@ -5,7 +5,7 @@ use security_monitor_core::{
 use serde::Deserialize;
 use sqlx::Row;
 
-use crate::{Database, Entity, Repository};
+use crate::{Database, DatabaseError, Entity, Repository};
 
 #[derive(Deserialize)]
 struct FixtureRecords {
@@ -37,7 +37,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 2);
+    assert_eq!(database.schema_version().await.unwrap(), 3);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -406,4 +406,119 @@ async fn notification_channel_secrets_are_rejected_on_create_and_update() {
     );
     assert!(!error.to_string().contains(secret));
     assert_eq!(repository.list().await.unwrap().len(), 1);
+}
+
+#[test]
+fn finding_dispositions_require_valid_reason_scope_and_consistent_expiry() {
+    let missing = serde_json::json!({"status": "accepted_risk"}).to_string();
+    assert!(matches!(
+        super::validate_record("findings", &missing),
+        Err(DatabaseError::InvalidFindingDisposition)
+    ));
+
+    let valid = serde_json::json!({
+        "status": "accepted_risk",
+        "disposition": {
+            "reason": "temporary_exception",
+            "scope": "finding",
+            "scope_id": "finding-123",
+            "set_at": "2026-01-01T00:00:00Z",
+            "expires_at": "2026-02-01T00:00:00Z"
+        },
+        "risk_expires_at": "2026-02-01T00:00:00Z"
+    })
+    .to_string();
+    assert!(super::validate_record("findings", &valid).is_ok());
+
+    let mismatched_expiry = valid.replacen("2026-02-01T00:00:00Z", "2026-03-01T00:00:00Z", 1);
+    assert!(matches!(
+        super::validate_record("findings", &mismatched_expiry),
+        Err(DatabaseError::InvalidFindingDisposition)
+    ));
+}
+
+#[tokio::test]
+async fn advisory_rekey_updates_finding_records_before_removing_the_old_id() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    database
+        .repository::<Project>()
+        .create(&fixture.project)
+        .await
+        .unwrap();
+    database
+        .repository::<Asset>()
+        .create(&fixture.asset)
+        .await
+        .unwrap();
+    database
+        .repository::<Service>()
+        .create(&fixture.service)
+        .await
+        .unwrap();
+    database
+        .repository::<Deployment>()
+        .create(&fixture.deployment)
+        .await
+        .unwrap();
+    database
+        .repository::<Component>()
+        .create(&fixture.component)
+        .await
+        .unwrap();
+    database
+        .repository::<ComponentInstance>()
+        .create(&fixture.component_instance)
+        .await
+        .unwrap();
+
+    let old_id = "GHSA-abcd-efgh-ijkl";
+    let new_id = "CVE-2026-9000";
+    let mut old_advisory = fixture.advisory.clone();
+    old_advisory.canonical_id = old_id.to_owned();
+    let mut canonical_advisory = fixture.advisory.clone();
+    canonical_advisory.canonical_id = new_id.to_owned();
+    database
+        .repository::<Advisory>()
+        .create(&old_advisory)
+        .await
+        .unwrap();
+    database
+        .repository::<Advisory>()
+        .create(&canonical_advisory)
+        .await
+        .unwrap();
+
+    let mut finding = fixture.finding;
+    finding.id = "finding-rekey".to_owned();
+    finding.advisory_id = old_id.to_owned();
+    finding.fingerprint = "fingerprint-rekey".to_owned();
+    database
+        .repository::<Finding>()
+        .create(&finding)
+        .await
+        .unwrap();
+
+    database
+        .rekey_advisory_findings(old_id, new_id)
+        .await
+        .unwrap();
+    assert!(
+        database
+            .repository::<Advisory>()
+            .get(old_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        database
+            .repository::<Finding>()
+            .get("finding-rekey")
+            .await
+            .unwrap()
+            .expect("finding is retained")
+            .advisory_id,
+        new_id
+    );
 }

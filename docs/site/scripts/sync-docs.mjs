@@ -12,6 +12,7 @@ const publicPages = [
   'privacy.md',
   'data-sources.md',
   'scanners.md',
+  'correlation.md',
   'agent-install.md',
   'deploy-id.md',
   'ai-providers.md',

@@ -42,6 +42,38 @@ fn fixture(path: &str) -> &'static [u8] {
     }
 }
 
+#[tokio::test]
+async fn persisted_alias_merge_rekeys_findings_and_removes_old_advisory_id() {
+    let database = Database::in_memory().await.unwrap();
+    let mut canonical = parse_fixture_entry("cve-entry");
+    canonical.canonical_id = "CVE-2026-7001".to_owned();
+    canonical.aliases.push("GHSA-abcd-efgh-ijkl".to_owned());
+    let mut old = canonical.clone();
+    old.canonical_id = "GHSA-abcd-efgh-ijkl".to_owned();
+    old.aliases.push(canonical.canonical_id.clone());
+    database
+        .repository::<Advisory>()
+        .create(&old)
+        .await
+        .unwrap();
+
+    let persisted = AdvisoryMerger::new([canonical.clone()])
+        .persist(&database)
+        .await
+        .unwrap();
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].canonical_id, "CVE-2026-7001");
+    let repository = database.repository::<Advisory>();
+    assert!(repository.get(&old.canonical_id).await.unwrap().is_none());
+    assert!(
+        repository
+            .get(&canonical.canonical_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
 fn component(name: &str, version: Option<&str>, ecosystem: &str) -> InventoryComponent {
     InventoryComponent {
         purl: version

@@ -1,0 +1,72 @@
+[
+  {
+    "canonical_id": "CVE-2026-9000",
+    "title": "Fixture CVE advisory",
+    "summary": null,
+    "summary_model": null,
+    "description": null,
+    "source_attributions": [],
+    "aliases": ["GHSA-abcd-efgh-ijkl", "OSV-2026-9000"],
+    "affected_ranges": [
+      {
+        "ecosystem": "npm",
+        "package": "fixture-lib",
+        "source": "OSV",
+        "range_type": "SEMVER",
+        "events": [
+          {"introduced": "1.0.0", "fixed": "1.1.0", "last_affected": null, "limit": null}
+        ]
+      }
+    ],
+    "fixed_versions": ["1.1.0"],
+    "cvss": 8.1,
+    "severity": "high",
+    "kev": false,
+    "epss": 0.7,
+    "epss_date": "2026-01-20T00:00:00Z",
+    "source_urls": ["https://osv.dev/vulnerability/CVE-2026-9000"],
+    "source_updated_at": "2026-01-21T00:00:00Z",
+    "created_at": "2026-01-10T00:00:00Z",
+    "updated_at": "2026-01-21T00:00:00Z"
+  },
+  {
+    "canonical_id": "GHSA-ABCD-EFGH-IJKL",
+    "title": "Fixture GHSA advisory",
+    "summary": null,
+    "summary_model": null,
+    "description": null,
+    "source_attributions": [],
+    "aliases": ["CVE-2026-9000"],
+    "affected_ranges": [],
+    "fixed_versions": [],
+    "cvss": null,
+    "severity": null,
+    "kev": false,
+    "epss": null,
+    "epss_date": null,
+    "source_urls": ["https://github.com/advisories/GHSA-abcd-efgh-ijkl"],
+    "source_updated_at": null,
+    "created_at": "2026-01-11T00:00:00Z",
+    "updated_at": "2026-01-22T00:00:00Z"
+  },
+  {
+    "canonical_id": "OSV-2026-9000",
+    "title": "Fixture OSV advisory",
+    "summary": null,
+    "summary_model": null,
+    "description": null,
+    "source_attributions": [],
+    "aliases": ["GHSA-ABCD-EFGH-IJKL"],
+    "affected_ranges": [],
+    "fixed_versions": [],
+    "cvss": null,
+    "severity": null,
+    "kev": false,
+    "epss": null,
+    "epss_date": null,
+    "source_urls": ["https://osv.dev/vulnerability/OSV-2026-9000"],
+    "source_updated_at": null,
+    "created_at": "2026-01-12T00:00:00Z",
+    "updated_at": "2026-01-23T00:00:00Z"
+  }
+]

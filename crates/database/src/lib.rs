@@ -69,6 +69,43 @@ impl Database {
         )
     }
 
+    /// Repoints persisted findings to an already stored canonical advisory and removes the old
+    /// identifier within one transaction.
+    pub async fn rekey_advisory_findings(
+        &self,
+        old_id: &str,
+        canonical_id: &str,
+    ) -> Result<(), DatabaseError> {
+        if old_id == canonical_id {
+            return Ok(());
+        }
+        let mut transaction = self.pool.begin().await?;
+        let target_exists =
+            sqlx::query_scalar::<_, i64>("SELECT 1 FROM advisories WHERE canonical_id = ?1")
+                .bind(canonical_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .is_some();
+        if !target_exists {
+            return Err(DatabaseError::MissingAdvisoryTarget);
+        }
+        sqlx::query(
+            "UPDATE findings SET advisory_id = ?1, \
+             record_json = json_set(record_json, '$.advisory_id', ?1) \
+             WHERE advisory_id = ?2",
+        )
+        .bind(canonical_id)
+        .bind(old_id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query("DELETE FROM advisories WHERE canonical_id = ?1")
+            .bind(old_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
     }
@@ -174,6 +211,10 @@ pub enum DatabaseError {
     CredentialInUrl,
     #[error("database record contains an invalid credential reference")]
     InvalidCredentialReference,
+    #[error("finding disposition is incomplete or inconsistent")]
+    InvalidFindingDisposition,
+    #[error("canonical advisory is missing during rekey")]
+    MissingAdvisoryTarget,
 }
 
 impl From<sqlx::Error> for DatabaseError {
@@ -218,6 +259,9 @@ fn decode_record<T: DeserializeOwned>(json: String) -> Result<T, DatabaseError> 
 
 fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     let record: serde_json::Value = serde_json::from_str(json)?;
+    if table == "findings" {
+        validate_finding_disposition(&record)?;
+    }
     let credential_ref = match table {
         "ai_providers" => record.get("keychain_ref"),
         "notification_channels" => record.get("config_ref"),
@@ -256,6 +300,84 @@ fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     }
 
     Ok(())
+}
+
+fn validate_finding_disposition(record: &serde_json::Value) -> Result<(), DatabaseError> {
+    let status = record
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let required = matches!(status, "not_reachable" | "accepted_risk" | "false_positive");
+    let disposition = record.get("disposition").filter(|value| !value.is_null());
+    if required != disposition.is_some() {
+        return Err(DatabaseError::InvalidFindingDisposition);
+    }
+    let Some(disposition) = disposition else {
+        return Ok(());
+    };
+    let reason = disposition
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let scope = disposition
+        .get("scope")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let scope_id = disposition
+        .get("scope_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let set_at = disposition
+        .get("set_at")
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_timestamp);
+    let expires_at = disposition
+        .get("expires_at")
+        .filter(|value| !value.is_null())
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_timestamp);
+    let risk_expires_at = record
+        .get("risk_expires_at")
+        .filter(|value| !value.is_null())
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_timestamp);
+    let expiry_required = matches!(status, "accepted_risk" | "false_positive");
+    let reason_matches_status = match status {
+        "accepted_risk" => matches!(
+            reason,
+            "business_accepted" | "compensating_control" | "temporary_exception" | "fix_planned"
+        ),
+        "false_positive" => matches!(
+            reason,
+            "duplicate_finding"
+                | "incorrect_package"
+                | "unaffected_version"
+                | "no_affected_code_path"
+                | "other_reviewed"
+        ),
+        "not_reachable" => matches!(
+            reason,
+            "no_affected_code_path" | "configuration_prevents_reachability" | "other_reviewed"
+        ),
+        _ => false,
+    };
+    if !reason_matches_status
+        || scope_id.trim().is_empty()
+        || !matches!(scope, "finding" | "project" | "asset" | "deployment")
+        || set_at.is_none()
+        || (expiry_required && expires_at.is_none())
+        || expires_at.is_some_and(|expiry| set_at.is_some_and(|set| expiry <= set))
+        || expires_at != risk_expires_at
+    {
+        return Err(DatabaseError::InvalidFindingDisposition);
+    }
+    Ok(())
+}
+
+fn parse_timestamp(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|value| value.with_timezone(&chrono::Utc))
 }
 
 fn is_credential_reference(value: &str) -> bool {
@@ -428,6 +550,7 @@ entity!(
         ("fingerprint", "$.fingerprint"),
         ("repo_status", "$.repo_status"),
         ("production_status", "$.production_status"),
+        ("disposition", "$.disposition"),
         ("risk_expires_at", "$.risk_expires_at"),
         ("fix_version", "$.fix_version"),
         ("created_at", "$.created_at"),

@@ -3596,6 +3596,7 @@ dependencies = [
  "httpdate",
  "reqwest 0.12.28",
  "security-monitor-core",
+ "security-monitor-correlation",
  "security-monitor-database",
  "security-monitor-inventory",
  "semver",
@@ -3620,6 +3621,22 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+]
+
+[[package]]
+name = "security-monitor-correlation"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "purl",
+ "security-monitor-core",
+ "security-monitor-database",
+ "security-monitor-inventory",
+ "semver",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

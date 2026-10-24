@@ -185,7 +185,7 @@ pub struct Component {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ComponentEvidence {
     pub evidence_type: String,
@@ -206,7 +206,7 @@ pub struct ComponentInstance {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RangeEvent {
     pub introduced: Option<String>,
@@ -215,7 +215,7 @@ pub struct RangeEvent {
     pub limit: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AffectedRange {
     pub ecosystem: String,
@@ -228,7 +228,7 @@ pub struct AffectedRange {
     pub events: Vec<RangeEvent>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AdvisorySource {
     pub name: String,
@@ -277,10 +277,38 @@ pub struct Finding {
     pub fingerprint: String,
     pub repo_status: RepoStatus,
     pub production_status: ProductionStatus,
+    #[serde(default)]
+    pub disposition: Option<FindingDisposition>,
     pub risk_expires_at: Option<DateTime<Utc>>,
     pub fix_version: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FindingDispositionReason {
+    BusinessAccepted,
+    CompensatingControl,
+    TemporaryException,
+    FixPlanned,
+    DuplicateFinding,
+    IncorrectPackage,
+    UnaffectedVersion,
+    NoAffectedCodePath,
+    ConfigurationPreventsReachability,
+    OtherReviewed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FindingDisposition {
+    pub reason: FindingDispositionReason,
+    pub scope: String,
+    pub scope_id: String,
+    pub set_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

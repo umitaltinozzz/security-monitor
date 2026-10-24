@@ -7,7 +7,7 @@ description: Current implementation, target components, and trust boundaries.
 
 ## Current implementation
 
-The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains a Tauri 2 + React shell, `apps/cli` contains the `secmon` binary, `crates/core` owns domain types, and `crates/database` owns SQLite migrations and typed repositories. The current CLI exposes help and version output. Inventory, advisory ingestion, scanner orchestration, findings, SSH collection, AI, and product workflows are not implemented yet.
+The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains a Tauri 2 + React shell, and `apps/cli` contains the `secmon` binary, which currently exposes help and version output. Rust libraries now provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), and finding correlation (`correlation`). The desktop and CLI do not yet run the end-to-end scan workflow; orchestration, user-facing findings workflows, SSH collection, AI, and remediation remain future milestones.
 
 ## Target architecture
 
@@ -19,8 +19,11 @@ flowchart TD
   CLI[secmon CLI] --> Core
   Core --> Inventory[Local inventory]
   Core --> Orchestrator[Scan orchestrator]
+  Core --> Correlation[Finding correlation]
   Inventory --> DB[(SQLite)]
   Orchestrator --> Providers[Advisory providers and scanner adapters]
+  Providers --> Correlation
+  Correlation --> DB
   Orchestrator --> Agent[SSH pull from read-only Linux agent]
   Providers --> DB
   Agent --> DB

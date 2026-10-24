@@ -14,6 +14,7 @@ futures-util = "0.3"
 httpdate = { workspace = true }
 reqwest = { workspace = true }
 security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-correlation = { version = "0.1.0", path = "../correlation" }
 security-monitor-database = { version = "0.1.0", path = "../database" }
 security-monitor-inventory = { version = "0.1.0", path = "../inventory" }
 semver = { workspace = true }

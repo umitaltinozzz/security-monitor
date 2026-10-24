@@ -22,6 +22,7 @@ export default defineConfig({
             { label: 'Privacy', link: '/privacy/' },
             { label: 'Data sources', link: '/data-sources/' },
             { label: 'Scanner adapters', link: '/scanners/' },
+            { label: 'Finding correlation', link: '/correlation/' },
           ],
         },
         {
