@@ -1,4 +1,4 @@
-# Security Monitor
+﻿# Security Monitor
 
 Security Monitor is a local-first security monitoring product for software projects and deployed environments.
 
@@ -19,4 +19,4 @@ cargo run -p secmon -- --version
 
 ## Checks
 
-See `AGENTS.md` for the required Rust and desktop checks. The GitHub Actions workflow runs the Rust and desktop checks on Windows, macOS, and Linux.
+The GitHub Actions workflow runs the Rust and desktop checks on Windows, macOS, and Linux.

@@ -12,3 +12,10 @@
 .remember/
 .DS_Store
 Thumbs.db
+
+# Private planning docs (local only, never pushed)
+/proje.md
+/AGENTS.md
+/CODEX_PROMPT.md
+/docs/progress.md
+/docs/decisions.md
