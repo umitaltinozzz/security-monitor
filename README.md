@@ -54,14 +54,19 @@ Security Monitor uses OSV-Scanner, Trivy, and Semgrep as local adapters; it buil
 
 ```mermaid
 flowchart LR
-  Repo[Local projects and lockfiles] --> Local[Local inventory and matching]
-  Host[Approved read-only Linux inventory over SSH] --> Local
-  Feeds[Public advisory and RSS/Atom feeds] --> Local
-  Local --> Store[(Local SQLite database)]
-  Store --> Desktop[Desktop app and tray]
-  Store --> CLI[secmon CLI and Git hooks]
-  Store --> MCP[Local MCP tools]
-  MCP --> AI[Optional AI provider you choose]
+  subgraph Device["Your device"]
+    Repo["Projects and lockfiles"] --> Engine["Local inventory and matching"]
+    Scanners["OSV-Scanner, Trivy, Semgrep (local)"] --> Engine
+    Engine --> Store[("Local SQLite")]
+    Store --> Desktop["Desktop app and tray"]
+    Store --> CLI["secmon CLI, Git hooks, SARIF / CycloneDX / OpenVEX reports"]
+    Store --> MCP["Local MCP server"]
+    MCP --> Agents["Claude Code, Codex, OpenCode"]
+  end
+  Server["Linux server: read-only agent or agentless SSH"] -- "approved, pinned SSH" --> Engine
+  Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "only with public downloads on" --> Engine
+  Desktop -. "reviewed and approved request" .-> AI["Optional AI provider you choose"]
+  Desktop -. "approved destinations" .-> Notify["Webhook, Slack, Discord, email"]
 ```
 
 The agent has no remote-command feature: it runs only a fixed, compile-time list of read-only collectors and never needs root.

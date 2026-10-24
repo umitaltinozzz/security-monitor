@@ -54,14 +54,19 @@ Security Monitor; OSV-Scanner, Trivy ve Semgrep'i yerel adaptör olarak kullanı
 
 ```mermaid
 flowchart LR
-  Repo[Yerel projeler ve lockfile'lar] --> Local[Yerel envanter ve eşleştirme]
-  Host[SSH ile onaylı, salt okunur Linux envanteri] --> Local
-  Feeds[Güvenlik duyurusu ve RSS/Atom akışları] --> Local
-  Local --> Store[(Yerel SQLite veritabanı)]
-  Store --> Desktop[Masaüstü uygulaması ve tepsi]
-  Store --> CLI[secmon CLI ve Git hook'ları]
-  Store --> MCP[Yerel MCP araçları]
-  MCP --> AI[Seçtiğin isteğe bağlı AI sağlayıcısı]
+  subgraph Device["Senin cihazın"]
+    Repo["Projeler ve lockfile'lar"] --> Engine["Yerel envanter ve eşleştirme"]
+    Scanners["OSV-Scanner, Trivy, Semgrep (yerel)"] --> Engine
+    Engine --> Store[("Yerel SQLite")]
+    Store --> Desktop["Masaüstü uygulaması ve tepsi"]
+    Store --> CLI["secmon CLI, Git hook'ları, SARIF / CycloneDX / OpenVEX raporları"]
+    Store --> MCP["Yerel MCP sunucusu"]
+    MCP --> Agents["Claude Code, Codex, OpenCode"]
+  end
+  Server["Linux sunucu: salt okunur ajan veya ajansız SSH"] -- "onaylı, sabitlenmiş SSH" --> Engine
+  Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "yalnızca genel indirmeler açıkken" --> Engine
+  Desktop -. "incelenip onaylanan istek" .-> AI["Seçtiğin isteğe bağlı AI sağlayıcısı"]
+  Desktop -. "onaylı hedefler" .-> Notify["Webhook, Slack, Discord, e-posta"]
 ```
 
 Ajanda uzaktan komut çalıştırma özelliği yoktur: yalnızca derleme zamanında sabitlenmiş, salt okunur toplayıcıları çalıştırır ve root yetkisi istemez.
