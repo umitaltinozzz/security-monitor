@@ -1469,6 +1469,23 @@ mod tests {
         let result = run_sandbox_test(engine, &prepared.worktree_path, &test, true)
             .await
             .unwrap();
+        if result.exit_code != Some(0) || result.timed_out {
+            let diagnostic_name = format!("secmon-diagnostic-{}", Uuid::new_v4().simple());
+            let diagnostic_args =
+                build_test_args(engine, &prepared.worktree_path, &diagnostic_name, &test).unwrap();
+            fs::create_dir(prepared.worktree_path.join(".secmon-tmp")).unwrap();
+            let diagnostic = StdCommand::new(sandbox_executable(engine))
+                .args(diagnostic_args)
+                .output()
+                .unwrap();
+            let _ = remove_sandbox_temp(&prepared.worktree_path);
+            panic!(
+                "sandbox failed with {:?}; retry exit={} stderr={}",
+                result.exit_code,
+                diagnostic.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&diagnostic.stderr)
+            );
+        }
         assert_eq!(result.exit_code, Some(0));
         assert!(!result.timed_out);
         assert_eq!(
