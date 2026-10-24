@@ -8,6 +8,8 @@ members = [
     "crates/advisory-providers",
     "crates/scanner-adapters",
     "crates/correlation",
+    "crates/scan-orchestrator",
+    "crates/notify",
 ]
 resolver = "3"
 
@@ -21,6 +23,8 @@ license = "Apache-2.0"
 chrono = { version = "0.4", features = ["serde"] }
 csv = "1.3"
 httpdate = "1"
+hex = "0.4"
+async-trait = "0.1"
 cargo-lock = "11.1"
 clap = { version = "4.5", features = ["derive"] }
 gomod-parser = "0.6"
@@ -38,6 +42,7 @@ tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt-m
 toml = "0.9"
 ts-rs = { version = "11", features = ["chrono-impl", "serde-compat"] }
 url = "2"
+uuid = { version = "1", features = ["v4"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 yarn-lock-parser = "0.14"
 tracing = "0.1"

@@ -23,6 +23,7 @@ export default defineConfig({
             { label: 'Data sources', link: '/data-sources/' },
             { label: 'Scanner adapters', link: '/scanners/' },
             { label: 'Finding correlation', link: '/correlation/' },
+            { label: 'Scan orchestration and notifications', link: '/orchestration/' },
           ],
         },
         {

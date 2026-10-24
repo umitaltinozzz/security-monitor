@@ -1,0 +1,27 @@
+[package]
+name = "security-monitor-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local notifications and user-approved security alert delivery"
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+keyring = { version = "3.6", default-features = false, features = ["apple-native", "windows-native", "sync-secret-service"] }
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+notify-rust = "4"
+security-monitor-advisory-providers = { version = "0.1.0", path = "../advisory-providers" }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-database = { version = "0.1.0", path = "../database" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

@@ -2,9 +2,11 @@ use std::{marker::PhantomData, path::Path, time::Duration};
 
 use security_monitor_core::{
     Advisory, AiProvider, AiRun, Asset, AuditEvent, Component, ComponentInstance, Deployment,
-    Finding, FindingEvidence, NotificationChannel, Project, Remediation, ScanRun, Service,
+    Finding, FindingEvidence, NotificationChannel, NotificationDeliveryState, Project,
+    ProjectScanCheckpoint, Remediation, ScanRun, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
+use sha2::{Digest, Sha256};
 use sqlx::{
     Row, SqlitePool,
     migrate::Migrator,
@@ -199,6 +201,143 @@ impl<T: Entity> Repository<T> {
     }
 }
 
+impl Repository<NotificationDeliveryState> {
+    /// Reserves a delivery atomically. Existing snoozes, in-flight deliveries, and events inside
+    /// the deduplication window are not claimed.
+    pub async fn claim_delivery(
+        &self,
+        channel_id: &str,
+        event_fingerprint: &str,
+        now: chrono::DateTime<chrono::Utc>,
+        deduplication_window: chrono::Duration,
+        lease_duration: chrono::Duration,
+    ) -> Result<Option<String>, DatabaseError> {
+        let id = notification_state_id(channel_id, event_fingerprint);
+        let now_text = timestamp(now);
+        let lease_until = timestamp(now + lease_duration);
+        let dedup_before = timestamp(now - deduplication_window);
+        let state = NotificationDeliveryState {
+            id: id.clone(),
+            channel_id: channel_id.to_owned(),
+            event_fingerprint: event_fingerprint.to_owned(),
+            last_delivered_at: None,
+            snoozed_until: None,
+            lease_expires_at: Some(now + lease_duration),
+            created_at: now,
+            updated_at: now,
+        };
+        let json = serde_json::to_string(&state)?;
+        let claimed = sqlx::query_scalar::<_, String>(
+            "INSERT INTO notification_delivery_states \
+             (id, channel_id, event_fingerprint, last_delivered_at, snoozed_until, \
+              lease_expires_at, created_at, updated_at, record_json) \
+             VALUES (?1, ?2, ?3, NULL, NULL, ?4, ?5, ?5, ?6) \
+             ON CONFLICT(channel_id, event_fingerprint) DO UPDATE SET \
+               lease_expires_at = excluded.lease_expires_at, \
+               updated_at = excluded.updated_at, \
+               record_json = json_set(notification_delivery_states.record_json, \
+                 '$.lease_expires_at', excluded.lease_expires_at, \
+                 '$.updated_at', excluded.updated_at) \
+             WHERE (notification_delivery_states.snoozed_until IS NULL OR \
+                    notification_delivery_states.snoozed_until <= excluded.updated_at) \
+               AND (notification_delivery_states.lease_expires_at IS NULL OR \
+                    notification_delivery_states.lease_expires_at <= excluded.updated_at) \
+               AND (notification_delivery_states.last_delivered_at IS NULL OR \
+                    notification_delivery_states.last_delivered_at <= ?7) \
+             RETURNING id",
+        )
+        .bind(id)
+        .bind(channel_id)
+        .bind(event_fingerprint)
+        .bind(lease_until)
+        .bind(now_text)
+        .bind(json)
+        .bind(dedup_before)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(claimed)
+    }
+
+    /// Completes or releases a reservation without storing any notification payload.
+    pub async fn finish_delivery(
+        &self,
+        state_id: &str,
+        delivered: bool,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<bool, DatabaseError> {
+        let now_text = timestamp(now);
+        let result = sqlx::query(
+            "UPDATE notification_delivery_states SET \
+             last_delivered_at = CASE WHEN ?1 = 1 THEN ?2 ELSE last_delivered_at END, \
+             lease_expires_at = NULL, updated_at = ?2, \
+             record_json = json_set(record_json, '$.last_delivered_at', \
+               CASE WHEN ?1 = 1 THEN ?2 ELSE last_delivered_at END, \
+               '$.lease_expires_at', NULL, '$.updated_at', ?2) WHERE id = ?3",
+        )
+        .bind(delivered)
+        .bind(now_text)
+        .bind(state_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    /// Persists a per-channel, per-event snooze, including before the first delivery.
+    pub async fn snooze(
+        &self,
+        channel_id: &str,
+        event_fingerprint: &str,
+        until: chrono::DateTime<chrono::Utc>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), DatabaseError> {
+        let id = notification_state_id(channel_id, event_fingerprint);
+        let state = NotificationDeliveryState {
+            id: id.clone(),
+            channel_id: channel_id.to_owned(),
+            event_fingerprint: event_fingerprint.to_owned(),
+            last_delivered_at: None,
+            snoozed_until: Some(until),
+            lease_expires_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let json = serde_json::to_string(&state)?;
+        let now_text = timestamp(now);
+        let until_text = timestamp(until);
+        sqlx::query(
+            "INSERT INTO notification_delivery_states \
+             (id, channel_id, event_fingerprint, last_delivered_at, snoozed_until, \
+              lease_expires_at, created_at, updated_at, record_json) \
+             VALUES (?1, ?2, ?3, NULL, ?4, NULL, ?5, ?5, ?6) \
+             ON CONFLICT(channel_id, event_fingerprint) DO UPDATE SET \
+               snoozed_until = excluded.snoozed_until, updated_at = excluded.updated_at, \
+               record_json = json_set(notification_delivery_states.record_json, \
+                 '$.snoozed_until', excluded.snoozed_until, '$.updated_at', excluded.updated_at)",
+        )
+        .bind(id)
+        .bind(channel_id)
+        .bind(event_fingerprint)
+        .bind(until_text)
+        .bind(now_text)
+        .bind(json)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+}
+
+fn notification_state_id(channel_id: &str, event_fingerprint: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(channel_id.as_bytes());
+    digest.update([0]);
+    digest.update(event_fingerprint.as_bytes());
+    format!("notification-{}", hex::encode(digest.finalize()))
+}
+
+fn timestamp(value: chrono::DateTime<chrono::Utc>) -> String {
+    value.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+}
+
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("database operation failed")]
@@ -213,6 +352,12 @@ pub enum DatabaseError {
     InvalidCredentialReference,
     #[error("finding disposition is incomplete or inconsistent")]
     InvalidFindingDisposition,
+    #[error(
+        "enabled external notification channel requires recorded approval and a credential reference"
+    )]
+    NotificationApprovalRequired,
+    #[error("notification approval destination must contain only a valid scheme and host")]
+    InvalidNotificationDestination,
     #[error("canonical advisory is missing during rekey")]
     MissingAdvisoryTarget,
 }
@@ -262,6 +407,38 @@ fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     if table == "findings" {
         validate_finding_disposition(&record)?;
     }
+    if table == "notification_channels" {
+        let kind = record
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let enabled = record
+            .get("enabled")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if let Some(destination) = record
+            .get("network_approved_destination")
+            .and_then(serde_json::Value::as_str)
+        {
+            validate_notification_destination(kind, destination)?;
+        }
+        if enabled && kind != "desktop" {
+            let approved_at = record
+                .get("network_approved_at")
+                .and_then(serde_json::Value::as_str)
+                .and_then(parse_timestamp);
+            if approved_at.is_none()
+                || record
+                    .get("network_approved_destination")
+                    .is_none_or(serde_json::Value::is_null)
+                || record
+                    .get("config_ref")
+                    .is_none_or(serde_json::Value::is_null)
+            {
+                return Err(DatabaseError::NotificationApprovalRequired);
+            }
+        }
+    }
     let credential_ref = match table {
         "ai_providers" => record.get("keychain_ref"),
         "notification_channels" => record.get("config_ref"),
@@ -299,6 +476,28 @@ fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_notification_destination(kind: &str, destination: &str) -> Result<(), DatabaseError> {
+    let parsed =
+        url::Url::parse(destination).map_err(|_| DatabaseError::InvalidNotificationDestination)?;
+    let scheme_matches = match kind {
+        "webhook" | "slack" | "discord" => parsed.scheme() == "https",
+        "smtp" => matches!(parsed.scheme(), "smtp" | "smtps"),
+        _ => false,
+    };
+    if !scheme_matches
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port_or_known_default().is_none()
+    {
+        return Err(DatabaseError::InvalidNotificationDestination);
+    }
     Ok(())
 }
 
@@ -589,6 +788,22 @@ entity!(
     ]
 );
 entity!(
+    ProjectScanCheckpoint,
+    id,
+    "project_scan_checkpoints",
+    "id",
+    [
+        ("id", "$.id"),
+        ("project_id", "$.project_id"),
+        ("input_hash", "$.input_hash"),
+        ("inventory_json", "$.inventory_json"),
+        ("inventory_complete", "$.inventory_complete"),
+        ("checked_at", "$.checked_at"),
+        ("created_at", "$.created_at"),
+        ("updated_at", "$.updated_at"),
+    ]
+);
+entity!(
     Remediation,
     id,
     "remediations",
@@ -654,6 +869,27 @@ entity!(
         ("config_ref", "$.config_ref"),
         ("min_priority", "$.min_priority"),
         ("enabled", "$.enabled"),
+        ("network_approved_at", "$.network_approved_at"),
+        (
+            "network_approved_destination",
+            "$.network_approved_destination"
+        ),
+        ("created_at", "$.created_at"),
+        ("updated_at", "$.updated_at"),
+    ]
+);
+entity!(
+    NotificationDeliveryState,
+    id,
+    "notification_delivery_states",
+    "id",
+    [
+        ("id", "$.id"),
+        ("channel_id", "$.channel_id"),
+        ("event_fingerprint", "$.event_fingerprint"),
+        ("last_delivered_at", "$.last_delivered_at"),
+        ("snoozed_until", "$.snoozed_until"),
+        ("lease_expires_at", "$.lease_expires_at"),
         ("created_at", "$.created_at"),
         ("updated_at", "$.updated_at"),
     ]

@@ -107,7 +107,7 @@ pub enum ApprovalState {
     Cancelled,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum NotificationChannelKind {
@@ -336,6 +336,21 @@ pub struct ScanRun {
     pub error: Option<String>,
 }
 
+/// Local checkpoint used to detect dependency-input changes without retaining source code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProjectScanCheckpoint {
+    pub id: String,
+    pub project_id: String,
+    pub input_hash: Option<String>,
+    /// Serialized `security_monitor_inventory::Inventory`, containing metadata only.
+    pub inventory_json: String,
+    pub inventory_complete: bool,
+    pub checked_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RemediationTest {
@@ -409,6 +424,25 @@ pub struct NotificationChannel {
     pub config_ref: Option<String>,
     pub min_priority: u8,
     pub enabled: bool,
+    /// Timestamp of the user's explicit approval to send summaries to an external destination.
+    #[serde(default)]
+    pub network_approved_at: Option<DateTime<Utc>>,
+    /// Approved destination authority; full webhook URLs and passwords remain in the keyring.
+    #[serde(default)]
+    pub network_approved_destination: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NotificationDeliveryState {
+    pub id: String,
+    pub channel_id: String,
+    pub event_fingerprint: String,
+    pub last_delivered_at: Option<DateTime<Utc>>,
+    pub snoozed_until: Option<DateTime<Utc>>,
+    pub lease_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

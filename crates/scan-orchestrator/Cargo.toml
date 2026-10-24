@@ -1,0 +1,31 @@
+[package]
+name = "security-monitor-scan-orchestrator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bounded scan queue, scheduling, project watching, and startup orchestration"
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+notify = "8"
+security-monitor-advisory-providers = { version = "0.1.0", path = "../advisory-providers" }
+security-monitor-correlation = { version = "0.1.0", path = "../correlation" }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-database = { version = "0.1.0", path = "../database" }
+security-monitor-inventory = { version = "0.1.0", path = "../inventory" }
+security-monitor-scanner-adapters = { version = "0.1.0", path = "../scanner-adapters" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true }

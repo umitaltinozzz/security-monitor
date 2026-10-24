@@ -67,6 +67,35 @@ impl AdvisoryService {
         Ok(self)
     }
 
+    /// Marks persisted provider freshness as stale after a refresh fails before it can write a
+    /// complete status report. This prevents old successful timestamps from looking current.
+    pub fn mark_provider_statuses_stale(&self) -> Result<(), ProviderError> {
+        let path = self.cache_root.join("provider-status.json");
+        let statuses = match fs::read(&path) {
+            Ok(bytes) => {
+                serde_json::from_slice::<Vec<ProviderFreshness>>(&bytes).unwrap_or_else(|_| {
+                    vec![ProviderFreshness {
+                        provider: "local provider status".to_owned(),
+                        updated_at: None,
+                        stale: true,
+                        error: Some("latest refresh failed".to_owned()),
+                    }]
+                })
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(ProviderError::Io(error)),
+        };
+        let statuses = statuses
+            .into_iter()
+            .map(|mut status| {
+                status.stale = true;
+                status.error = Some("latest refresh failed".to_owned());
+                status
+            })
+            .collect::<Vec<_>>();
+        crate::cache::atomic_write(&path, &serde_json::to_vec(&statuses)?)
+    }
+
     pub async fn refresh_and_match(
         &self,
         inventory: &Inventory,

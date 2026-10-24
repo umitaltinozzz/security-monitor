@@ -17,8 +17,8 @@ use crate::{
     CveNowSourceStatus, DEFAULT_CVE_POLL_INTERVAL_SECONDS, EpssProvider, FindingReason,
     GhsaProvider, HttpPolicy, KevProvider, MAX_CVE_POLL_INTERVAL_SECONDS,
     MIN_CVE_POLL_INTERVAL_SECONDS, OsvDatabase, OsvDatabaseUpdater, OsvUpdateStatus,
-    PublicDataHttp, apply_epss, apply_kev, evaluate_inventory, parse_epss_csv, parse_ghsa_advisory,
-    parse_kev_catalog,
+    ProviderFreshness, PublicDataHttp, apply_epss, apply_kev, evaluate_inventory, parse_epss_csv,
+    parse_ghsa_advisory, parse_kev_catalog,
 };
 
 fn fixture(path: &str) -> &'static [u8] {
@@ -40,6 +40,40 @@ fn fixture(path: &str) -> &'static [u8] {
         "epss" => include_bytes!("../../../tests/fixtures/advisory-providers/epss/scores.csv"),
         _ => panic!("fixture key is defined in the test"),
     }
+}
+
+#[tokio::test]
+async fn failed_advisory_refresh_marks_previous_provider_status_stale() {
+    let temp = tempfile::tempdir().unwrap();
+    let cache_root = temp.path().join("advisories");
+    fs::create_dir_all(&cache_root).unwrap();
+    let statuses = vec![ProviderFreshness {
+        provider: "OSV".to_owned(),
+        updated_at: Some(Utc::now()),
+        stale: false,
+        error: None,
+    }];
+    fs::write(
+        cache_root.join("provider-status.json"),
+        serde_json::to_vec(&statuses).unwrap(),
+    )
+    .unwrap();
+    let service = AdvisoryService::new(
+        HttpPolicy {
+            public_downloads_enabled: false,
+        },
+        Database::in_memory().await.unwrap(),
+        &cache_root,
+    )
+    .unwrap();
+    service.mark_provider_statuses_stale().unwrap();
+
+    let cached: Vec<ProviderFreshness> =
+        serde_json::from_slice(&fs::read(cache_root.join("provider-status.json")).unwrap())
+            .unwrap();
+    assert_eq!(cached.len(), 1);
+    assert!(cached[0].stale);
+    assert_eq!(cached[0].error.as_deref(), Some("latest refresh failed"));
 }
 
 #[tokio::test]

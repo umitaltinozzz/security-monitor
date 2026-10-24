@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler ve dağıtılmış ortam kanıtlarıyla yerel öncelikli bir iş akışında birleştirmeyi amaçlayan açık kaynaklı bir projedir.
 
-> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri kitaplığı ve belirlenimci eşleştirme ile yerel önbellekler içeren advisory sağlayıcı kitaplığı bulunur. Tauri kabuğu ve CLI henüz bu kitaplıkları çağırmaz veya tarama sonucu göstermez. Mevcut derlemeyi kullanıcıya yönelik bir güvenlik tarayıcısı ya da sistemin güvenli olduğuna dair kanıt olarak kullanmayın.
+> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, orkestrasyon ve bildirim kitaplıkları bulunur. Tauri kabuğu ve CLI henüz bu kitaplıkları çağırmaz veya tarama sonucu göstermez. Mevcut derlemeyi kullanıcıya yönelik bir güvenlik tarayıcısı ya da sistemin güvenli olduğuna dair kanıt olarak kullanmayın.
 
 ## Bugün uygulananlar
 
@@ -10,13 +10,16 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - Rust alan türleri, SQLite migration'ları, tür güvenli repository'ler ve üretilmiş TypeScript sözleşmeleri.
 - Desteklenen lockfile'lar, monorepo keşfi, Dockerfile/workflow algılama ve PURL üretimi için yerel envanter kitaplığı.
 - Artımlı cve.now kayıtları, çevrimdışı OSV arşivleri, GHSA çapraz kontrolü, CISA KEV, FIRST EPSS, kaynak birleştirme, önbellek güncelliği ve tutucu yerel eşleştirme için advisory kitaplığı.
+- OSV-Scanner, Trivy ve Semgrep algılama, çevrimdışı çalıştırma ve çıktı normalleştirme için tarayıcı adaptörü; ayrıca yerel bulgu korelasyonu.
+- Sınırlı kuyruk, kaynak kotaları, hızlı/tam profiller, üç saniyelik dosya izleyici gecikmesi, başlangıç hash kontrolü ve önbellekteki envanterle advisory yeniden eşleştirme içeren orkestrasyon kitaplığı.
+- Masaüstü, kullanıcı onaylı HTTPS webhook/Slack/Discord ve TLS SMTP bildirimleri; sırlar OS anahtarlığında tutulur, hedef onayı kaydedilir, tekilleştirme ve erteleme desteklenir.
 - Tauri masaüstü kabuğu ve `secmon --help` / `secmon --version` CLI komutları.
 
-Bu kitaplıklar henüz masaüstü veya CLI içinde proje tarama iş akışına bağlanmadı. Sunucu toplama, tarayıcı çalıştırma, bulgu korelasyonu, yapay zekâ, düzeltme ve ürün ekranları kullanıma hazır değildir.
+Orkestrasyon ve bildirim kitaplıkları henüz masaüstü veya CLI'ye bağlanmadı. Sunucu toplama, yapay zekâ, düzeltme ve ürün ekranları kullanıma hazır değildir.
 
 ## Yol haritası
 
-Kalan v1.0 kapsamı tarayıcı adaptörleri, bulgu korelasyonu ve yaşam döngüsü, orkestrasyon, SSH üzerinden salt okunur Linux toplama, AI/MCP, onaylı düzeltme, raporlama ve kullanılabilir masaüstü/CLI yönetim iş akışlarıdır. İş milestone'lar halinde ilerler; özellikler kullanılabilir oldukça belgelenir.
+Kalan v1.0 kapsamı uygulanmış kitaplıkların masaüstü/CLI yönetim akışlarına bağlanması, SSH üzerinden salt okunur Linux toplama, AI/MCP, onaylı düzeltme ve raporlamadır. İş milestone'lar halinde ilerler; özellikler kullanılabilir oldukça belgelenir.
 
 ## Yaklaşımın karşılaştırması
 
@@ -26,7 +29,7 @@ Kalan v1.0 kapsamı tarayıcı adaptörleri, bulgu korelasyonu ve yaşam döngü
 | [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Trivy, Security Monitor'ın uyarlamayı planladığı tarayıcılardandır; ürün hedefi ayrıca repo ile production kanıtını ilişkilendirir. |
 | [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor envanter/advisory kitaplığı içerir; tarayıcı entegrasyonu henüz yol haritasındadır. |
 
-Security Monitor'ın hedefi yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirmektir. Envanter ve advisory kitaplıkları vardır; ancak bunları tarayıcılara, dağıtım kanıtlarına ve arayüze bağlayan kullanıcı iş akışı henüz uygulanmadı.
+Security Monitor'ın hedefi yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirmektir. Envanter, advisory, tarayıcı adaptörü, korelasyon ve orkestrasyon kitaplıkları vardır; ancak bunları dağıtım kanıtlarına ve arayüze bağlayan kullanıcı iş akışı henüz uygulanmadı.
 
 ## Hedef mimari
 
@@ -42,7 +45,7 @@ flowchart LR
   MCP --> Model[İsteğe bağlı, kullanıcı seçimi yapay zekâ sağlayıcısı]
 ```
 
-Bu diyagram hedef mimariyi gösterir. Envanter ve advisory sağlayıcı kitaplıkları uygulanmıştır; ancak Linux ajanı, tarayıcı entegrasyonu, orkestrasyon, MCP araçları ve işlevsel arayüz henüz uygulanmadı.
+Bu diyagram hedef mimariyi gösterir. Envanter, advisory sağlayıcı, tarayıcı adaptörü, korelasyon ve orkestrasyon kitaplıkları uygulanmıştır; ancak Linux ajanı, MCP araçları ve işlevsel arayüz henüz uygulanmadı.
 
 ## Gizlilik
 

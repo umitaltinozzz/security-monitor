@@ -10,6 +10,7 @@ use tokio::{
 use url::Url;
 
 const MAX_BUFFERED_RESPONSE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_NOTIFICATION_RESPONSE_BYTES: u64 = 16 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HttpPolicy {
@@ -165,6 +166,65 @@ impl PublicDataHttp {
         Ok(total)
     }
 
+    /// Sends a small notification to the exact HTTPS origin approved by the user. The complete
+    /// destination, including webhook secrets in its path, is never logged or returned in errors.
+    pub async fn post_user_approved_json(
+        &self,
+        address: &str,
+        approved_origin: &str,
+        payload: &serde_json::Value,
+        outbound_notifications_enabled: bool,
+    ) -> Result<(), ProviderError> {
+        if !outbound_notifications_enabled {
+            return Err(ProviderError::NetworkDisabled);
+        }
+        let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
+        let approved = Url::parse(approved_origin).map_err(|_| ProviderError::InvalidUrl)?;
+        let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
+        let loopback_http = self.allow_loopback
+            && url.scheme() == "http"
+            && matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]");
+        if url.origin().ascii_serialization() != approved.origin().ascii_serialization()
+            || approved.path() != "/"
+            || approved.query().is_some()
+            || approved.fragment().is_some()
+            || (!loopback_http && url.scheme() != "https")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(ProviderError::DestinationNotAllowed);
+        }
+        tracing::info!(destination_host = %host, "sending user-approved notification summary");
+        let response = self
+            .client
+            .post(url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(|_| ProviderError::Network { host: host.clone() })?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ProviderError::HttpStatus {
+                host,
+                status: status.as_u16(),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_NOTIFICATION_RESPONSE_BYTES)
+        {
+            return Err(ProviderError::DownloadTooLarge);
+        }
+        let _ = collect_bounded_body(
+            response.bytes_stream(),
+            MAX_NOTIFICATION_RESPONSE_BYTES,
+            host,
+        )
+        .await?;
+        Ok(())
+    }
+
     fn ensure_enabled(&self) -> Result<(), ProviderError> {
         if self.policy.public_downloads_enabled {
             Ok(())
@@ -302,10 +362,14 @@ impl From<zip::result::ZipError> for ProviderError {
 #[cfg(test)]
 mod tests {
     use futures_util::stream;
-
+    use serde_json::json;
     use url::Url;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_json, method, path},
+    };
 
-    use super::{ProviderError, collect_bounded_body, is_allowed_url};
+    use super::{ProviderError, PublicDataHttp, collect_bounded_body, is_allowed_url};
 
     #[test]
     fn github_downloads_are_restricted_to_the_two_pinned_scanner_repositories() {
@@ -352,5 +416,39 @@ mod tests {
             .unwrap();
 
         assert_eq!(body, [1, 2, 3, 4, 5, 6]);
+    }
+
+    #[tokio::test]
+    async fn approved_notification_post_requires_global_privacy_and_exact_origin() {
+        let server = MockServer::start().await;
+        let payload = json!({ "event": "security_finding", "priority": 80 });
+        Mock::given(method("POST"))
+            .and(path("/hooks/private-token"))
+            .and(body_json(payload.clone()))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = PublicDataHttp::for_tests();
+        let destination = format!("{}/hooks/private-token", server.uri());
+
+        assert!(matches!(
+            http.post_user_approved_json(&destination, &server.uri(), &payload, false)
+                .await,
+            Err(ProviderError::NetworkDisabled)
+        ));
+        assert!(matches!(
+            http.post_user_approved_json(
+                &destination,
+                "https://different.example.test",
+                &payload,
+                true
+            )
+            .await,
+            Err(ProviderError::DestinationNotAllowed)
+        ));
+        http.post_user_approved_json(&destination, &server.uri(), &payload, true)
+            .await
+            .unwrap();
     }
 }

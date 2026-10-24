@@ -8,10 +8,12 @@ description = "SQLite migrations and typed repositories for Security Monitor"
 
 [dependencies]
 chrono = { workspace = true }
+hex = { workspace = true }
 security-monitor-core = { version = "0.1.0", path = "../core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 

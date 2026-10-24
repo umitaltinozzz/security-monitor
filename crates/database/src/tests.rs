@@ -1,6 +1,8 @@
+use chrono::{Duration, TimeZone, Utc};
 use security_monitor_core::{
     Advisory, AiProvider, AiRun, Asset, AuditEvent, Component, ComponentInstance, Deployment,
-    Finding, FindingEvidence, NotificationChannel, Project, Remediation, ScanRun, Service,
+    Finding, FindingEvidence, NotificationChannel, NotificationDeliveryState, Project, Remediation,
+    ScanRun, Service,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -37,20 +39,131 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 3);
+    assert_eq!(database.schema_version().await.unwrap(), 4);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
           'component_instances', 'advisories', 'findings', 'finding_evidence', \
           'scan_runs', 'remediations', 'ai_providers', 'ai_runs', \
-          'notification_channels', 'audit_events')",
+         'notification_channels', 'audit_events', 'project_scan_checkpoints', \
+          'notification_delivery_states')",
     )
     .fetch_one(&database.pool)
     .await
     .unwrap()
     .try_get("count")
     .unwrap();
-    assert_eq!(count, 15);
+    assert_eq!(count, 17);
+}
+
+#[tokio::test]
+async fn notification_delivery_claim_is_atomic_deduplicated_and_snoozable() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    database
+        .repository::<NotificationChannel>()
+        .create(&fixture.notification_channel)
+        .await
+        .unwrap();
+    let states = database.repository::<NotificationDeliveryState>();
+    let now = Utc.with_ymd_and_hms(2026, 10, 24, 12, 0, 0).unwrap();
+    let fingerprint = format!("sha256:{}", "a".repeat(64));
+
+    let reservation = states
+        .claim_delivery(
+            "channel-1",
+            &fingerprint,
+            now,
+            Duration::minutes(15),
+            Duration::minutes(2),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        states
+            .claim_delivery(
+                "channel-1",
+                &fingerprint,
+                now,
+                Duration::minutes(15),
+                Duration::minutes(2),
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    states
+        .finish_delivery(&reservation, true, now)
+        .await
+        .unwrap();
+    assert!(
+        states
+            .claim_delivery(
+                "channel-1",
+                &fingerprint,
+                now + Duration::minutes(5),
+                Duration::minutes(15),
+                Duration::minutes(2),
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let snoozed_until = now + Duration::hours(1);
+    states
+        .snooze("channel-1", &fingerprint, snoozed_until, now)
+        .await
+        .unwrap();
+    assert!(
+        states
+            .claim_delivery(
+                "channel-1",
+                &fingerprint,
+                now + Duration::minutes(30),
+                Duration::minutes(15),
+                Duration::minutes(2),
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        states
+            .claim_delivery(
+                "channel-1",
+                &fingerprint,
+                snoozed_until + Duration::seconds(1),
+                Duration::minutes(15),
+                Duration::minutes(2),
+            )
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn enabled_external_notification_requires_recorded_approval_and_keyring_reference() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    database
+        .repository::<NotificationChannel>()
+        .create(&fixture.notification_channel)
+        .await
+        .unwrap();
+    let mut external = fixture.notification_channel;
+    external.id = "unapproved-channel".to_owned();
+    external.kind = security_monitor_core::NotificationChannelKind::Webhook;
+
+    let error = database
+        .repository::<NotificationChannel>()
+        .create(&external)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DatabaseError::NotificationApprovalRequired));
 }
 
 async fn verify_update<T>(
