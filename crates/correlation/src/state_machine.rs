@@ -1,14 +1,17 @@
 use chrono::{DateTime, Utc};
 use security_monitor_core::{Finding, FindingDisposition, FindingDispositionReason, FindingStatus};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StatusActor {
     System,
     User,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DispositionScope {
     Finding,
     Project,
@@ -16,7 +19,7 @@ pub enum DispositionScope {
     Deployment,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserDisposition {
     pub reason: FindingDispositionReason,
     pub scope: DispositionScope,
@@ -35,7 +38,8 @@ impl DispositionScope {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StatusEvidence {
     UserAction,
     CurrentDataIncomplete,
@@ -47,7 +51,7 @@ pub enum StatusEvidence {
     DispositionExpired,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StatusTransition {
     pub from: FindingStatus,
     pub to: FindingStatus,

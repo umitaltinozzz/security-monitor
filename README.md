@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`) is an open-source project to connect software vulnerability advisories with evidence from local projects and deployed environments in a local-first workflow.
 
-> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, dependency inventory, advisory-provider, scanner-adapter, finding-correlation, orchestration, and notification libraries. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
+> **Current state:** this repository is under active development. It contains typed Rust/SQLite foundations, dependency inventory, advisory-provider, scanner-adapter, finding-correlation, repository-to-production drift, orchestration, notification, and Linux agent/SSH libraries. The Tauri shell and CLI do not yet invoke these libraries or present scan results. Do not use the current build as an end-user security scanner or as evidence that a system is safe.
 
 ## Implemented today
 
@@ -12,6 +12,7 @@ Security Monitor (`secmon`) is an open-source project to connect software vulner
 - An advisory library for incremental cve.now records, offline OSV archives, GHSA cross-checks, CISA KEV, FIRST EPSS, source merging, cache freshness, and conservative local matching.
 - A scanner adapter library for OSV-Scanner, Trivy, and Semgrep detection, offline invocation, pinned binary downloads, and output normalization.
 - A correlation library for advisory alias merging, version-range matching, stable finding fingerprints, deterministic priority explanations, and evidence-gated status changes.
+- A drift library that compares existing findings with verified reference-branch and deployment inventories, keeps uncommitted changes separate, and requires current, complete evidence before reporting a fix.
 - A local scan orchestration library with a bounded queue, resource limits, quick/full profiles, a three-second file watcher debounce, startup hash checks, and cached-inventory advisory re-correlation.
 - Notification transports for desktop, approved HTTPS webhooks/Slack/Discord, and TLS SMTP, with OS-keyring secrets, recorded destination approvals, deduplication, and snoozing.
 - A versioned server inventory protocol, read-only root-free Linux collector, OS-keyring SSH pairing, forced-command restrictions, host-key pinning, SSH config discovery, and fixed-command agentless collection API.
@@ -47,7 +48,7 @@ flowchart LR
   MCP --> Model[Optional user-selected AI provider]
 ```
 
-The diagram describes the target product architecture. Inventory, advisory provider, scanner adapter, correlation, orchestration, and Linux agent/SSH libraries are implemented. Their user workflows, MCP tools, and functional monitoring UI are not implemented yet.
+The diagram describes the target product architecture. Inventory, advisory provider, scanner adapter, correlation, drift, orchestration, and Linux agent/SSH libraries are implemented. Their user workflows, MCP tools, and functional monitoring UI are not implemented yet.
 
 ## Privacy
 
@@ -94,6 +95,7 @@ The provider library supports public advisory downloads, but the current applica
 - [Architecture](docs/architecture.md)
 - [Scanner adapters](docs/scanners.md)
 - [Finding correlation](docs/correlation.md)
+- [Repository-to-production drift](docs/drift.md)
 - [Scan orchestration and notifications](docs/orchestration.md)
 - [Threat model](docs/threat-model.md)
 - [Privacy](docs/privacy.md)

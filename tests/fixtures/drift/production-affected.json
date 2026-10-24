@@ -1,0 +1,44 @@
+{
+  "protocol_version": 1,
+  "agent_version": "0.1.0",
+  "captured_at": "2026-10-24T11:00:00Z",
+  "hostname": "fixture-app-1",
+  "operating_system": null,
+  "packages": [
+    {
+      "name": "lodash",
+      "version": "4.17.20",
+      "architecture": null,
+      "ecosystem": "npm",
+      "purl": "pkg:npm/lodash@4.17.20",
+      "source": "lockfile",
+      "evidence_path": "package-lock.json"
+    }
+  ],
+  "runtimes": [],
+  "processes": [],
+  "services": [],
+  "containers": [],
+  "deployments": [
+    {
+      "commit_sha": "abcdef0123456789abcdef0123456789abcdef01",
+      "repository": "https://github.com/acme/web",
+      "release_id": "release-1",
+      "image_digest": null,
+      "built_at": "2026-10-23T10:00:00Z",
+      "source": "application_file",
+      "integrity_verified": false
+    }
+  ],
+  "checks": [
+    {"kind":"operating_system","status":"complete","diagnostic":null,"item_count":0},
+    {"kind":"package_inventory","status":"complete","diagnostic":null,"item_count":1},
+    {"kind":"runtimes","status":"complete","diagnostic":null,"item_count":0},
+    {"kind":"processes","status":"complete","diagnostic":null,"item_count":0},
+    {"kind":"services","status":"complete","diagnostic":null,"item_count":0},
+    {"kind":"containers","status":"complete","diagnostic":null,"item_count":0},
+    {"kind":"deployments","status":"complete","diagnostic":null,"item_count":1},
+    {"kind":"dependency_files","status":"complete","diagnostic":null,"item_count":1}
+  ],
+  "complete": true
+}

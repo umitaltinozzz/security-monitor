@@ -1,0 +1,28 @@
+{
+  "canonical_id": "CVE-2021-23337",
+  "title": "Fixture advisory",
+  "summary": null,
+  "summary_model": null,
+  "description": null,
+  "source_attributions": [],
+  "aliases": [],
+  "affected_ranges": [
+    {
+      "ecosystem": "npm",
+      "package": "lodash",
+      "source": "cve.now",
+      "range_type": "SEMVER",
+      "events": [{"introduced": "0", "fixed": "4.17.21", "last_affected": null, "limit": null}]
+    }
+  ],
+  "fixed_versions": ["4.17.21"],
+  "cvss": 7.2,
+  "severity": "high",
+  "kev": false,
+  "epss": null,
+  "epss_date": null,
+  "source_urls": [],
+  "source_updated_at": null,
+  "created_at": "2026-10-24T12:00:00Z",
+  "updated_at": "2026-10-24T12:00:00Z"
+}

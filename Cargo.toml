@@ -8,6 +8,7 @@ members = [
     "crates/advisory-providers",
     "crates/scanner-adapters",
     "crates/correlation",
+    "crates/drift",
     "crates/scan-orchestrator",
     "crates/notify",
     "crates/agent-protocol",

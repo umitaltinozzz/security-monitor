@@ -1,0 +1,16 @@
+{
+  "components": [
+    {
+      "purl": "pkg:npm/lodash@4.17.22",
+      "ecosystem": "npm",
+      "name": "lodash",
+      "version": "4.17.22",
+      "source_type": "package_lock",
+      "evidence_paths": ["package-lock.json"]
+    }
+  ],
+  "project_roots": ["."],
+  "detected_files": [],
+  "diagnostics": [],
+  "complete": true
+}

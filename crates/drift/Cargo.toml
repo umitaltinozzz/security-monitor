@@ -1,0 +1,20 @@
+[package]
+name = "security-monitor-drift"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Conservative comparison of reference repository and deployment inventories"
+
+[dependencies]
+chrono = { workspace = true }
+purl = { workspace = true }
+serde = { workspace = true }
+security-monitor-agent-protocol = { version = "0.1.0", path = "../agent-protocol" }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-correlation = { version = "0.1.0", path = "../correlation" }
+security-monitor-inventory = { version = "0.1.0", path = "../inventory" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

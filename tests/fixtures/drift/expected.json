@@ -1,0 +1,17 @@
+{
+  "repo_fixed_production_affected": {
+    "repo_status": "fixed_in_repo",
+    "production_status": "still_affected",
+    "recommended_finding_status": "fixed_in_repo"
+  },
+  "both_fixed": {
+    "repo_status": "fixed_in_repo",
+    "production_status": "fixed_in_production",
+    "recommended_finding_status": "fixed_in_production"
+  },
+  "unknown_deployment": {
+    "repo_status": "fixed_in_repo",
+    "production_status": "unknown",
+    "recommended_finding_status": "needs_review"
+  }
+}

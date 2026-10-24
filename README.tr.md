@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler ve dağıtılmış ortam kanıtlarıyla yerel öncelikli bir iş akışında birleştirmeyi amaçlayan açık kaynaklı bir projedir.
 
-> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, orkestrasyon ve bildirim kitaplıkları bulunur. Tauri kabuğu ve CLI henüz bu kitaplıkları çağırmaz veya tarama sonucu göstermez. Mevcut derlemeyi kullanıcıya yönelik bir güvenlik tarayıcısı ya da sistemin güvenli olduğuna dair kanıt olarak kullanmayın.
+> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, repo-production drift, orkestrasyon, bildirim ve Linux ajanı/SSH kitaplıkları bulunur. Tauri kabuğu ve CLI henüz bu kitaplıkları çağırmaz veya tarama sonucu göstermez. Mevcut derlemeyi kullanıcıya yönelik bir güvenlik tarayıcısı ya da sistemin güvenli olduğuna dair kanıt olarak kullanmayın.
 
 ## Bugün uygulananlar
 
@@ -10,24 +10,26 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - Rust alan türleri, SQLite migration'ları, tür güvenli repository'ler ve üretilmiş TypeScript sözleşmeleri.
 - Desteklenen lockfile'lar, monorepo keşfi, Dockerfile/workflow algılama ve PURL üretimi için yerel envanter kitaplığı.
 - Artımlı cve.now kayıtları, çevrimdışı OSV arşivleri, GHSA çapraz kontrolü, CISA KEV, FIRST EPSS, kaynak birleştirme, önbellek güncelliği ve tutucu yerel eşleştirme için advisory kitaplığı.
-- OSV-Scanner, Trivy ve Semgrep algılama, çevrimdışı çalıştırma ve çıktı normalleştirme için tarayıcı adaptörü; ayrıca yerel bulgu korelasyonu.
+- OSV-Scanner, Trivy ve Semgrep algılama, onaylı sabit sürümlü indirme, çevrimdışı çalıştırma ve çıktı normalleştirme için tarayıcı adaptörü; ayrıca yerel bulgu korelasyonu.
+- Mevcut bulguları doğrulanmış referans dalı ve dağıtım envanterleriyle karşılaştıran; çalışma kopyasındaki commit edilmemiş değişiklikleri ayrı tutan ve düzeltme için güncel, eksiksiz kanıt isteyen drift kitaplığı.
 - Sınırlı kuyruk, kaynak kotaları, hızlı/tam profiller, üç saniyelik dosya izleyici gecikmesi, başlangıç hash kontrolü ve önbellekteki envanterle advisory yeniden eşleştirme içeren orkestrasyon kitaplığı.
 - Masaüstü, kullanıcı onaylı HTTPS webhook/Slack/Discord ve TLS SMTP bildirimleri; sırlar OS anahtarlığında tutulur, hedef onayı kaydedilir, tekilleştirme ve erteleme desteklenir.
+- Sürümlemeli sunucu envanter protokolü, salt okunur ve root gerektirmeyen Linux ajanı, OS anahtarlığında SSH eşleştirme anahtarı, zorunlu komut kısıtlamaları, host-key sabitleme, SSH yapılandırmasından host keşfi ve sabit komutlu ajansız toplama API'si.
 - Tauri masaüstü kabuğu ve `secmon --help` / `secmon --version` CLI komutları.
 
-Orkestrasyon ve bildirim kitaplıkları henüz masaüstü veya CLI'ye bağlanmadı. Sunucu toplama, yapay zekâ, düzeltme ve ürün ekranları kullanıma hazır değildir.
+Envanter, advisory, tarayıcı, korelasyon, orkestrasyon, bildirim ve sunucu toplama kitaplıkları henüz masaüstü veya CLI yönetim akışlarına bağlanmadı. Yapay zekâ, düzeltme ve ürün ekranları kullanıma hazır değildir.
 
 ## Yol haritası
 
-Kalan v1.0 kapsamı uygulanmış kitaplıkların masaüstü/CLI yönetim akışlarına bağlanması, SSH üzerinden salt okunur Linux toplama, AI/MCP, onaylı düzeltme ve raporlamadır. İş milestone'lar halinde ilerler; özellikler kullanılabilir oldukça belgelenir.
+Kalan v1.0 kapsamı bu kitaplıkları masaüstü/CLI yönetim akışlarına bağlama, AI/MCP, onaylı düzeltme ve raporlamadır. İş milestone'lar halinde ilerler; özellikler kullanılabilir oldukça belgelenir.
 
 ## Yaklaşımın karşılaştırması
 
 | Araç | Temel odak | Security Monitor ile ilişkisi |
 | --- | --- | --- |
 | [Dependabot](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-security-updates) | Depo bağımlılıklarındaki açıklara uyarı verir ve güvenlik güncelleme pull request'leri açabilir. | Security Monitor bir bağımlılık güncelleyici değildir; hedefi yerel envanteri dağıtım kanıtlarıyla ilişkilendirmektir. |
-| [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Trivy, Security Monitor'ın uyarlamayı planladığı tarayıcılardandır; ürün hedefi ayrıca repo ile production kanıtını ilişkilendirir. |
-| [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor envanter/advisory kitaplığı içerir; tarayıcı entegrasyonu henüz yol haritasındadır. |
+| [Trivy](https://trivy.dev/docs/latest/) | Paketleri, imajları, secret'ları ve yanlış yapılandırmaları tarar. | Security Monitor'da Trivy adaptör kitaplığı vardır; mevcut uygulama henüz bu adaptörü çağırmaz. Ürün hedefi ayrıca repo ile production kanıtını ilişkilendirir. |
+| [OSV-Scanner](https://google.github.io/osv-scanner/) | Proje veya imaj paketlerini çıkarıp OSV duyurularıyla eşleştirir. | Security Monitor'da envanter, advisory ve tarayıcı adaptör kitaplıkları vardır; mevcut uygulama henüz bunları çağırmaz. |
 
 Security Monitor'ın hedefi yerel proje envanterini salt okunur dağıtım kanıtları, duyuru kaynakları ve kullanıcı denetimindeki incelemeyle aynı yerel iş akışında birleştirmektir. Envanter, advisory, tarayıcı adaptörü, korelasyon ve orkestrasyon kitaplıkları vardır; ancak bunları dağıtım kanıtlarına ve arayüze bağlayan kullanıcı iş akışı henüz uygulanmadı.
 
@@ -45,7 +47,7 @@ flowchart LR
   MCP --> Model[İsteğe bağlı, kullanıcı seçimi yapay zekâ sağlayıcısı]
 ```
 
-Bu diyagram hedef mimariyi gösterir. Envanter, advisory sağlayıcı, tarayıcı adaptörü, korelasyon ve orkestrasyon kitaplıkları uygulanmıştır; ancak Linux ajanı, MCP araçları ve işlevsel arayüz henüz uygulanmadı.
+Bu diyagram hedef mimariyi gösterir. Envanter, advisory sağlayıcı, tarayıcı adaptörü, korelasyon, orkestrasyon ve Linux ajanı/SSH kitaplıkları uygulanmıştır; ancak kullanıcı iş akışları, MCP araçları ve işlevsel arayüz henüz uygulanmadı.
 
 ## Gizlilik
 
@@ -75,9 +77,13 @@ cargo run -p secmon -- --version
 
 Mevcut CLI yalnızca yardım ve sürüm bilgisini verir. Tarama ve yönetim komutları yol haritasındadır.
 
-### Linux ajanı ve yapay zekâ
+### Linux ajanı
 
-Salt okunur Linux sunucu ajanı ve yapay zekâ sağlayıcı entegrasyonu henüz uygulanmadı. Tasarlanan sınırlar için [ajan kurulum](docs/agent-install.md) ve [yapay zekâ sağlayıcıları](docs/ai-providers.md) belgelerine bakın; bu sürümde kurulum komutu yoktur.
+Salt okunur Linux sunucu ajanı ve SSH taşıma kitaplıkları uygulanmıştır; masaüstü eşleştirme akışına henüz bağlanmamıştır. Gerçek sunucu kurulumu ve doğrudan-host geliştirme aracı için [Linux ajan kurulumu](docs/agent-install.md) belgesine bakın.
+
+### Yapay zekâ
+
+Yapay zekâ sağlayıcı entegrasyonu henüz uygulanmadı. Tasarlanan gizlilik ve onay modeli için [AI sağlayıcıları](docs/ai-providers.md) belgesine bakın.
 
 ## Güvenlik verisi ve kaynak gösterimi
 
@@ -89,6 +95,10 @@ Sağlayıcı kitaplığı kamuya açık güvenlik duyurusu verilerini indirebili
 - [Tehdit modeli](docs/threat-model.md)
 - [Gizlilik](docs/privacy.md)
 - [Veri kaynakları](docs/data-sources.md)
+- [Tarayıcı adaptörleri](docs/scanners.md)
+- [Bulgu korelasyonu](docs/correlation.md)
+- [Repo-production drift karşılaştırması](docs/drift.md)
+- [Tarama orkestrasyonu ve bildirimler](docs/orchestration.md)
 - [Linux ajan kurulumu](docs/agent-install.md)
 - [Deploy ID](docs/deploy-id.md)
 - [Yapay zekâ sağlayıcıları](docs/ai-providers.md)
