@@ -107,6 +107,10 @@ jobs:
       - name: Test Rust
         run: cargo test --workspace
 
+      - name: Free Windows test build artifacts
+        if: runner.os == 'Windows'
+        run: cargo clean --profile test
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2.87.31
         with:
@@ -138,10 +142,6 @@ jobs:
 
       - name: Run desktop smoke test
         run: pnpm -C apps/desktop e2e
-
-      - name: Free Windows test build artifacts
-        if: runner.os == 'Windows'
-        run: cargo clean --profile test
 
       - name: Build Tauri shell (debug)
         if: github.event_name != 'push'
