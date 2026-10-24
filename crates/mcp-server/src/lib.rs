@@ -11,9 +11,13 @@ use security_monitor_ai::{
     redact_text_with_host_aliases,
 };
 use security_monitor_core::{
-    Advisory, Asset, Component, ComponentInstance, Finding, FindingEvidence, Project,
+    Advisory, AiProvider, AiProviderKind, ApprovalState, Asset, Component, ComponentInstance,
+    Finding, FindingEvidence, Project, Remediation,
 };
 use security_monitor_database::Database;
+use security_monitor_remediation::{
+    McpRemediationAction, McpRemediationRequest, write_mcp_remediation_request,
+};
 use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
@@ -46,6 +50,7 @@ pub struct WorkspaceTools {
     database: Database,
     source_access_projects: BTreeSet<String>,
     host_aliases: BTreeMap<String, String>,
+    remediation_queue_dir: Option<PathBuf>,
 }
 
 impl WorkspaceTools {
@@ -61,6 +66,7 @@ impl WorkspaceTools {
             database,
             source_access_projects: source_access_projects.into_iter().collect(),
             host_aliases: BTreeMap::new(),
+            remediation_queue_dir: None,
         }
     }
 
@@ -72,6 +78,11 @@ impl WorkspaceTools {
             .into_iter()
             .map(|(hostname, alias)| (hostname.to_ascii_lowercase(), alias))
             .collect();
+        self
+    }
+
+    pub fn with_remediation_queue_dir(mut self, app_data_dir: impl Into<PathBuf>) -> Self {
+        self.remediation_queue_dir = Some(app_data_dir.into());
         self
     }
 
@@ -109,6 +120,8 @@ impl WorkspaceTools {
             "read_project_file" => self.read_project_file(arguments).await,
             "search_project" => self.search_project(arguments).await,
             "analyze_impact" => self.analyze_impact(arguments).await,
+            "prepare_patch" => self.prepare_patch(arguments).await,
+            "run_safe_tests" => self.request_safe_tests(arguments).await,
             _ => Err(McpError::ResourceUnavailable),
         }
     }
@@ -258,6 +271,84 @@ impl WorkspaceTools {
                 "reference":item.reference,"confidence":item.confidence})).collect::<Vec<_>>(),
             "priority_score_is_read_only":true}),
         )
+    }
+
+    async fn prepare_patch(&self, arguments: &Value) -> Result<Value, McpError> {
+        let finding_id = required_string(arguments, "finding_id")?;
+        let provider_id = required_string(arguments, "provider_id")?;
+        let finding = self
+            .database
+            .repository::<Finding>()
+            .get(finding_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        let instance = self
+            .database
+            .repository::<ComponentInstance>()
+            .get(&finding.component_instance_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        let project_id = instance.project_id.ok_or(McpError::ResourceUnavailable)?;
+        let project = self.project(&project_id).await?;
+        let provider = self
+            .database
+            .repository::<AiProvider>()
+            .get(provider_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        if provider.kind != AiProviderKind::AgentCli
+            || provider.cli_product.is_none()
+            || !project
+                .allowed_ai_providers
+                .iter()
+                .any(|id| id == provider_id)
+        {
+            return Err(McpError::PermissionDenied);
+        }
+        self.write_approval_request(McpRemediationRequest {
+            id: uuid::Uuid::new_v4().to_string(),
+            action: McpRemediationAction::PreparePatch,
+            finding_id: finding.id,
+            provider_id: Some(provider.id),
+            remediation_id: None,
+            created_at: chrono::Utc::now(),
+        })?;
+        Ok(json!({"approval_state":"pending_user_approval","source_code_sent":false}))
+    }
+
+    async fn request_safe_tests(&self, arguments: &Value) -> Result<Value, McpError> {
+        let remediation_id = required_string(arguments, "remediation_id")?;
+        let remediation = self
+            .database
+            .repository::<Remediation>()
+            .get(remediation_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        if remediation.approval_state != ApprovalState::Approved {
+            return Err(McpError::PermissionDenied);
+        }
+        self.write_approval_request(McpRemediationRequest {
+            id: uuid::Uuid::new_v4().to_string(),
+            action: McpRemediationAction::RunSafeTests,
+            finding_id: remediation.finding_id,
+            provider_id: None,
+            remediation_id: Some(remediation.id),
+            created_at: chrono::Utc::now(),
+        })?;
+        Ok(json!({"approval_state":"pending_user_approval","tests_started":false}))
+    }
+
+    fn write_approval_request(&self, request: McpRemediationRequest) -> Result<(), McpError> {
+        let app_data_dir = self
+            .remediation_queue_dir
+            .as_deref()
+            .ok_or(McpError::ResourceUnavailable)?;
+        write_mcp_remediation_request(app_data_dir, &request)
+            .map_err(|_| McpError::ResourceUnavailable)
     }
 
     async fn read_project_file(&self, arguments: &Value) -> Result<Value, McpError> {
@@ -430,7 +521,7 @@ impl McpServer {
             .into_iter()
             .filter(|name| known.contains(name))
             .collect::<Vec<_>>();
-        let approved_permissions = if enabled_tool_names.iter().any(|name| {
+        let mut approved_permissions = if enabled_tool_names.iter().any(|name| {
             matches!(
                 name.as_str(),
                 "read_project_file" | "search_project" | "analyze_impact"
@@ -440,6 +531,18 @@ impl McpServer {
         } else {
             vec![]
         };
+        if enabled_tool_names
+            .iter()
+            .any(|name| name == "prepare_patch")
+        {
+            approved_permissions.push(ToolPermission::Write);
+        }
+        if enabled_tool_names
+            .iter()
+            .any(|name| name == "run_safe_tests")
+        {
+            approved_permissions.push(ToolPermission::Execute);
+        }
         Self {
             tools: Arc::new(mcp_supported_tools()),
             enabled_tool_names: Arc::new(enabled_tool_names),
@@ -666,6 +769,18 @@ pub fn supported_tools() -> Vec<AiTool> {
             "Gather current finding, package, advisory, and evidence records for the caller to analyze.",
             json!({"type":"object","properties":{"finding_id":{"type":"string"}},"required":["finding_id"],"additionalProperties":false}),
             ToolPermission::AiApproval,
+        ),
+        tool(
+            "prepare_patch",
+            "Queue a patch request in the desktop approval queue. This does not send source or modify a repository.",
+            json!({"type":"object","properties":{"finding_id":{"type":"string"},"provider_id":{"type":"string"}},"required":["finding_id","provider_id"],"additionalProperties":false}),
+            ToolPermission::Write,
+        ),
+        tool(
+            "run_safe_tests",
+            "Queue a request for the user to review and approve sandboxed tests. This does not execute a command.",
+            json!({"type":"object","properties":{"remediation_id":{"type":"string"}},"required":["remediation_id"],"additionalProperties":false}),
+            ToolPermission::Execute,
         ),
     ]
 }

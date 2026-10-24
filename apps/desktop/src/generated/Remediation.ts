@@ -2,4 +2,4 @@
 import type { ApprovalState } from "./ApprovalState";
 import type { RemediationTest } from "./RemediationTest";
 
-export type Remediation = { id: string, finding_id: string, worktree_path: string, branch: string, diff_hash: string | null, tests: Array<RemediationTest>, approval_state: ApprovalState, created_at: string, updated_at: string, };
+export type Remediation = { id: string, finding_id: string, worktree_path: string, branch: string, provider_id: string | null, diff_hash: string | null, tests: Array<RemediationTest>, approval_state: ApprovalState, created_at: string, updated_at: string, };

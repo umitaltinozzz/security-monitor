@@ -88,6 +88,17 @@ pub enum AiProviderKind {
     Local,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AgentCliProduct {
+    ClaudeCode,
+    Codex,
+    #[serde(rename = "opencode")]
+    #[ts(rename = "opencode")]
+    OpenCode,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -367,6 +378,8 @@ pub struct Remediation {
     pub finding_id: String,
     pub worktree_path: String,
     pub branch: String,
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub diff_hash: Option<String>,
     pub tests: Vec<RemediationTest>,
     pub approval_state: ApprovalState,
@@ -387,6 +400,8 @@ pub struct ProviderCapabilities {
 pub struct AiProvider {
     pub id: String,
     pub kind: AiProviderKind,
+    #[serde(default)]
+    pub cli_product: Option<AgentCliProduct>,
     pub display_name: String,
     pub base_url: Option<String>,
     pub model: Option<String>,

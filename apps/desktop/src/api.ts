@@ -20,6 +20,10 @@ import type { FindingStatusChange } from "./generated/FindingStatusChange";
 import type { PairingInstructionsView } from "./generated/PairingInstructionsView";
 import type { Project } from "./generated/Project";
 import type { ProjectDiscoveryView } from "./generated/ProjectDiscoveryView";
+import type { Remediation } from "./generated/Remediation";
+import type { RemediationSandboxStatus } from "./generated/RemediationSandboxStatus";
+import type { SafeTestInput } from "./generated/SafeTestInput";
+import type { McpRemediationRequest } from "./generated/McpRemediationRequest";
 import type { ScanResult } from "./generated/ScanResult";
 import type { ScanRun } from "./generated/ScanRun";
 import type { ScannerAvailability } from "./generated/ScannerAvailability";
@@ -78,6 +82,19 @@ export const api = {
   evidence: () => invoke<FindingEvidence[]>("list_finding_evidence"),
   runs: () => invoke<ScanRun[]>("list_scan_runs"),
   audit: () => invoke<AuditEvent[]>("list_audit_events"),
+  remediations: () => invoke<Remediation[]>("list_remediations"),
+  remediationSandboxStatus: () => invoke<RemediationSandboxStatus>("remediation_sandbox_status"),
+  mcpRemediationRequests: () => invoke<McpRemediationRequest[]>("list_mcp_remediation_requests"),
+  dismissMcpRemediationRequest: (requestId: string) =>
+    invoke<void>("dismiss_mcp_remediation_request", { requestId }),
+  requestRemediation: (findingId: string, providerId: string) =>
+    invoke<Remediation>("request_remediation", { findingId, providerId }),
+  approveRemediation: (remediationId: string, sourceTransferApproved: boolean) =>
+    invoke<Remediation>("approve_remediation", { remediationId, sourceTransferApproved }),
+  rejectRemediation: (remediationId: string) =>
+    invoke<Remediation>("reject_remediation", { remediationId }),
+  runSafeTests: (remediationId: string, input: SafeTestInput, executeApproved: boolean) =>
+    invoke<Remediation>("run_safe_tests", { remediationId, input, executeApproved }),
   setFindingStatus: (change: FindingStatusChange) =>
     invoke<Finding>("set_finding_status", { change }),
   assets: () => invoke<Asset[]>("list_server_assets"),

@@ -152,6 +152,7 @@ mod tests {
         AiProvider {
             id: "provider-a".into(),
             kind: AiProviderKind::OpenAiCompatible,
+            cli_product: None,
             display_name: "Test provider".into(),
             base_url: Some("https://api.example.test/v1".into()),
             model: Some("user-entered-model".into()),

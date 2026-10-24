@@ -108,6 +108,22 @@ pub fn validate_provider_config(provider: &AiProvider) -> Result<(), AiError> {
     if provider.id.trim().is_empty() || provider.display_name.trim().is_empty() {
         return Err(AiError::InvalidProvider);
     }
+    if matches!(provider.kind, AiProviderKind::AgentCli) {
+        if provider.cli_product.is_none()
+            || provider.base_url.is_some()
+            || provider.model.is_some()
+            || provider.keychain_ref.is_some()
+            || provider.capabilities.tool_calling
+            || provider.price_in.is_some()
+            || provider.price_out.is_some()
+        {
+            return Err(AiError::InvalidProvider);
+        }
+        return Ok(());
+    }
+    if provider.cli_product.is_some() {
+        return Err(AiError::InvalidProvider);
+    }
     validate_base_url(
         provider
             .base_url
@@ -131,9 +147,6 @@ pub fn validate_provider_config(provider: &AiProvider) -> Result<(), AiError> {
             .is_some_and(|price| !price.is_finite() || price < 0.0)
     {
         return Err(AiError::InvalidProvider);
-    }
-    if matches!(provider.kind, AiProviderKind::AgentCli) {
-        return Err(AiError::AgentCliRequiresRemediationMilestone);
     }
     Ok(())
 }
@@ -770,8 +783,6 @@ pub enum AiError {
     ApprovalDestinationChanged,
     #[error("source code is disabled for the selected tier")]
     CodeNotAllowedForTier,
-    #[error("agent CLI execution is added in the remediation milestone")]
-    AgentCliRequiresRemediationMilestone,
     #[error("provider does not support tool calling for this tier")]
     ToolCallingUnsupported,
     #[error("provider response is invalid")]
@@ -822,6 +833,7 @@ mod tests {
         AiProvider {
             id: "local-test".into(),
             kind: AiProviderKind::Local,
+            cli_product: None,
             display_name: "Local test".into(),
             base_url: Some(base_url),
             model: Some("user-model".into()),

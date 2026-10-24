@@ -875,6 +875,7 @@ entity!(
         ("finding_id", "$.finding_id"),
         ("worktree_path", "$.worktree_path"),
         ("branch", "$.branch"),
+        ("provider_id", "$.provider_id"),
         ("diff_hash", "$.diff_hash"),
         ("tests", "$.tests"),
         ("approval_state", "$.approval_state"),

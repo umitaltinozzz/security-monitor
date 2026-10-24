@@ -15,6 +15,7 @@ members = [
     "crates/mcp-server",
     "crates/agent-protocol",
     "crates/agent-transport",
+    "crates/remediation",
     "agents/linux",
 ]
 resolver = "3"

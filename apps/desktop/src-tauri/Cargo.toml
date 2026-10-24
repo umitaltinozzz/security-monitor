@@ -20,6 +20,7 @@ security-monitor-correlation = { version = "0.1.0", path = "../../../crates/corr
 security-monitor-core = { version = "0.1.0", path = "../../../crates/core" }
 security-monitor-database = { version = "0.1.0", path = "../../../crates/database" }
 security-monitor-mcp-server = { version = "0.1.0", path = "../../../crates/mcp-server" }
+security-monitor-remediation = { version = "0.1.0", path = "../../../crates/remediation" }
 security-monitor-scan-orchestrator = { version = "0.1.0", path = "../../../crates/scan-orchestrator" }
 security-monitor-scanner-adapters = { version = "0.1.0", path = "../../../crates/scanner-adapters" }
 serde.workspace = true

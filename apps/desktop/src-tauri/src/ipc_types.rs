@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use security_monitor_ai::AiSettings;
 use security_monitor_core::{
-    AiProviderKind, AiTier, Asset, Environment, FindingDispositionReason, FindingStatus,
-    ProviderCapabilities, ScanOutcome,
+    AgentCliProduct, AiProviderKind, AiTier, Asset, Environment, FindingDispositionReason,
+    FindingStatus, ProviderCapabilities, ScanOutcome,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -153,6 +153,7 @@ pub struct FindingStatusChange {
 pub struct AiProviderInput {
     pub id: Option<String>,
     pub kind: AiProviderKind,
+    pub cli_product: Option<AgentCliProduct>,
     pub display_name: String,
     pub base_url: Option<String>,
     pub model: Option<String>,
@@ -162,6 +163,21 @@ pub struct AiProviderInput {
     pub data_region: Option<String>,
     // Keep this transient: the key is consumed into the OS credential store only.
     pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RemediationSandboxStatus {
+    pub available: bool,
+    pub engine: Option<security_monitor_remediation::SandboxEngine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SafeTestInput {
+    pub executable: String,
+    pub args: Vec<String>,
+    pub image: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

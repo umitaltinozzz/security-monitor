@@ -5134,6 +5134,7 @@ dependencies = [
  "security-monitor-correlation",
  "security-monitor-database",
  "security-monitor-mcp-server",
+ "security-monitor-remediation",
  "security-monitor-scan-orchestrator",
  "security-monitor-scanner-adapters",
  "serde",
@@ -5189,6 +5190,7 @@ dependencies = [
  "security-monitor-ai",
  "security-monitor-core",
  "security-monitor-database",
+ "security-monitor-remediation",
  "serde",
  "serde_json",
  "tempfile",
@@ -5215,6 +5217,22 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "security-monitor-remediation"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "security-monitor-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "ts-rs",
  "uuid",
 ]
 

@@ -9,6 +9,7 @@ import type { Project } from "./generated/Project";
 import type { WorkspaceData } from "./api";
 import { api, loadWorkspace } from "./api";
 import { AiSettingsPanel } from "./AiSettings";
+import { RemediationSection } from "./RemediationSection";
 import { AiChatComposer } from "./AiChatComposer";
 import "./app.css";
 
@@ -61,6 +62,20 @@ function auditAction(action: string, t: T): string {
     mcp_source_access_permission_enabled: "history.events.mcpSourceAccessEnabled",
     mcp_source_access_permission_revocation_requested: "history.events.mcpSourceAccessRevocation",
     mcp_source_access_permission_revoked: "history.events.mcpSourceAccessRevoked",
+    mcp_remediation_request_received: "history.events.mcpRemediationRequestReceived",
+    mcp_remediation_request_dismissed: "history.events.mcpRemediationRequestDismissed",
+    remediation_write_approval_requested: "history.events.remediationWriteRequested",
+    remediation_source_transfer_denied: "history.events.remediationSourceTransferDenied",
+    remediation_source_transfer_approved: "history.events.remediationSourceTransferApproved",
+    remediation_write_approved: "history.events.remediationWriteApproved",
+    remediation_write_rejected: "history.events.remediationWriteRejected",
+    remediation_worktree_failed: "history.events.remediationWorktreeFailed",
+    remediation_agent_started: "history.events.remediationAgentStarted",
+    remediation_agent_finished: "history.events.remediationAgentFinished",
+    remediation_agent_failed: "history.events.remediationAgentFailed",
+    remediation_test_execute_approved: "history.events.remediationTestApproved",
+    remediation_test_passed: "history.events.remediationTestPassed",
+    remediation_test_failed: "history.events.remediationTestFailed",
   };
   return t(keys[action] ?? "common.unknown");
 }
@@ -373,23 +388,27 @@ function Findings({ data, t, refresh, setNotice, updateFinding, initialFindingId
         instance={instances.get(selected.component_instance_id)}
         projectName={projects.get(instances.get(selected.component_instance_id)?.project_id ?? "")?.name}
         evidence={data.evidence.filter((item) => item.finding_id === selected.id)}
+        data={data}
         language={data.settings.language}
         t={t}
+        setNotice={setNotice}
         close={() => setSelected(null)}
         changeStatus={() => setEditingStatus(true)}
       />)}
   </>;
 }
 
-function FindingDetail({ finding, advisory, component, instance, projectName, evidence, language, t, close, changeStatus }: {
+function FindingDetail({ finding, advisory, component, instance, projectName, evidence, data, language, t, setNotice, close, changeStatus }: {
   finding: Finding;
   advisory: WorkspaceData["advisories"][number] | undefined;
   component: WorkspaceData["components"][number] | undefined;
   instance: WorkspaceData["instances"][number] | undefined;
   projectName: string | undefined;
   evidence: WorkspaceData["evidence"];
+  data: WorkspaceData;
   language: Language;
   t: T;
+  setNotice: NoticeSetter;
   close: () => void;
   changeStatus: () => void;
 }) {
@@ -413,7 +432,7 @@ function FindingDetail({ finding, advisory, component, instance, projectName, ev
       const evidenceName = t(evidenceKey) === evidenceKey ? t("common.unverified") : t(evidenceKey);
       return <li key={`instance-${index}`}><strong>{evidenceName}</strong>{item.file_path_redacted && <code>{item.file_path_redacted}</code>}{item.reference && <span>{item.reference}</span>}</li>;
     })}</ul>}</section>
-    <section><h3>{t("findings.remediation")}</h3><p>{finding.fix_version ? `${t("findings.fixedVersion")}: ${finding.fix_version}` : t("common.unverified")}</p></section>
+    <section><h3>{t("findings.remediation")}</h3><p>{finding.fix_version ? `${t("findings.fixedVersion")}: ${finding.fix_version}` : t("common.unverified")}</p><RemediationSection findingId={finding.id} projectId={instance?.project_id ?? null} data={data} t={t} setNotice={setNotice} /></section>
     <details><summary>{t("findings.details")}</summary><dl><dt>{t("findings.cvss")}</dt><dd>{advisory?.cvss ?? t("common.unknown")}</dd><dt>{t("findings.epss")}</dt><dd>{advisory?.epss === null || advisory?.epss === undefined ? t("common.unknown") : `${Math.round(advisory.epss * 100)}%`}</dd><dt>{t("findings.kev")}</dt><dd>{t(advisory?.kev ? "common.yes" : "common.no")}</dd><dt>{t("common.updated")}</dt><dd>{date(advisory?.source_updated_at, language)}</dd></dl>{advisory?.aliases.length ? <p>{t("findings.aliases")}: {advisory.aliases.join(", ")}</p> : null}{advisory?.source_urls.map((url) => <p key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></p>)}</details>
     <div className="button-row end"><button className="button quiet" onClick={close}>{t("actions.close")}</button><button className="button primary" onClick={changeStatus}>{t("findings.changeStatus")}</button></div>
   </article></div>;
