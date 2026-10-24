@@ -1,0 +1,14 @@
+[package]
+name = "secmon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Security Monitor command-line interface"
+
+[[bin]]
+name = "secmon"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
