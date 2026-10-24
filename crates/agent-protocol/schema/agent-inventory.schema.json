@@ -273,11 +273,25 @@
             "null"
           ]
         },
+        "installed_kernel_release": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "kernel_release": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "kernel_restart_required": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
         },
         "name": {
           "type": [
@@ -354,7 +368,8 @@
         "rpm",
         "apk",
         "lockfile",
-        "container_image"
+        "container_image",
+        "manual"
       ]
     },
     "ProcessRecord": {
@@ -365,6 +380,14 @@
             "string",
             "null"
           ]
+        },
+        "deleted_shared_libraries": {
+          "description": "Basenames of shared libraries still mapped after their files were removed.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
         },
         "executable_path": {
           "type": [

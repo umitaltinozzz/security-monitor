@@ -1,0 +1,11 @@
+[
+  { "id": "cisa-advisories", "name": "CISA Cybersecurity Advisories", "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml" },
+  { "id": "nodejs-blog", "name": "Node.js Blog", "url": "https://nodejs.org/en/feed/blog.xml" },
+  { "id": "php-news", "name": "PHP News", "url": "https://www.php.net/feed.atom" },
+  { "id": "python-blog", "name": "Python Blog", "url": "https://blog.python.org/feeds/posts/default" },
+  { "id": "nginx-blog", "name": "NGINX Blog", "url": "https://blog.nginx.org/feed/" },
+  { "id": "debian-security", "name": "Debian Security Advisories", "url": "https://www.debian.org/security/dsa.en.rdf" },
+  { "id": "ubuntu-security", "name": "Ubuntu Security Notices", "url": "https://ubuntu.com/security/notices/rss.xml" },
+  { "id": "the-hacker-news", "name": "The Hacker News", "url": "https://feeds.feedburner.com/TheHackersNews" },
+  { "id": "bleepingcomputer", "name": "BleepingComputer", "url": "https://www.bleepingcomputer.com/feed/" }
+]

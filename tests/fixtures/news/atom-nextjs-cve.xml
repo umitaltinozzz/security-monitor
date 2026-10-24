@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Fixture security feed</title>
+  <entry>
+    <id>nextjs-security-1</id>
+    <title>Next.js security update CVE-2026-12345</title>
+    <link rel="alternate" href="https://security.example.test/nextjs/one" />
+    <summary type="html">A middleware issue affects Next.js deployments.</summary>
+    <updated>2026-10-24T12:00:00Z</updated>
+  </entry>
+</feed>

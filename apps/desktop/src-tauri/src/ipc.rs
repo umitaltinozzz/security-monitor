@@ -7,7 +7,9 @@ use std::{
 };
 
 use chrono::Utc;
-use security_monitor_advisory_providers::{HttpPolicy, OsvDatabaseUpdater, PublicDataHttp};
+use security_monitor_advisory_providers::{
+    HttpPolicy, NewsSignalService, NewsSyncReport, OsvDatabaseUpdater, PublicDataHttp,
+};
 use security_monitor_agent_protocol::AgentInventory;
 use security_monitor_agent_transport::{
     CredentialStore, InventoryCollectionApproval, OsCredentialStore, SshIdentity, SshTarget,
@@ -22,8 +24,8 @@ use security_monitor_ai::{
 use security_monitor_core::{
     Advisory, AgentCliProduct, AiDataTransferApproval, AiProvider, AiProviderKind, AiRun, AiTier,
     ApprovalState, Asset, AssetType, AuditEvent, AuditResult, AuditScope, Component,
-    ComponentInstance, Finding, FindingDispositionReason, FindingEvidence, FindingStatus, Project,
-    Remediation, RemediationTest, ScanOutcome, ScanRun,
+    ComponentInstance, Finding, FindingDispositionReason, FindingEvidence, FindingStatus,
+    NewsSignal, Project, Remediation, RemediationTest, ScanOutcome, ScanRun,
 };
 use security_monitor_correlation::{
     DispositionScope, StatusActor, StatusEvidence, StatusTransition, UserDisposition,
@@ -933,6 +935,35 @@ pub async fn list_advisories(state: State<'_, AppState>) -> Result<Vec<Advisory>
 }
 
 #[tauri::command]
+pub async fn list_news_signals(state: State<'_, AppState>) -> Result<Vec<NewsSignal>, String> {
+    state
+        .database
+        .repository::<NewsSignal>()
+        .list()
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())
+}
+
+#[tauri::command]
+pub async fn refresh_news_signals(state: State<'_, AppState>) -> Result<NewsSyncReport, String> {
+    let settings = state.settings.read().await.clone();
+    if !settings.public_downloads_enabled {
+        return Err("permission_denied".to_owned());
+    }
+    NewsSignalService::new(
+        HttpPolicy {
+            public_downloads_enabled: true,
+        },
+        state.database.clone(),
+        state.app_data_dir.clone(),
+    )
+    .map_err(|_| "unknown".to_owned())?
+    .refresh()
+    .await
+    .map_err(|_| "unknown".to_owned())
+}
+
+#[tauri::command]
 pub async fn list_components(state: State<'_, AppState>) -> Result<Vec<Component>, String> {
     state
         .database
@@ -1795,15 +1826,11 @@ pub async fn collect_server_inventory(
         AuditResult::Succeeded,
     )
     .await?;
-    Ok(CollectionSummary {
-        asset_id: asset.id,
-        complete: collection.inventory.complete,
-        package_count: collection.inventory.packages.len(),
-        service_count: collection.inventory.services.len(),
-        container_count: collection.inventory.containers.len(),
-        deployment_count: collection.inventory.deployments.len(),
-        approved_at: collection.approval.approved_at(),
-    })
+    Ok(collection_summary(
+        asset.id,
+        &collection.inventory,
+        collection.approval.approved_at(),
+    ))
 }
 
 #[tauri::command]
@@ -1839,15 +1866,55 @@ pub async fn get_server_inventory_summary(
     let approved_at = audit
         .map(|event| event.timestamp)
         .ok_or_else(|| "collection_failed".to_owned())?;
-    Ok(Some(CollectionSummary {
-        asset_id: asset.id,
+    Ok(Some(collection_summary(asset.id, &inventory, approved_at)))
+}
+
+fn collection_summary(
+    asset_id: String,
+    inventory: &AgentInventory,
+    approved_at: chrono::DateTime<Utc>,
+) -> CollectionSummary {
+    let mut services_needing_restart = inventory
+        .processes
+        .iter()
+        .filter(|process| !process.deleted_shared_libraries.is_empty())
+        .filter_map(|process| {
+            process
+                .service_unit
+                .as_deref()
+                .and_then(|unit| unit.strip_suffix(".service"))
+                .or_else(|| {
+                    process
+                        .executable_path
+                        .as_deref()
+                        .and_then(|path| Path::new(path).file_name())
+                        .and_then(|name| name.to_str())
+                })
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    services_needing_restart.sort();
+    services_needing_restart.dedup();
+    let operating_system = inventory.operating_system.as_ref();
+    CollectionSummary {
+        asset_id,
         complete: inventory.complete,
         package_count: inventory.packages.len(),
         service_count: inventory.services.len(),
         container_count: inventory.containers.len(),
         deployment_count: inventory.deployments.len(),
+        running_kernel_release: operating_system.and_then(|os| os.kernel_release.clone()),
+        installed_kernel_release: operating_system
+            .and_then(|os| os.installed_kernel_release.clone()),
+        kernel_restart_required: operating_system.and_then(|os| os.kernel_restart_required),
+        services_needing_restart,
+        deleted_shared_library_count: inventory
+            .processes
+            .iter()
+            .map(|process| process.deleted_shared_libraries.len())
+            .sum(),
         approved_at,
-    }))
+    }
 }
 
 async fn prepare_ai_request(

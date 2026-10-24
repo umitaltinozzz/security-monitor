@@ -94,6 +94,11 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             .and_then(|path| Path::new(path).file_name())
             .and_then(|name| name.to_str())
             .and_then(runtime_name);
+        let (deleted_shared_libraries, maps_unavailable) =
+            deleted_shared_libraries(&process_dir.join("maps"));
+        if maps_unavailable {
+            had_permission_denied = true;
+        }
         processes.push(ProcessRecord {
             pid,
             executable_path,
@@ -101,6 +106,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             service_unit,
             container_id,
             runtime_name: runtime_name.map(str::to_owned),
+            deleted_shared_libraries,
         });
     }
     processes.sort_by_key(|process| process.pid);
@@ -140,18 +146,8 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         })
         .collect::<Vec<_>>();
 
-    let process_status = if hit_limit || had_permission_denied {
-        CheckStatus::Partial
-    } else {
-        CheckStatus::Complete
-    };
-    let process_diagnostic = if hit_limit {
-        Some(DiagnosticCode::LimitReached)
-    } else if had_permission_denied {
-        Some(DiagnosticCode::PermissionDenied)
-    } else {
-        None
-    };
+    let (process_status, process_diagnostic) =
+        process_collection_status(hit_limit, had_permission_denied);
     let service_status = if systemd_available {
         CheckStatus::Complete
     } else if services.is_empty() {
@@ -175,6 +171,61 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         processes,
         services,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn process_collection_status(
+    hit_limit: bool,
+    permission_denied: bool,
+) -> (CheckStatus, Option<DiagnosticCode>) {
+    if hit_limit {
+        (CheckStatus::Partial, Some(DiagnosticCode::LimitReached))
+    } else if permission_denied {
+        (CheckStatus::Partial, Some(DiagnosticCode::PermissionDenied))
+    } else {
+        (CheckStatus::Complete, None)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn deleted_shared_libraries(path: &Path) -> (Vec<String>, bool) {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) => {
+            return (
+                Vec::new(),
+                error.kind() == std::io::ErrorKind::PermissionDenied,
+            );
+        }
+    };
+    let mut names = BTreeSet::new();
+    for line in contents.lines().take(100_000) {
+        let Some(mapped_path) = line.split_whitespace().nth(5) else {
+            continue;
+        };
+        let Some(path) = mapped_path.strip_suffix(" (deleted)") else {
+            continue;
+        };
+        let path = Path::new(path);
+        if !path.is_absolute()
+            || !["/lib", "/lib64", "/usr/lib", "/usr/lib64", "/usr/local/lib"]
+                .iter()
+                .any(|root| path.starts_with(root))
+        {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if name.starts_with("lib")
+            && name.contains(".so")
+            && name.len() <= 256
+            && !name.bytes().any(|byte| byte.is_ascii_control())
+        {
+            names.insert(name.to_owned());
+        }
+    }
+    (names.into_iter().take(256).collect(), false)
 }
 
 #[cfg(target_os = "linux")]
@@ -295,10 +346,34 @@ fn runtime_name(value: &str) -> Option<&'static str> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
+    use security_monitor_agent_protocol::{CheckStatus, DiagnosticCode};
+
     #[test]
     fn runtime_matching_uses_only_known_executable_names() {
         assert_eq!(super::runtime_name("node"), Some("node"));
         assert_eq!(super::runtime_name("python3"), Some("python3"));
         assert_eq!(super::runtime_name("sh"), None);
+    }
+
+    #[test]
+    fn deleted_libraries_are_reduced_to_bounded_shared_library_basenames() {
+        let path = std::env::temp_dir().join(format!("secmon-maps-{}.txt", std::process::id()));
+        std::fs::write(
+            &path,
+            include_str!("../../../tests/fixtures/agent/process-maps-nginx.txt"),
+        )
+        .unwrap();
+        let (names, unavailable) = super::deleted_shared_libraries(&path);
+        let _ = std::fs::remove_file(path);
+        assert!(!unavailable);
+        assert_eq!(names, ["libssl.so.3"]);
+    }
+
+    #[test]
+    fn permission_limited_process_collection_stays_partial() {
+        assert_eq!(
+            super::process_collection_status(false, true),
+            (CheckStatus::Partial, Some(DiagnosticCode::PermissionDenied))
+        );
     }
 }

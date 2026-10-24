@@ -113,6 +113,12 @@
     "serverInventoryNeedsReview": "A fresh, complete server inventory is not available.",
     "latestScan": "Latest scan"
   },
+  "news": {
+    "unverifiedLabel": "Unverified news",
+    "noSummary": "No summary was provided by the feed.",
+    "matchedProducts": "Matched products",
+    "statusDescription": "A local product match is waiting for an advisory identifier."
+  },
   "projects": {
     "title": "Projects",
     "description": "Local repositories and their latest inventory checks.",
@@ -165,6 +171,11 @@
     "transferWarning": "The inventory contains package and service metadata. It remains on this device and is saved with the approval time.",
     "approveTransfer": "I reviewed the inventory transfer and approve sending it to this device.",
     "lastSuccess": "Last successful collection",
+    "kernelRestartNeeded": "Installed kernel is newer; restart the server to activate it",
+    "kernelStateUnknown": "Kernel restart status could not be verified",
+    "deletedSharedLibraries": "deleted shared libraries are still mapped",
+    "needsRestart": "needs a service restart",
+    "processNeedsRestart": "a process restart may be needed",
     "health": "Health",
     "mode": "Collection mode",
     "agent": "Read-only agent",

@@ -4,7 +4,7 @@ mod deploy;
 mod processes;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -42,8 +42,42 @@ async fn collect_with_config(
     config_diagnostic: Option<ConfigDiagnostic>,
 ) -> CollectionResult {
     let now = Utc::now();
-    let (operating_system, mut checks) = collect_operating_system();
-    let packages = collect_os_packages(operating_system.as_ref()).await;
+    let (mut operating_system, mut checks) = collect_operating_system();
+    let mut packages = collect_os_packages(operating_system.as_ref()).await;
+    let manual = collect_manual_binaries();
+    packages.records.extend(manual.records);
+    if manual.partial
+        || packages
+            .records
+            .iter()
+            .any(|record| record.source == PackageSource::Manual)
+    {
+        packages.check.status = CheckStatus::Partial;
+        packages.check.diagnostic = Some(if manual.partial {
+            DiagnosticCode::PermissionDenied
+        } else {
+            DiagnosticCode::StaleObservation
+        });
+    }
+    packages.check.item_count = packages.records.len().min(u32::MAX as usize) as u32;
+    if let Some(os) = operating_system.as_mut() {
+        os.installed_kernel_release = newest_installed_kernel(&packages.records);
+        os.kernel_restart_required = os
+            .kernel_release
+            .as_deref()
+            .zip(os.installed_kernel_release.as_deref())
+            .and_then(|(running, installed)| kernel_restart_required(running, installed));
+        if let Some(check) = checks
+            .iter_mut()
+            .find(|check| check.kind == CheckKind::OperatingSystem)
+            && (os.kernel_release.is_none()
+                || os.installed_kernel_release.is_none()
+                || os.kernel_restart_required.is_none())
+        {
+            check.status = CheckStatus::Partial;
+            check.diagnostic = Some(DiagnosticCode::StaleObservation);
+        }
+    }
     checks.push(packages.check);
     let runtimes = collect_runtimes().await;
     checks.push(runtimes.check);
@@ -200,6 +234,207 @@ async fn collect_os_packages(os: Option<&OperatingSystem>) -> PackageCollection 
     }
 }
 
+struct ManualCollection {
+    records: Vec<PackageRecord>,
+    partial: bool,
+}
+
+#[cfg(target_os = "linux")]
+fn collect_manual_binaries() -> ManualCollection {
+    collect_manual_binaries_at([Path::new("/opt"), Path::new("/usr/local")])
+}
+
+#[cfg(target_os = "linux")]
+fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection {
+    use std::os::unix::fs::PermissionsExt;
+
+    const MAX_ENTRIES: usize = 50_000;
+    const MAX_DEPTH: usize = 16;
+    let allowed_roots = roots
+        .into_iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .collect::<Vec<_>>();
+    let mut records = BTreeMap::<String, PackageRecord>::new();
+    let mut partial = allowed_roots.len() != 2;
+    let mut visited = 0usize;
+    for canonical_root in allowed_roots {
+        let mut stack = vec![(canonical_root.clone(), 0usize)];
+        while let Some((directory, depth)) = stack.pop() {
+            if depth > MAX_DEPTH {
+                partial = true;
+                continue;
+            }
+            let entries = match fs::read_dir(&directory) {
+                Ok(entries) => entries,
+                Err(_) => {
+                    partial = true;
+                    continue;
+                }
+            };
+            for entry in entries {
+                visited += 1;
+                if visited > MAX_ENTRIES {
+                    partial = true;
+                    break;
+                }
+                let Ok(entry) = entry else {
+                    partial = true;
+                    continue;
+                };
+                let Ok(file_type) = entry.file_type() else {
+                    partial = true;
+                    continue;
+                };
+                if file_type.is_symlink() {
+                    continue;
+                }
+                let path = entry.path();
+                let Ok(canonical_path) = path.canonicalize() else {
+                    partial = true;
+                    continue;
+                };
+                if !canonical_path.starts_with(&canonical_root) {
+                    partial = true;
+                    continue;
+                }
+                if file_type.is_dir() {
+                    if matches!(entry.file_name().to_str(), Some(".git" | "cache" | "share")) {
+                        continue;
+                    }
+                    stack.push((canonical_path, depth + 1));
+                    continue;
+                }
+                if !file_type.is_file() {
+                    continue;
+                }
+                let Ok(metadata) = fs::metadata(&canonical_path) else {
+                    partial = true;
+                    continue;
+                };
+                if metadata.permissions().mode() & 0o111 == 0 {
+                    continue;
+                }
+                let Some(filename) = canonical_path.file_name().and_then(|name| name.to_str())
+                else {
+                    continue;
+                };
+                let Some(product) = manual_product_name(filename) else {
+                    continue;
+                };
+                records
+                    .entry(product.to_owned())
+                    .or_insert_with(|| PackageRecord {
+                        name: product.to_owned(),
+                        version: None,
+                        architecture: None,
+                        ecosystem: "unknown".to_owned(),
+                        purl: None,
+                        source: PackageSource::Manual,
+                        evidence_path: None,
+                    });
+            }
+            if visited > MAX_ENTRIES {
+                break;
+            }
+        }
+        if visited > MAX_ENTRIES {
+            break;
+        }
+    }
+    ManualCollection {
+        records: records.into_values().collect(),
+        partial,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_manual_binaries() -> ManualCollection {
+    ManualCollection {
+        records: Vec::new(),
+        partial: false,
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn manual_product_name(filename: &str) -> Option<&'static str> {
+    match filename {
+        "nginx" => Some("nginx"),
+        "node" => Some("nodejs"),
+        "php" => Some("php"),
+        "python" | "python3" => Some("python"),
+        "redis-server" => Some("redis"),
+        "postgres" => Some("postgresql"),
+        "mysqld" => Some("mysql"),
+        "openssl" => Some("openssl"),
+        _ => None,
+    }
+}
+
+fn newest_installed_kernel(packages: &[PackageRecord]) -> Option<String> {
+    let mut candidates = BTreeMap::<Vec<u64>, BTreeSet<String>>::new();
+    for package in packages {
+        let Some(candidate) = (if let Some(release) = package.name.strip_prefix("linux-image-") {
+            Some(release)
+        } else if matches!(
+            package.name.as_str(),
+            "kernel-core" | "kernel" | "linux-lts"
+        ) {
+            package.version.as_deref()
+        } else {
+            None
+        }) else {
+            continue;
+        };
+        if let Some(key) = numeric_release_key(candidate) {
+            candidates
+                .entry(key)
+                .or_default()
+                .insert(candidate.to_owned());
+        }
+    }
+    let (_, releases) = candidates.last_key_value()?;
+    if releases.len() == 1 {
+        releases.first().cloned()
+    } else {
+        None
+    }
+}
+
+fn kernel_restart_required(running: &str, installed: &str) -> Option<bool> {
+    let running_key = numeric_release_key(running)?;
+    let installed_key = numeric_release_key(installed)?;
+    match installed_key.cmp(&running_key) {
+        std::cmp::Ordering::Greater => Some(true),
+        std::cmp::Ordering::Less => Some(false),
+        std::cmp::Ordering::Equal if installed == running => Some(false),
+        std::cmp::Ordering::Equal => None,
+    }
+}
+
+fn numeric_release_key(value: &str) -> Option<Vec<u64>> {
+    if value
+        .as_bytes()
+        .first()
+        .is_none_or(|byte| !byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let mut numbers = Vec::new();
+    let mut current = String::new();
+    for character in value.chars() {
+        if character.is_ascii_digit() {
+            current.push(character);
+        } else if !current.is_empty() {
+            numbers.push(current.parse().ok()?);
+            current.clear();
+        }
+    }
+    if !current.is_empty() {
+        numbers.push(current.parse().ok()?);
+    }
+    (!numbers.is_empty()).then_some(numbers)
+}
+
 struct RuntimeCollection {
     records: Vec<RuntimeRecord>,
     check: CollectionCheck,
@@ -331,12 +566,17 @@ fn collect_operating_system() -> (Option<OperatingSystem>, Vec<CollectionCheck>)
             os.kernel_release = read_bounded_text(Path::new("/proc/sys/kernel/osrelease"), 4096)
                 .ok()
                 .map(|value| value.trim().to_owned());
+            let kernel_available = os.kernel_release.is_some();
             (
                 Some(os),
                 vec![check(
                     CheckKind::OperatingSystem,
-                    CheckStatus::Complete,
-                    DiagnosticCode::InvalidOutput,
+                    if kernel_available {
+                        CheckStatus::Complete
+                    } else {
+                        CheckStatus::Partial
+                    },
+                    DiagnosticCode::PermissionDenied,
                     1,
                 )],
             )
@@ -381,6 +621,8 @@ fn parse_os_release(contents: &str) -> Option<OperatingSystem> {
         version_id: values.get("VERSION_ID").cloned(),
         pretty_name: values.get("PRETTY_NAME").cloned(),
         kernel_release: None,
+        installed_kernel_release: None,
+        kernel_restart_required: None,
         architecture: std::env::consts::ARCH.to_owned(),
     })
 }
@@ -920,7 +1162,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        collect_dependency_inventory, parse_docker_inspect, parse_os_release, parse_package_output,
+        collect_dependency_inventory, kernel_restart_required, manual_product_name,
+        newest_installed_kernel, parse_docker_inspect, parse_os_release, parse_package_output,
     };
     use security_monitor_agent_protocol::{CheckKind, CheckStatus, DiagnosticCode, PackageSource};
 
@@ -943,6 +1186,102 @@ mod tests {
         assert_eq!(alpine.records[0].name, "lib-example");
         assert_eq!(alpine.records[0].version.as_deref(), Some("2.4.1-r3"));
         assert!(!alpine.partial);
+    }
+
+    #[test]
+    fn kernel_comparison_uses_installed_package_release_and_manual_products_are_closed() {
+        let packages = ["6.1.0-18-amd64", "6.1.0-21-amd64"].map(|release| {
+            security_monitor_agent_protocol::PackageRecord {
+                name: format!("linux-image-{release}"),
+                version: Some("6.1".to_owned()),
+                architecture: Some("amd64".to_owned()),
+                ecosystem: "deb".to_owned(),
+                purl: None,
+                source: PackageSource::Dpkg,
+                evidence_path: None,
+            }
+        });
+        assert_eq!(
+            newest_installed_kernel(&packages).as_deref(),
+            Some("6.1.0-21-amd64")
+        );
+        assert_eq!(
+            kernel_restart_required("6.1.0-18-amd64", "6.1.0-21-amd64"),
+            Some(true)
+        );
+        assert_eq!(
+            kernel_restart_required("6.1.0-18-amd64", "linux-image-amd64"),
+            None
+        );
+        assert_eq!(
+            kernel_restart_required("6.1.0-21-amd64", "6.1.0-21-cloud-amd64"),
+            None
+        );
+        let meta_package = security_monitor_agent_protocol::PackageRecord {
+            name: "linux-image-amd64".to_owned(),
+            version: None,
+            architecture: Some("amd64".to_owned()),
+            ecosystem: "deb".to_owned(),
+            purl: None,
+            source: PackageSource::Dpkg,
+            evidence_path: None,
+        };
+        assert_eq!(newest_installed_kernel(&[meta_package]), None);
+        assert_eq!(manual_product_name("nginx"), Some("nginx"));
+        assert_eq!(manual_product_name("node"), Some("nodejs"));
+        assert_eq!(manual_product_name("unknown-bin"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn manual_inventory_records_only_known_executables_below_the_supplied_roots() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+
+        let temp_root = std::env::temp_dir().join(format!("secmon-manual-{}", std::process::id()));
+        let opt_root = temp_root.join("opt");
+        let local_root = temp_root.join("usr-local");
+        let nginx = opt_root.join("nginx");
+        let node = local_root.join("bin").join("node");
+        let unknown = opt_root.join("unknown-bin");
+        let _ = fs::remove_dir_all(&temp_root);
+        fs::create_dir_all(&opt_root).unwrap();
+        fs::create_dir_all(node.parent().unwrap()).unwrap();
+        fs::write(
+            &nginx,
+            include_bytes!("../../../tests/fixtures/agent/manual-binaries/opt/nginx"),
+        )
+        .unwrap();
+        fs::write(
+            &node,
+            include_bytes!("../../../tests/fixtures/agent/manual-binaries/usr-local/bin/node"),
+        )
+        .unwrap();
+        fs::write(&unknown, "not an allowlisted product").unwrap();
+        for path in [&nginx, &node, &unknown] {
+            let mut permissions = fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).unwrap();
+        }
+
+        let collection =
+            super::collect_manual_binaries_at([opt_root.as_path(), local_root.as_path()]);
+        let _ = fs::remove_dir_all(&temp_root);
+
+        assert!(!collection.partial);
+        assert_eq!(
+            collection
+                .records
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            ["nginx", "nodejs"]
+        );
+        assert!(collection.records.iter().all(|record| {
+            record.source == PackageSource::Manual
+                && record.version.is_none()
+                && record.ecosystem == "unknown"
+                && record.purl.is_none()
+        }));
     }
 
     #[test]

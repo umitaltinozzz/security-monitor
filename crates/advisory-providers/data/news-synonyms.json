@@ -1,0 +1,14 @@
+[
+  ["next", "nextjs", "next.js"],
+  ["react", "reactjs", "react.js"],
+  ["vue", "vuejs", "vue.js"],
+  ["angular", "angularjs"],
+  ["node", "nodejs", "node.js"],
+  ["python", "cpython"],
+  ["postgres", "postgresql", "pgsql"],
+  ["redis", "redis-server"],
+  ["nginx", "engine-x"],
+  ["openssl", "open ssl"],
+  ["kubernetes", "k8s"],
+  ["elasticsearch", "elastic search"]
+]

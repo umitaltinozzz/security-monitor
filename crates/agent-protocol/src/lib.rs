@@ -5,7 +5,8 @@ use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
+const MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_RECORDS: usize = 100_000;
 const MAX_TEXT_BYTES: usize = 16 * 1024;
@@ -36,6 +37,10 @@ pub struct OperatingSystem {
     pub version_id: Option<String>,
     pub pretty_name: Option<String>,
     pub kernel_release: Option<String>,
+    #[serde(default)]
+    pub installed_kernel_release: Option<String>,
+    #[serde(default)]
+    pub kernel_restart_required: Option<bool>,
     pub architecture: String,
 }
 
@@ -59,6 +64,7 @@ pub enum PackageSource {
     Apk,
     Lockfile,
     ContainerImage,
+    Manual,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -78,6 +84,9 @@ pub struct ProcessRecord {
     pub service_unit: Option<String>,
     pub container_id: Option<String>,
     pub runtime_name: Option<String>,
+    /// Basenames of shared libraries still mapped after their files were removed.
+    #[serde(default)]
+    pub deleted_shared_libraries: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -201,7 +210,7 @@ pub enum ProtocolError {
 
 impl AgentInventory {
     pub fn validate(&self) -> Result<(), ProtocolError> {
-        if self.protocol_version != PROTOCOL_VERSION
+        if !(MIN_SUPPORTED_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&self.protocol_version)
             || self.agent_version.is_empty()
             || self.hostname.is_empty()
             || self
@@ -252,6 +261,7 @@ impl AgentInventory {
                     os.version_id.as_deref(),
                     os.pretty_name.as_deref(),
                     os.kernel_release.as_deref(),
+                    os.installed_kernel_release.as_deref(),
                     Some(os.architecture.as_str()),
                 ]
                 .into_iter()
@@ -307,7 +317,13 @@ impl AgentInventory {
                 .into_iter()
                 .flatten(),
             );
+            texts.extend(process.deleted_shared_libraries.iter().map(String::as_str));
             if process.pid == 0
+                || process.deleted_shared_libraries.len() > 256
+                || process
+                    .deleted_shared_libraries
+                    .iter()
+                    .any(|name| name.is_empty() || name.contains('/') || !name.starts_with("lib"))
                 || process
                     .executable_path
                     .as_deref()
@@ -449,7 +465,7 @@ pub fn decode_inventory(bytes: &[u8]) -> Result<AgentInventory, ProtocolError> {
     }
     let inventory: AgentInventory =
         serde_json::from_slice(bytes).map_err(|_| ProtocolError::InvalidJson)?;
-    if inventory.protocol_version != PROTOCOL_VERSION {
+    if !(MIN_SUPPORTED_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&inventory.protocol_version) {
         return Err(ProtocolError::UnsupportedVersion);
     }
     inventory.validate()?;
@@ -464,7 +480,10 @@ pub fn json_schema() -> Result<String, serde_json::Error> {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{AgentInventory, decode_inventory, json_schema};
+    use super::{
+        AgentInventory, MIN_SUPPORTED_PROTOCOL_VERSION, PROTOCOL_VERSION, decode_inventory,
+        json_schema,
+    };
 
     fn fixture(name: &str) -> Vec<u8> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -477,6 +496,7 @@ mod tests {
     fn agent_scenarios_decode_as_explicit_inventory_evidence() {
         let scenarios = [
             "single-node.json",
+            "kernel-restart-needed.json",
             "multiple-node-runtimes.json",
             "containers-different-digests.json",
             "deploy-unknown.json",
@@ -484,7 +504,10 @@ mod tests {
         ];
         for scenario in scenarios {
             let inventory = decode_inventory(&fixture(scenario)).expect("fixture should be valid");
-            assert_eq!(inventory.protocol_version, 1);
+            assert!(
+                (MIN_SUPPORTED_PROTOCOL_VERSION..=PROTOCOL_VERSION)
+                    .contains(&inventory.protocol_version)
+            );
             assert_eq!(
                 inventory.complete,
                 inventory
@@ -493,6 +516,20 @@ mod tests {
                     .all(|check| { check.status == super::CheckStatus::Complete })
             );
         }
+    }
+
+    #[test]
+    fn newer_installed_kernel_is_explicit_reboot_evidence() {
+        let inventory = decode_inventory(&fixture("kernel-restart-needed.json"))
+            .expect("kernel restart fixture should be valid");
+        let os = inventory.operating_system.expect("OS record exists");
+        assert_eq!(os.kernel_release.as_deref(), Some("6.1.0-18-amd64"));
+        assert_eq!(
+            os.installed_kernel_release.as_deref(),
+            Some("6.1.0-21-amd64")
+        );
+        assert_eq!(os.kernel_restart_required, Some(true));
+        assert_eq!(inventory.protocol_version, PROTOCOL_VERSION);
     }
 
     #[test]

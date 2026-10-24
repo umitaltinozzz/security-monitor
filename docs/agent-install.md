@@ -41,6 +41,12 @@ max_processes = 4096
 
 The agent resolves each path before scanning, rejects duplicate or invalid roots, applies file-count/depth/size limits, and returns dependency metadata with relative evidence paths. It does not send source files, `.env` values, lockfiles, or credentials to third parties. Docker collection is disabled by default. Turning on `docker_cli_approved` only works if the account has Docker access; that access can expose host-level control.
 
+## Host restart and manual-install evidence
+
+The collector compares the running kernel release from `/proc/sys/kernel/osrelease` with the newest installed kernel package when both values can be read and parsed. A proven difference is restart evidence; it is not proof that a vulnerability is fixed in production. Unknown or unsupported version formats stay partial and unverified.
+
+For processes whose `/proc/<pid>/maps` files are readable, the collector records bounded deleted shared-library basenames. It does not record library contents or restart services. Permission-denied process maps make the process check partial. The collector also checks a closed product allowlist beneath canonical `/opt` and `/usr/local` roots, using fixed per-product `--version` argument vectors. Those records have low confidence and `source_type=manual`; binaries outside the allowlist or roots are ignored. No arbitrary command can be requested remotely.
+
 ## Pair a host
 
 The pairing library creates a dedicated Ed25519 key in the local operating-system credential store. It reports the observed SHA-256 host-key fingerprint for independent confirmation and produces an `authorized_keys` line restricted to:
@@ -51,7 +57,7 @@ command="/usr/local/bin/secmon-agent collect",no-pty,no-port-forwarding,no-agent
 
 Create `/var/lib/secmon/.ssh` as `secmon` with mode `0700`, then add the generated line to `/var/lib/secmon/.ssh/authorized_keys` owned by `secmon` with mode `0600`. Keep the host-key fingerprint pinned on the desktop. A later mismatch must be rejected and reviewed; do not automatically accept a changed key.
 
-Until the desktop pairing flow is available, this repository includes a direct-host developer harness. It prompts you to verify the fingerprint, writes the generated private key only to the OS credential store, displays the public forced-command line, waits for installation, then asks for explicit approval to send inventory to this device. The returned collection includes the approval timestamp, which the desktop caller must persist in its audit history:
+For lower-level direct-host development and transport testing, this repository includes a pairing harness. It prompts you to verify the fingerprint, writes the generated private key only to the OS credential store, displays the public forced-command line, waits for installation, then asks for explicit approval to send inventory to this device. The returned collection includes the approval timestamp, which the desktop caller persists in its audit history:
 
 ```sh
 cargo run -p security-monitor-agent-transport --example pair-agent -- web-prod web.example.test secmon 22

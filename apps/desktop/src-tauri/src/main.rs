@@ -80,6 +80,8 @@ fn main() {
             ipc::get_scan_result,
             ipc::list_findings,
             ipc::list_advisories,
+            ipc::list_news_signals,
+            ipc::refresh_news_signals,
             ipc::list_components,
             ipc::list_component_instances,
             ipc::list_finding_evidence,

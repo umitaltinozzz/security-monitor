@@ -1,0 +1,2 @@
+7f000000-7f001000 r--p 00000000 08:01 1 /usr/lib/x86_64-linux-gnu/libssl.so.3 (deleted)
+7f001000-7f002000 r--p 00000000 08:01 2 /tmp/private.so (deleted)

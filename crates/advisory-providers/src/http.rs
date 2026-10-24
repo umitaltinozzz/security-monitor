@@ -1,3 +1,4 @@
+use std::{net::IpAddr, net::SocketAddr};
 use std::{path::Path, time::Duration};
 
 use futures_util::{Stream, StreamExt};
@@ -12,6 +13,7 @@ use url::Url;
 const MAX_BUFFERED_RESPONSE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_NOTIFICATION_RESPONSE_BYTES: u64 = 16 * 1024;
 const MAX_AI_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_NEWS_FEED_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HttpPolicy {
@@ -39,6 +41,14 @@ pub struct ApprovedAiRequest<'a> {
 #[derive(Debug, Clone)]
 pub(crate) struct HttpResponse {
     pub body: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConditionalFeedResponse {
+    pub not_modified: bool,
+    pub body: Vec<u8>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
 }
 
 impl PublicDataHttp {
@@ -125,6 +135,87 @@ impl PublicDataHttp {
         let body = collect_bounded_body(response.bytes_stream(), MAX_BUFFERED_RESPONSE_BYTES, host)
             .await?;
         Ok(HttpResponse { body })
+    }
+
+    pub(crate) async fn get_conditional_feed(
+        &self,
+        address: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<ConditionalFeedResponse, ProviderError> {
+        self.ensure_enabled()?;
+        let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
+        if !is_valid_feed_url(&url, self.allow_loopback) {
+            return Err(ProviderError::DestinationNotAllowed);
+        }
+        let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
+        tracing::info!(destination_host = %host, "fetching configured security news feed");
+        let mut request = self.feed_client(&url, &host).await?.get(url.clone());
+        if let Some(etag) = etag.filter(|value| valid_conditional_header(value)) {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
+        if let Some(last_modified) = last_modified.filter(|value| valid_conditional_header(value)) {
+            request = request.header(reqwest::header::IF_MODIFIED_SINCE, last_modified);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ProviderError::Network { host: host.clone() })?;
+        let status = response.status();
+        if status == StatusCode::NOT_MODIFIED {
+            return Ok(ConditionalFeedResponse {
+                not_modified: true,
+                body: Vec::new(),
+                etag: response_header(&response, reqwest::header::ETAG),
+                last_modified: response_header(&response, reqwest::header::LAST_MODIFIED),
+            });
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(rate_limited_error(&response, host));
+        }
+        if !status.is_success() {
+            return Err(ProviderError::HttpStatus {
+                host,
+                status: status.as_u16(),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_NEWS_FEED_BYTES)
+        {
+            return Err(ProviderError::DownloadTooLarge);
+        }
+        let etag = response_header(&response, reqwest::header::ETAG);
+        let last_modified = response_header(&response, reqwest::header::LAST_MODIFIED);
+        let body = collect_bounded_body(response.bytes_stream(), MAX_NEWS_FEED_BYTES, host).await?;
+        Ok(ConditionalFeedResponse {
+            not_modified: false,
+            body,
+            etag,
+            last_modified,
+        })
+    }
+
+    async fn feed_client(&self, url: &Url, host: &str) -> Result<reqwest::Client, ProviderError> {
+        let mut builder = reqwest::Client::builder()
+            .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none());
+        if self.allow_loopback && url.scheme() == "http" {
+            return builder.build().map_err(|_| ProviderError::HttpClient);
+        }
+        let port = url
+            .port_or_known_default()
+            .ok_or(ProviderError::InvalidUrl)?;
+        let addresses = tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|_| ProviderError::DestinationNotAllowed)?
+            .collect::<Vec<SocketAddr>>();
+        if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
+            return Err(ProviderError::DestinationNotAllowed);
+        }
+        builder = builder.resolve(host, addresses[0]);
+        builder.build().map_err(|_| ProviderError::HttpClient)
     }
 
     pub async fn download_to(
@@ -382,6 +473,72 @@ fn is_allowed_url(url: &Url, allow_loopback: bool, allow_release_asset_redirect:
         || host == "epss.empiricalsecurity.com"
 }
 
+fn is_valid_feed_url(url: &Url, allow_loopback: bool) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let local_test_url = allow_loopback
+        && url.scheme() == "http"
+        && matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    (url.scheme() == "https" || local_test_url)
+        && !host.ends_with(".local")
+        && host != "localhost"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path().len() <= 2048
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            let [a, b, c, d] = address.octets();
+            !(address.is_private()
+                || address.is_loopback()
+                || address.is_link_local()
+                || address.is_broadcast()
+                || address.is_unspecified()
+                || address.is_multicast()
+                || a == 0
+                || (a == 100 && (64..=127).contains(&b))
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 192 && b == 0 && c == 2)
+                || (a == 198 && matches!(b, 18 | 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
+                || a >= 224
+                || (a == 255 && b == 255 && c == 255 && d == 255))
+        }
+        IpAddr::V6(address) => {
+            !(address.is_loopback()
+                || address.is_unspecified()
+                || address.is_multicast()
+                || address.is_unique_local()
+                || address.is_unicast_link_local()
+                || address
+                    .to_ipv4_mapped()
+                    .is_some_and(|mapped| !is_public_ip(IpAddr::V4(mapped))))
+        }
+    }
+}
+
+fn valid_conditional_header(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 512 && !value.bytes().any(|byte| byte.is_ascii_control())
+}
+
+fn response_header(
+    response: &reqwest::Response,
+    name: reqwest::header::HeaderName,
+) -> Option<String> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| valid_conditional_header(value))
+        .map(str::to_owned)
+}
+
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("public advisory downloads are disabled by privacy settings")]
@@ -536,5 +693,41 @@ mod tests {
         http.post_user_approved_json(&destination, &server.uri(), &payload, true)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn conditional_feed_304_returns_no_body_and_sends_both_validators() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(
+                ResponseTemplate::new(304)
+                    .insert_header("ETag", "\"feed-v1\"")
+                    .insert_header("Last-Modified", "Sat, 24 Oct 2026 12:00:00 GMT"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let response = PublicDataHttp::for_tests()
+            .get_conditional_feed(
+                &format!("{}/feed.xml", server.uri()),
+                Some("\"feed-v1\""),
+                Some("Sat, 24 Oct 2026 12:00:00 GMT"),
+            )
+            .await
+            .expect("304 is a valid conditional response");
+        assert!(response.not_modified);
+        assert!(response.body.is_empty());
+        assert_eq!(response.etag.as_deref(), Some("\"feed-v1\""));
+        let requests = server
+            .received_requests()
+            .await
+            .expect("wiremock records the request");
+        let headers = &requests[0].headers;
+        assert_eq!(headers.get("if-none-match").unwrap(), "\"feed-v1\"");
+        assert_eq!(
+            headers.get("if-modified-since").unwrap(),
+            "Sat, 24 Oct 2026 12:00:00 GMT"
+        );
     }
 }

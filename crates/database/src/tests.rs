@@ -40,7 +40,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 6);
+    assert_eq!(database.schema_version().await.unwrap(), 8);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -71,7 +71,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 6);
+    assert_eq!(readonly.schema_version().await.unwrap(), 8);
     assert_eq!(
         readonly
             .repository::<Project>()

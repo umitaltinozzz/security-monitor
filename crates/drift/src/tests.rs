@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use security_monitor_agent_protocol::{
-    AgentInventory, CheckKind, CheckStatus, DeploymentIdentity, DiagnosticCode,
+    AgentInventory, CheckKind, CheckStatus, DeploymentIdentity, DiagnosticCode, OperatingSystem,
 };
 use security_monitor_core::{
     Advisory, Finding, FindingStatus, ProductionStatus, RepoStatus, Severity,
@@ -9,7 +9,7 @@ use security_monitor_inventory::Inventory;
 
 use crate::{
     DriftTarget, InventoryFreshness, ProductionSnapshot, ReferenceSnapshot,
-    WorkingTreePackageStatus, WorkingTreeStatus, assess_drift,
+    WorkingTreePackageStatus, WorkingTreeStatus, assess_drift, assess_production, package_identity,
 };
 
 const ADVISORY: &str = include_str!("../../../tests/fixtures/drift/advisory.json");
@@ -171,6 +171,45 @@ fn fixed_production_transition_requires_current_complete_inventory() {
             .map(|transition| &transition.to),
         Some(&FindingStatus::FixedInProduction)
     );
+}
+
+#[test]
+fn installed_kernel_update_never_marks_the_running_kernel_fixed_in_production() {
+    let advisory: Advisory = parse(ADVISORY);
+    let finding = finding(FindingStatus::ConfirmedAffected);
+    let target = DriftTarget {
+        finding: &finding,
+        advisory: &advisory,
+        component_purl: "pkg:generic/linux-image-6.1.0-21@6.1.0-21",
+    };
+    let identity = package_identity(target.component_purl).expect("kernel purl parses");
+    let mut inventory: AgentInventory = parse(PRODUCTION_FIXED);
+    inventory.operating_system = Some(OperatingSystem {
+        id: Some("debian".to_owned()),
+        name: Some("Debian GNU/Linux".to_owned()),
+        version_id: Some("12".to_owned()),
+        pretty_name: Some("Debian GNU/Linux 12".to_owned()),
+        kernel_release: Some("6.1.0-18-amd64".to_owned()),
+        installed_kernel_release: Some("6.1.0-21-amd64".to_owned()),
+        kernel_restart_required: Some(true),
+        architecture: "x86_64".to_owned(),
+    });
+    let deployment = inventory.deployments.first().expect("deployment exists");
+    let mut reasons = Vec::new();
+    let (_, status, _) = assess_production(
+        Some(&ProductionSnapshot {
+            inventory: &inventory,
+            deployment: Some(deployment),
+            project_association_confirmed: true,
+            freshness: InventoryFreshness::Current,
+        }),
+        &target,
+        &identity,
+        now(),
+        &mut reasons,
+    );
+    assert_eq!(status, ProductionStatus::Unknown);
+    assert!(reasons.contains(&crate::DriftReason::KernelRestartRequired));
 }
 
 #[test]

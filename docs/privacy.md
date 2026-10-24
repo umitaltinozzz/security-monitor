@@ -11,6 +11,8 @@ The desktop app can run local scans and explicitly approved advisory updates. AI
 
 When the library is explicitly enabled, cve.now requests use its global status, entry cursor, and public advisory IDs; filtered feeds and stack-check uploads are not used. OSV archive URLs include an ecosystem slug selected from local inventory, which discloses that ecosystem to OSV. GHSA requests contain public GHSA IDs discovered from the public advisory feed. CISA KEV and FIRST EPSS are full public catalog downloads. Requests do not contain source code, lockfiles, package names, package versions, or a package list. Provider caches and results are stored locally. The desktop app invokes these requests only after public downloads are enabled and the user starts an update.
 
+When public downloads are enabled, the desktop also polls the configured security-news RSS/Atom feeds every 30 minutes. Feed servers can observe the device's network address and request timing. Feed requests contain no local package names, inventory, lockfiles, or source code; feed items are matched and stored locally. Feed URLs and product synonyms are editable in the app-data directory. A 304 response reuses validators and is not parsed again.
+
 ## Product requirements
 
 - Repository source, lockfiles, and inventory remain on the device by default.

@@ -17,8 +17,11 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - Sürümlemeli sunucu envanter protokolü, salt okunur ve root gerektirmeyen Linux ajanı, OS anahtarlığında SSH eşleştirme anahtarı, zorunlu komut kısıtlamaları, host-key sabitleme, SSH yapılandırmasından host keşfi ve sabit komutlu ajansız toplama API'si.
 - Tauri masaüstü uygulaması: proje ekleme/tarama, bulgu inceleme, sunucu eşleştirme ve envanter onayı, AI sağlayıcı ayarları, redakte istem incelemesi, bütçe sınırları ve yerel MCP sunucusu.
 - `secmon --help`, `secmon --version` ve salt okunur veritabanıyla çalışan `secmon mcp` CLI komutları.
+- Linux sunucu envanterinde çalışan/kurulu kernel farkı, silinmiş paylaşımlı kütüphaneleri kullanan süreçler ve `/opt` ile `/usr/local` altındaki izinli manuel binary'ler görünür; eksik veya tanınmayan kanıt kısmi/doğrulanmamış kalır.
+- RSS/Atom güvenlik haberleri ürün adıyla yerel eşleştirilir, bulgulardan ayrı gösterilir ve yalnızca tam CVE/GHSA kimliği geldiğinde advisory'ye bağlanır; tek başına zafiyet bulgusu üretmez.
+- Düzeltme istekleri onaylı izole Git worktree'lerinde hazırlanır; testler ağ kapalı sandbox içinde ve kullanıcı onayıyla çalışır.
 
-Agent CLI yürütme, izole worktree içinde düzeltme, sandbox testleri, raporlama ve ajan entegrasyonları ilerleyen milestone'lardadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
+Rapor biçimleri, `secmon hook`, `secmon integrate` ve ajanlar arası ortak hafıza yol haritasındadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
 
 ## Yol haritası
 
@@ -81,7 +84,16 @@ cargo run -p secmon -- mcp
 
 ### Linux ajanı
 
-Salt okunur Linux sunucu ajanı ve SSH taşıma kitaplıkları uygulanmıştır; masaüstü eşleştirme akışına henüz bağlanmamıştır. Gerçek sunucu kurulumu ve doğrudan-host geliştirme aracı için [Linux ajan kurulumu](docs/agent-install.md) belgesine bakın.
+Salt okunur Linux sunucu ajanı masaüstünden SSH ile eşleştirilip ayrıca onaylanan envanter toplamaları için kullanılabilir. Linux'ta derleyip checksum'ı doğrulayın:
+
+```text
+rustup target add x86_64-unknown-linux-musl
+cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
+sha256sum target/x86_64-unknown-linux-musl/release/secmon-agent
+sudo ./install.sh --binary target/x86_64-unknown-linux-musl/release/secmon-agent --sha256 <verified-sha256>
+```
+
+Host-key parmak izini bağımsız doğrulamadan ve envanter aktarımını gözden geçirmeden onaylamayın. Tam adımlar için [Linux ajan kurulumu](docs/agent-install.md) belgesine bakın.
 
 ### Yapay zekâ
 

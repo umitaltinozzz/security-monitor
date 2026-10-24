@@ -134,6 +134,11 @@ pub struct CollectionSummary {
     pub service_count: usize,
     pub container_count: usize,
     pub deployment_count: usize,
+    pub running_kernel_release: Option<String>,
+    pub installed_kernel_release: Option<String>,
+    pub kernel_restart_required: Option<bool>,
+    pub services_needing_restart: Vec<String>,
+    pub deleted_shared_library_count: usize,
     pub approved_at: DateTime<Utc>,
 }
 

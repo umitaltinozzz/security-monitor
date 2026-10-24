@@ -2,7 +2,7 @@ use std::{marker::PhantomData, path::Path, time::Duration};
 
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
-    ComponentInstance, Deployment, Finding, FindingEvidence, NotificationChannel,
+    ComponentInstance, Deployment, Finding, FindingEvidence, NewsSignal, NotificationChannel,
     NotificationDeliveryState, Project, ProjectScanCheckpoint, Remediation, ScanRun, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -767,6 +767,19 @@ entity!(
         ("deployment_id", "$.deployment_id"),
         ("evidence", "$.evidence"),
         ("created_at", "$.created_at"),
+    ]
+);
+entity!(
+    NewsSignal,
+    id,
+    "news_signals",
+    "id",
+    [
+        ("id", "$.id"),
+        ("feed_id", "$.feed_id"),
+        ("external_id", "$.external_id"),
+        ("advisory_id", "$.advisory_id"),
+        ("archived_at", "$.archived_at"),
     ]
 );
 entity!(

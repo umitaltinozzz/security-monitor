@@ -102,6 +102,8 @@ try {
           case "cancel_project_scan": return true;
           case "list_findings": return state.findings;
           case "list_advisories": return state.advisories;
+          case "list_news_signals": return [];
+          case "refresh_news_signals": return { updated_feeds: 0, not_modified_feeds: 0, skipped_feeds: 0, failed_feeds: 0, signals_updated: 0, signals_archived: 0 };
           case "list_components": return state.components;
           case "list_component_instances": return state.instances;
           case "list_finding_evidence": return state.evidence;

@@ -217,6 +217,26 @@ pub struct ComponentInstance {
     pub created_at: DateTime<Utc>,
 }
 
+/// A product-matched public security news item. It is separate from vulnerability findings
+/// until an advisory provider supplies an exact CVE or GHSA identifier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NewsSignal {
+    pub id: String,
+    pub feed_id: String,
+    pub external_id: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub url: String,
+    pub published_at: Option<DateTime<Utc>>,
+    pub first_seen_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+    pub matched_projects: Vec<String>,
+    pub matched_products: Vec<String>,
+    pub advisory_id: Option<String>,
+    pub archived_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RangeEvent {

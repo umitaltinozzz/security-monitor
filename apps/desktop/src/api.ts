@@ -17,6 +17,8 @@ import type { ComponentInstance } from "./generated/ComponentInstance";
 import type { Finding } from "./generated/Finding";
 import type { FindingEvidence } from "./generated/FindingEvidence";
 import type { FindingStatusChange } from "./generated/FindingStatusChange";
+import type { NewsSignal } from "./generated/NewsSignal";
+import type { NewsSyncReport } from "./generated/NewsSyncReport";
 import type { PairingInstructionsView } from "./generated/PairingInstructionsView";
 import type { Project } from "./generated/Project";
 import type { ProjectDiscoveryView } from "./generated/ProjectDiscoveryView";
@@ -36,6 +38,7 @@ export type WorkspaceData = {
   assets: Asset[];
   findings: Finding[];
   advisories: Advisory[];
+  newsSignals: NewsSignal[];
   components: Component[];
   instances: ComponentInstance[];
   evidence: FindingEvidence[];
@@ -77,6 +80,8 @@ export const api = {
   scanResult: (scanId: string) => invoke<ScanResult | null>("get_scan_result", { scanId }),
   findings: () => invoke<Finding[]>("list_findings"),
   advisories: () => invoke<Advisory[]>("list_advisories"),
+  newsSignals: () => invoke<NewsSignal[]>("list_news_signals"),
+  refreshNewsSignals: () => invoke<NewsSyncReport>("refresh_news_signals"),
   components: () => invoke<Component[]>("list_components"),
   instances: () => invoke<ComponentInstance[]>("list_component_instances"),
   evidence: () => invoke<FindingEvidence[]>("list_finding_evidence"),
@@ -118,18 +123,19 @@ export const api = {
 };
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
-  const [settings, projects, assets, findings, advisories, components, instances, evidence, runs, audit] =
+  const [settings, projects, assets, findings, advisories, newsSignals, components, instances, evidence, runs, audit] =
     await Promise.all([
       api.settings(),
       api.projects(),
       api.assets(),
       api.findings(),
       api.advisories(),
+      api.newsSignals(),
       api.components(),
       api.instances(),
       api.evidence(),
       api.runs(),
       api.audit(),
     ]);
-  return { settings, projects, assets, findings, advisories, components, instances, evidence, runs, audit };
+  return { settings, projects, assets, findings, advisories, newsSignals, components, instances, evidence, runs, audit };
 }

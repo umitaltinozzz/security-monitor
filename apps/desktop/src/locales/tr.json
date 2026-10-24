@@ -113,6 +113,12 @@
     "serverInventoryNeedsReview": "Güncel ve eksiksiz sunucu envanteri yok.",
     "latestScan": "Son tarama"
   },
+  "news": {
+    "unverifiedLabel": "Doğrulanmamış haber",
+    "noSummary": "Kaynak akış özet sağlamadı.",
+    "matchedProducts": "Eşleşen ürünler",
+    "statusDescription": "Yerel ürün eşleşmesi için güvenlik duyurusu kimliği bekleniyor."
+  },
   "projects": {
     "title": "Projeler",
     "description": "Yerel depolar ve son envanter kontrolleri.",
@@ -165,6 +171,11 @@
     "transferWarning": "Envanter paket ve servis üst verisi içerir. Bu cihazda kalır ve onay zamanıyla kaydedilir.",
     "approveTransfer": "Envanter aktarımını inceledim ve bu cihaza gönderilmesini onaylıyorum.",
     "lastSuccess": "Son başarılı toplama",
+    "kernelRestartNeeded": "Kurulu çekirdek daha yeni; etkinleştirmek için sunucuyu yeniden başlatın",
+    "kernelStateUnknown": "Çekirdek yeniden başlatma durumu doğrulanamadı",
+    "deletedSharedLibraries": "silinmiş paylaşılan kitaplık hâlâ belleğe eşlenmiş",
+    "needsRestart": "servisin yeniden başlatılması gerekiyor",
+    "processNeedsRestart": "sürecin yeniden başlatılması gerekebilir",
     "health": "Sağlık",
     "mode": "Toplama kipi",
     "agent": "Salt okunur ajan",

@@ -11,8 +11,11 @@ chrono = { workspace = true }
 csv = { workspace = true }
 flate2 = "1"
 futures-util = "0.3"
+hex = { workspace = true }
 httpdate = { workspace = true }
+quick-xml = "0.42"
 reqwest = { workspace = true }
+sha2 = { workspace = true }
 security-monitor-core = { version = "0.1.0", path = "../core" }
 security-monitor-correlation = { version = "0.1.0", path = "../correlation" }
 security-monitor-database = { version = "0.1.0", path = "../database" }
@@ -21,6 +24,7 @@ semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ts-rs = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true }
 tracing = { workspace = true }

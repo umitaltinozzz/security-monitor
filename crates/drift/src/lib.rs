@@ -7,7 +7,7 @@ use security_monitor_agent_protocol::{
 use security_monitor_core::{Advisory, Finding, FindingStatus, ProductionStatus, RepoStatus};
 use security_monitor_correlation::{
     FindingReason, StatusActor, StatusEvidence, StatusTransition, evaluate_inventory,
-    validate_transition,
+    normalize_package_name, validate_transition,
 };
 use security_monitor_inventory::{Inventory, InventoryComponent};
 use serde::{Deserialize, Serialize};
@@ -57,6 +57,8 @@ pub enum DriftReason {
     ProductionInventoryStale,
     ProductionInventoryFreshnessUnknown,
     ProductionInventoryIncomplete,
+    KernelRestartRequired,
+    KernelStateUnknown,
     ComponentIdentityInvalid,
     ComponentIdentityMismatch,
     ComponentVersionMissing,
@@ -353,6 +355,25 @@ fn assess_production<'p>(
         return (Some(deployment), ProductionStatus::Unknown, Vec::new());
     }
 
+    if is_kernel_product(&target_identity.name) {
+        match production
+            .inventory
+            .operating_system
+            .as_ref()
+            .and_then(|os| os.kernel_restart_required)
+        {
+            Some(false) => {}
+            Some(true) => {
+                reasons.push(DriftReason::KernelRestartRequired);
+                return (Some(deployment), ProductionStatus::Unknown, Vec::new());
+            }
+            None => {
+                reasons.push(DriftReason::KernelStateUnknown);
+                return (Some(deployment), ProductionStatus::Unknown, Vec::new());
+            }
+        }
+    }
+
     let observations = production
         .inventory
         .packages
@@ -495,11 +516,31 @@ fn same_package(target: &PackageIdentity, observation: &PackageObservation) -> b
     if observation.base_purl.as_deref() == Some(target.base.as_str()) {
         return true;
     }
+    if observation.component.ecosystem == "unknown"
+        && observation.component.source_type == "agent_manual"
+    {
+        return normalize_package_name(&target.ecosystem, &target.name)
+            == normalize_package_name(&target.ecosystem, &observation.component.name);
+    }
     package_name_matches(
         target,
         &observation.component.ecosystem,
         &observation.component.name,
     )
+}
+
+fn is_kernel_product(value: &str) -> bool {
+    let package = value
+        .rsplit('/')
+        .next()
+        .unwrap_or(value)
+        .to_ascii_lowercase();
+    matches!(package.as_str(), "linux-image" | "linux-image-generic")
+        || package.starts_with("linux-image-")
+        || matches!(
+            package.as_str(),
+            "linux" | "linux-kernel" | "linux-lts" | "kernel" | "kernel-core"
+        )
 }
 
 fn package_name_matches(identity: &PackageIdentity, ecosystem: &str, name: &str) -> bool {

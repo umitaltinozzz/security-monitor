@@ -874,6 +874,8 @@ fn parse_os_release(output: &str) -> Option<OperatingSystem> {
         version_id,
         pretty_name,
         kernel_release: None,
+        installed_kernel_release: None,
+        kernel_restart_required: None,
         architecture: "unknown".to_owned(),
     })
 }
