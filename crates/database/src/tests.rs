@@ -9,6 +9,27 @@ use sqlx::Row;
 
 use crate::{Database, DatabaseError, Entity, Repository};
 
+#[test]
+fn migration_sources_use_platform_independent_lf_line_endings() {
+    let migrations: [&[u8]; 9] = [
+        include_bytes!("../migrations/0001_initial.sql"),
+        include_bytes!("../migrations/0002_advisory_metadata.sql"),
+        include_bytes!("../migrations/0003_finding_disposition.sql"),
+        include_bytes!("../migrations/0004_orchestration_notifications.sql"),
+        include_bytes!("../migrations/0005_ai_run_model.sql"),
+        include_bytes!("../migrations/0006_ai_transfer_approvals.sql"),
+        include_bytes!("../migrations/0007_remediation_provider.sql"),
+        include_bytes!("../migrations/0008_news_signals.sql"),
+        include_bytes!("../migrations/0009_memories.sql"),
+    ];
+
+    assert!(
+        migrations
+            .iter()
+            .all(|migration| !migration.contains(&b'\r'))
+    );
+}
+
 #[derive(Deserialize)]
 struct FixtureRecords {
     project: Project,

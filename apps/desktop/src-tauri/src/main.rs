@@ -4,7 +4,10 @@ mod app_state;
 mod ipc;
 mod ipc_types;
 
-use std::{fs, io, path::PathBuf};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use app_state::{AppState, load_settings};
 use security_monitor_database::Database;
@@ -51,6 +54,14 @@ fn should_keep_tray_process_alive(exit_code: Option<i32>) -> bool {
     exit_code.is_none()
 }
 
+fn app_data_dir_for_build(app_data_dir: &Path, debug_build: bool) -> PathBuf {
+    if debug_build {
+        app_data_dir.join("development")
+    } else {
+        app_data_dir.to_path_buf()
+    }
+}
+
 fn main() {
     let builder = tauri::Builder::default();
     let builder = if let Some(public_key) =
@@ -66,7 +77,10 @@ fn main() {
     };
     let app = builder
         .setup(|app| {
-            let app_data_dir = app.path().app_data_dir()?;
+            let app_data_dir = app_data_dir_for_build(
+                &app.path().app_data_dir()?,
+                cfg!(debug_assertions),
+            );
             fs::create_dir_all(&app_data_dir)?;
             let settings = load_settings(&app_data_dir);
             let database_path: PathBuf = app_data_dir.join("security-monitor.sqlite3");
@@ -181,11 +195,24 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_keep_tray_process_alive;
+    use std::path::Path;
+
+    use super::{app_data_dir_for_build, should_keep_tray_process_alive};
 
     #[test]
     fn tray_close_keeps_process_alive_but_explicit_exit_does_not() {
         assert!(should_keep_tray_process_alive(None));
         assert!(!should_keep_tray_process_alive(Some(0)));
+    }
+
+    #[test]
+    fn debug_build_uses_separate_app_data_without_moving_release_data() {
+        let app_data = Path::new("app-data");
+
+        assert_eq!(
+            app_data_dir_for_build(app_data, true),
+            Path::new("app-data/development")
+        );
+        assert_eq!(app_data_dir_for_build(app_data, false), app_data);
     }
 }
