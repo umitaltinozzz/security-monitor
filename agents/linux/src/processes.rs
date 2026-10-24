@@ -10,7 +10,7 @@ use security_monitor_agent_protocol::{
 };
 
 #[cfg(target_os = "linux")]
-use crate::commands::{CommandOutput, HostCommand, HostCommandError, run_allowlisted};
+use crate::commands::{CommandOutput, HostCommand, run_allowlisted};
 
 #[derive(Debug)]
 pub struct ProcessSnapshot {
