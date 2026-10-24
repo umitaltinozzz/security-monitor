@@ -1,0 +1,26 @@
+api_key=secret123
+token=abc123short
+github=ghp_abcdefghijklmnopqrstuvwxyz123456
+random=Q7Jw2N9qK4xT8pL3zV6cB1mR
+windows=C:\Users\alice\work\src.rs
+unix=/home/alice/work/main.rs
+public=https://example.test/path
+database=postgres://app:V1TestPass!@db:5432/app
+reporting=mongodb+srv://reporter:demo-password@cluster.test/database?retryWrites=true
+cache=redis://:RedisPass!@cache.test:6379/0
+DATABASE_HOST=prod-db.internal
+DATABASE_URL=postgres://prod-db.internal/app
+GIT_REMOTE=git@prod-db.internal:team/repo.git
+MAPPED_IPV6_URL=https://[::ffff:192.0.2.1]/v1
+EXTERNALNAME=prod-db.internal
+HOSTS=[prod-db.internal, admin-db.internal]
+ALLOWED_HOSTS=["prod-db.internal", "admin-db.internal"]
+YAML_HOSTS:
+  - prod-db.internal
+  - admin-db.internal
+upstream backend {
+    server prod-db.internal:8080;
+    server admin-db.internal;
+}
+upstream inline { server prod-db.internal:8090; }
+SCOPED_IPV6_URL=https://[fe80::1%25eth0]/api

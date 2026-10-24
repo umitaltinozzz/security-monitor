@@ -66,6 +66,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ipc::get_app_settings,
             ipc::save_app_settings,
+            ipc::get_ai_configuration,
+            ipc::save_ai_settings,
+            ipc::save_ai_provider,
+            ipc::set_project_ai_providers,
+            ipc::estimate_ai_request,
+            ipc::run_ai_request,
             ipc::list_projects,
             ipc::add_project,
             ipc::discover_local_projects,

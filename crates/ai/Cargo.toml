@@ -1,0 +1,27 @@
+[package]
+name = "security-monitor-ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Permissioned provider adapters and AI budget controls"
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
+security-monitor-advisory-providers = { version = "0.1.0", path = "../advisory-providers" }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+regex = "1"
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+url = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+wiremock = "0.6"
+tempfile = "3"

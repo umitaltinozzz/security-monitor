@@ -18,6 +18,7 @@ const publicPages = [
   'agent-install.md',
   'deploy-id.md',
   'ai-providers.md',
+  'local-mcp.md',
   'cli.md',
   'contributing.md',
   'security.md',

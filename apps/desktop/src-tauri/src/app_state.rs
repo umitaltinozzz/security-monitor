@@ -6,6 +6,7 @@ use std::{
 };
 
 use security_monitor_advisory_providers::HttpPolicy;
+use security_monitor_ai::AiSettings;
 use security_monitor_database::Database;
 use security_monitor_scan_orchestrator::{
     LocalProjectScanner, LocalScanSettings, ScanLimits, ScanQueue,
@@ -48,7 +49,10 @@ pub struct AppState {
     pub database: Database,
     pub app_data_dir: PathBuf,
     settings_path: PathBuf,
+    ai_settings_path: PathBuf,
     pub settings: RwLock<AppSettings>,
+    pub ai_settings: RwLock<AiSettings>,
+    pub ai_run_guard: Mutex<()>,
     pub scans: RwLock<ScanServices>,
     pub scan_results: Arc<Mutex<HashMap<String, ScanResult>>>,
 }
@@ -60,11 +64,15 @@ impl AppState {
         settings: AppSettings,
     ) -> Result<Self, String> {
         let scans = ScanServices::new(&database, &app_data_dir, &settings)?;
+        let ai_settings = load_ai_settings(&app_data_dir);
         Ok(Self {
             database,
             settings_path: app_data_dir.join("settings.json"),
+            ai_settings_path: app_data_dir.join("ai-settings.json"),
             app_data_dir,
             settings: RwLock::new(settings),
+            ai_settings: RwLock::new(ai_settings),
+            ai_run_guard: Mutex::new(()),
             scans: RwLock::new(scans),
             scan_results: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -81,6 +89,17 @@ impl AppState {
         *self.scans.write().await = next_scans;
         Ok(())
     }
+
+    pub async fn save_ai_settings(&self, settings: AiSettings) -> Result<(), String> {
+        settings
+            .validate()
+            .map_err(|_| "invalid_input".to_owned())?;
+        let bytes =
+            serde_json::to_vec_pretty(&settings).map_err(|_| "storage_unavailable".to_owned())?;
+        fs::write(&self.ai_settings_path, bytes).map_err(|_| "storage_unavailable".to_owned())?;
+        *self.ai_settings.write().await = settings;
+        Ok(())
+    }
 }
 
 pub fn load_settings(app_data_dir: &Path) -> AppSettings {
@@ -88,5 +107,14 @@ pub fn load_settings(app_data_dir: &Path) -> AppSettings {
     fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn load_ai_settings(app_data_dir: &Path) -> AiSettings {
+    let path = app_data_dir.join("ai-settings.json");
+    fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<AiSettings>(&bytes).ok())
+        .filter(|settings| settings.validate().is_ok())
         .unwrap_or_default()
 }

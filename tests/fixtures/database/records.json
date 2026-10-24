@@ -143,6 +143,7 @@
   "ai_run": {
     "id": "ai-run-1",
     "provider_id": "provider-1",
+    "model": "fixture-model",
     "tier": "analysis",
     "finding_id": "finding-1",
     "tokens_in": 100,
@@ -151,6 +152,16 @@
     "files_sent": ["<project>/Cargo.lock"],
     "started_at": "2026-01-01T00:00:00Z",
     "outcome": "completed"
+  },
+  "ai_transfer_approval": {
+    "id": "ai-approval-1",
+    "project_id": "project-1",
+    "provider_id": "provider-1",
+    "destination_origin": "https://api.example.invalid",
+    "data_category": "user_prompt",
+    "tier": "analysis",
+    "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "approved_at": "2026-01-01T00:00:00Z"
   },
   "notification_channel": {
     "id": "channel-1",

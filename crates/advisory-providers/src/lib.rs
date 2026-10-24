@@ -18,7 +18,7 @@ pub use cve_now::{
 };
 pub use epss::{EpssProvider, EpssScore, EpssSnapshot, apply_epss, parse_epss_csv};
 pub use ghsa::{GhsaProvider, parse_ghsa_advisory};
-pub use http::{HttpPolicy, ProviderError, PublicDataHttp};
+pub use http::{ApprovedAiRequest, HttpPolicy, ProviderError, PublicDataHttp};
 pub use kev::{CachedKevCatalog, KevProvider, apply_kev, parse_kev_catalog};
 pub use matching::{AdvisoryFinding, FindingReason, evaluate_inventory};
 pub use merge::{AdvisoryMerger, merge_and_persist};

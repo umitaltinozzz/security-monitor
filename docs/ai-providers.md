@@ -1,20 +1,36 @@
 ---
 title: AI providers
-description: Availability, provider model, privacy controls, and AI authority limits.
+description: Provider setup, request review, privacy controls, budgets, and AI authority limits.
 ---
 
 # AI providers
 
-## Availability
+## Supported providers
 
-AI integrations, local model support, MCP tools, and automated triage are not implemented yet. No provider credentials or model requests are used by the current product.
+The desktop app supports user-configured OpenAI-compatible HTTPS endpoints, Anthropic Messages endpoints, and loopback-local OpenAI-compatible endpoints such as a local model server. Model IDs, prices, and regions are entered by the user. The app does not hard-code provider model names or prices. Agent CLI execution is implemented with the isolated worktree and approval workflow in the remediation milestone.
 
-## Planned provider model
+Provider credentials are stored through the operating-system credential store. SQLite stores only the opaque credential reference and provider metadata. Provider failures do not include response bodies or credentials in errors.
 
-The product is planned to support user-selected agent CLIs, OpenAI-compatible APIs, Anthropic APIs, and local OpenAI-compatible endpoints. Provider and model identifiers, budgets, and defaults belong in editable data/configuration, not hard-coded product logic. Credentials belong only in the operating system credential store.
+## Configure a provider
 
-Before a request, the user must be able to review the data category and destination. Project source, lockfiles, and inventory are excluded by default. Remote AI may receive only approved, redacted advisory metadata and explicitly selected context. Local endpoints must be labeled as local.
+Open **Settings → AI**, add the provider origin and model ID, enter the input/output prices shown by that provider, and optionally label its data region. Local endpoints must use `localhost`, `127.0.0.1`, or `::1`; remote endpoints require HTTPS. Redirects are disabled for AI calls.
 
-## AI authority limits
+Assign a provider to a task tier and allow it in each project that may use it. The tiers are `triage`, `analysis`, and `patch`. Triage source-code requests are disabled by default. The default daily and monthly budgets are zero, so paid requests stay disabled until the user sets limits. A provider without prices cannot receive a request because the cost cannot be verified.
 
-Model output is untrusted. AI may suggest explanations or triage metadata, but it must not change priority scores or set `not_reachable`, `false_positive`, or `accepted_risk`; those states are user decisions. Tool calls must use a narrow allowlist, with no generic shell, filesystem, network, or remote command capability.
+## Review before sending
+
+For each request the app shows the provider, model, approved origin, user-entered region, data category, enabled tools, redacted prompt, and a conservative maximum cost estimate. The estimate includes the configured output cap and bounded tool-loop limits. Approval is bound to the displayed prompt, destination, provider version, region, tier, tools, project permissions, token estimate, and budget decision. If any of these change between review and send, the request is rejected and must be reviewed again.
+
+Only enabled tools are sent to the API. Source reads are available only for analysis/patch tiers unless the separate triage-code setting is enabled. The app rechecks the project's provider allowlist immediately before sending. File reads reject secret paths, canonicalize and contain paths under the project root, redact common secret patterns and high-entropy values, and cap the amount of tool output and context.
+
+CLI MCP runs with the database opened read-only and exposes only local Security Monitor records. It does not expose source-file reads because it cannot verify which provider an MCP client may forward source to. Desktop AI source reads remain inside the reviewed provider request and require the project provider allowlist.
+
+## Data and authority limits
+
+Repository files, advisory text, scanner output, MCP results, and model output are untrusted data. Models cannot change finding priority or set `not_reachable`, `false_positive`, or `accepted_risk`. The AI tool list has no shell, generic process execution, remote-command, or write-to-project operation. Missing, stale, or unverified evidence remains uncertain.
+
+The app records provider, model, tier, token usage, cost when known, outcome, approved transfer metadata, and file paths submitted; it never records file contents or provider credentials. Unknown usage cost blocks later budget checks until it can be verified.
+
+## Current boundaries
+
+The current AI workspace accepts a user prompt for a selected project and can use enabled read tools. If a primary request is rejected by the budget before any provider call, the app can offer a second review using the configured fallback; it never fails over silently. A provider-call failure with unknown usage cost blocks later budget checks until cost can be verified. Agent CLI launch, isolated remediation worktrees, sandboxed test execution, integrations, and generated patches belong to later milestones.

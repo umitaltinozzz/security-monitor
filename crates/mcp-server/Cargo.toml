@@ -1,0 +1,23 @@
+[package]
+name = "security-monitor-mcp-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Permission-limited stdio MCP server for local Security Monitor data"
+
+[dependencies]
+async-trait = { workspace = true }
+cap-std = { workspace = true }
+chrono = { workspace = true }
+security-monitor-ai = { version = "0.1.0", path = "../ai" }
+security-monitor-core = { version = "0.1.0", path = "../core" }
+security-monitor-database = { version = "0.1.0", path = "../database" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

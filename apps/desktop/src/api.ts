@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Advisory } from "./generated/Advisory";
+import type { AiConfigurationView } from "./generated/AiConfigurationView";
+import type { AiProvider } from "./generated/AiProvider";
+import type { AiProviderInput } from "./generated/AiProviderInput";
+import type { AiRequestEstimate } from "./generated/AiRequestEstimate";
+import type { AiRunResult } from "./generated/AiRunResult";
+import type { AiSettings } from "./generated/AiSettings";
+import type { AiTier } from "./generated/AiTier";
 import type { AppSettings } from "./generated/AppSettings";
 import type { AdvisoryUpdateStatus } from "./generated/AdvisoryUpdateStatus";
 import type { Asset } from "./generated/Asset";
@@ -35,6 +42,28 @@ export type WorkspaceData = {
 export const api = {
   settings: () => invoke<AppSettings>("get_app_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { settings }),
+  aiConfiguration: () => invoke<AiConfigurationView>("get_ai_configuration"),
+  saveAiSettings: (settings: AiSettings) => invoke<void>("save_ai_settings", { settings }),
+  saveAiProvider: (input: AiProviderInput) => invoke<AiProvider>("save_ai_provider", { input }),
+  setProjectAiProviders: (projectId: string, providerIds: string[]) =>
+    invoke<Project>("set_project_ai_providers", { projectId, providerIds }),
+  estimateAiRequest: (projectId: string, tier: AiTier, prompt: string, providerId?: string) =>
+    invoke<AiRequestEstimate>("estimate_ai_request", { projectId, tier, prompt, providerId }),
+  runAiRequest: (
+    projectId: string,
+    tier: AiTier,
+    prompt: string,
+    providerId: string,
+    approvalDigest: string,
+  ) =>
+    invoke<AiRunResult>("run_ai_request", {
+      projectId,
+      tier,
+      prompt,
+      providerId,
+      approvalDigest,
+      transferApproved: true,
+    }),
   projects: () => invoke<Project[]>("list_projects"),
   addProject: (path: string) => invoke<Project>("add_project", { path }),
   discoverProjects: (path: string) => invoke<ProjectDiscoveryView>("discover_local_projects", { path }),

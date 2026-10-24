@@ -1,8 +1,8 @@
 use chrono::{Duration, TimeZone, Utc};
 use security_monitor_core::{
-    Advisory, AiProvider, AiRun, Asset, AuditEvent, Component, ComponentInstance, Deployment,
-    Finding, FindingEvidence, NotificationChannel, NotificationDeliveryState, Project, Remediation,
-    ScanRun, Service,
+    Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
+    ComponentInstance, Deployment, Finding, FindingEvidence, NotificationChannel,
+    NotificationDeliveryState, Project, Remediation, ScanRun, Service,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -24,6 +24,7 @@ struct FixtureRecords {
     remediation: Remediation,
     ai_provider: AiProvider,
     ai_run: AiRun,
+    ai_transfer_approval: AiDataTransferApproval,
     notification_channel: NotificationChannel,
     audit_event: AuditEvent,
 }
@@ -39,21 +40,114 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 4);
+    assert_eq!(database.schema_version().await.unwrap(), 6);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
           'component_instances', 'advisories', 'findings', 'finding_evidence', \
           'scan_runs', 'remediations', 'ai_providers', 'ai_runs', \
          'notification_channels', 'audit_events', 'project_scan_checkpoints', \
-          'notification_delivery_states')",
+          'notification_delivery_states', 'ai_transfer_approvals')",
     )
     .fetch_one(&database.pool)
     .await
     .unwrap()
     .try_get("count")
     .unwrap();
-    assert_eq!(count, 17);
+    assert_eq!(count, 18);
+}
+
+#[tokio::test]
+async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("existing.sqlite3");
+    let writable = Database::open(&path).await.unwrap();
+    let fixture = records();
+    writable
+        .repository::<Project>()
+        .create(&fixture.project)
+        .await
+        .unwrap();
+    writable.close().await;
+
+    let readonly = Database::open_read_only(&path).await.unwrap();
+    assert_eq!(readonly.schema_version().await.unwrap(), 6);
+    assert_eq!(
+        readonly
+            .repository::<Project>()
+            .get("project-1")
+            .await
+            .unwrap(),
+        Some(fixture.project.clone())
+    );
+    let error = readonly
+        .repository::<Asset>()
+        .create(&fixture.asset)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "database operation failed");
+    assert_eq!(
+        readonly.repository::<Asset>().list().await.unwrap(),
+        Vec::<Asset>::new()
+    );
+    readonly.close().await;
+}
+
+#[tokio::test]
+async fn ai_run_budget_reservations_serialize_across_database_connections() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("shared.sqlite3");
+    let first_database = Database::open(&path).await.unwrap();
+    let second_database = Database::open(&path).await.unwrap();
+    let fixture = records();
+    first_database
+        .repository::<AiProvider>()
+        .create(&fixture.ai_provider)
+        .await
+        .unwrap();
+    let mut first_run = fixture.ai_run;
+    first_run.id = "reservation-first".into();
+    first_run.finding_id = None;
+    first_run.cost = Some(0.75);
+    first_run.outcome = "in_progress".into();
+    let mut second_run = first_run.clone();
+    second_run.id = "reservation-second".into();
+
+    let first = first_database.reserve_ai_run(&first_run, |runs| {
+        if runs.is_empty() {
+            Ok(())
+        } else {
+            Err("budget exceeded".into())
+        }
+    });
+    let second = second_database.reserve_ai_run(&second_run, |runs| {
+        if runs.is_empty() {
+            Ok(())
+        } else {
+            Err("budget exceeded".into())
+        }
+    });
+    let (first, second) = tokio::join!(first, second);
+    let outcomes = [first.unwrap(), second.unwrap()];
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, Err(reason) if reason == "budget exceeded"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        first_database
+            .repository::<AiRun>()
+            .list()
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    first_database.close().await;
+    second_database.close().await;
 }
 
 #[tokio::test]
@@ -266,6 +360,11 @@ async fn all_domain_repositories_support_typed_crud_and_json_round_trips() {
         .await
         .unwrap();
     database
+        .repository::<AiDataTransferApproval>()
+        .create(&fixture.ai_transfer_approval)
+        .await
+        .unwrap();
+    database
         .repository::<NotificationChannel>()
         .create(&fixture.notification_channel)
         .await
@@ -368,6 +467,13 @@ async fn all_domain_repositories_support_typed_crud_and_json_round_trips() {
     )
     .await;
     verify_update(
+        &database.repository::<AiDataTransferApproval>(),
+        &fixture.ai_transfer_approval,
+        "ai-approval-1",
+        |value| value.data_category = "inventory".to_owned(),
+    )
+    .await;
+    verify_update(
         &database.repository::<NotificationChannel>(),
         &fixture.notification_channel,
         "channel-1",
@@ -384,6 +490,7 @@ async fn all_domain_repositories_support_typed_crud_and_json_round_trips() {
 
     verify_delete::<AuditEvent>(&database, "audit-1").await;
     verify_delete::<NotificationChannel>(&database, "channel-1").await;
+    verify_delete::<AiDataTransferApproval>(&database, "ai-approval-1").await;
     verify_delete::<AiRun>(&database, "ai-run-1").await;
     verify_delete::<AiProvider>(&database, "provider-1").await;
     verify_delete::<Remediation>(&database, "remediation-1").await;

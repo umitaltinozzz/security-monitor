@@ -8,6 +8,21 @@
     "scan_interval_hours": 24,
     "ecosystems": ["npm", "pypi", "cargo"]
   },
+  "ai_configuration": {
+    "settings": {
+      "assignments": [],
+      "budget": {
+        "daily_total_usd": 0.0,
+        "monthly_total_usd": 0.0,
+        "daily_by_provider_usd": {},
+        "monthly_by_provider_usd": {}
+      },
+      "triage_code_enabled": false,
+      "enabled_tools": []
+    },
+    "providers": [],
+    "runs": []
+  },
   "scan_result": {
     "scan_id": "scan-fixture",
     "outcome": "partial",

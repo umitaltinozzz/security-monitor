@@ -1,9 +1,9 @@
 use std::{marker::PhantomData, path::Path, time::Duration};
 
 use security_monitor_core::{
-    Advisory, AiProvider, AiRun, Asset, AuditEvent, Component, ComponentInstance, Deployment,
-    Finding, FindingEvidence, NotificationChannel, NotificationDeliveryState, Project,
-    ProjectScanCheckpoint, Remediation, ScanRun, Service,
+    Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
+    ComponentInstance, Deployment, Finding, FindingEvidence, NotificationChannel,
+    NotificationDeliveryState, Project, ProjectScanCheckpoint, Remediation, ScanRun, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -38,6 +38,20 @@ impl Database {
         Self::from_pool(pool).await
     }
 
+    /// Opens an already initialized database without applying migrations or allowing writes.
+    pub async fn open_read_only(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
+        let options = SqliteConnectOptions::new()
+            .filename(path)
+            .read_only(true)
+            .foreign_keys(true)
+            .busy_timeout(Duration::from_secs(5));
+        let pool = SqlitePoolOptions::new()
+            .max_connections(3)
+            .connect_with(options)
+            .await?;
+        Ok(Self { pool })
+    }
+
     /// Creates a single-connection in-memory database for deterministic tests and ephemeral use.
     pub async fn in_memory() -> Result<Self, DatabaseError> {
         let options = SqliteConnectOptions::new()
@@ -69,6 +83,54 @@ impl Database {
                 .fetch_one(&self.pool)
                 .await?,
         )
+    }
+
+    /// Checks the current AI run ledger and inserts a cost reservation under a SQLite write lock.
+    /// The callback is evaluated while other database connections are blocked from reserving.
+    pub async fn reserve_ai_run<F>(
+        &self,
+        run: &AiRun,
+        check_budget: F,
+    ) -> Result<Result<(), String>, DatabaseError>
+    where
+        F: FnOnce(&[AiRun]) -> Result<(), String>,
+    {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let records =
+            sqlx::query_scalar::<_, String>("SELECT record_json FROM ai_runs ORDER BY id")
+                .fetch_all(&mut *transaction)
+                .await?;
+        let runs = records
+            .into_iter()
+            .map(decode_record)
+            .collect::<Result<Vec<AiRun>, _>>()?;
+        if let Err(reason) = check_budget(&runs) {
+            transaction.rollback().await?;
+            return Ok(Err(reason));
+        }
+
+        let json = serde_json::to_string(run)?;
+        validate_record(AiRun::TABLE, &json)?;
+        let columns = AiRun::COLUMNS
+            .iter()
+            .map(|(column, _)| quote_identifier(column))
+            .collect::<Vec<_>>();
+        let values = AiRun::COLUMNS
+            .iter()
+            .map(|(_, path)| format!("json_extract(?1, '{path}')"))
+            .collect::<Vec<_>>();
+        let sql = format!(
+            "INSERT INTO {} ({}, record_json) SELECT {}, ?1",
+            quote_identifier(AiRun::TABLE),
+            columns.join(", "),
+            values.join(", ")
+        );
+        sqlx::query(&sql)
+            .bind(json)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
+        Ok(Ok(()))
     }
 
     /// Repoints persisted findings to an already stored canonical advisory and removes the old
@@ -848,6 +910,7 @@ entity!(
     [
         ("id", "$.id"),
         ("provider_id", "$.provider_id"),
+        ("model", "$.model"),
         ("tier", "$.tier"),
         ("finding_id", "$.finding_id"),
         ("tokens_in", "$.tokens_in"),
@@ -856,6 +919,22 @@ entity!(
         ("files_sent", "$.files_sent"),
         ("started_at", "$.started_at"),
         ("outcome", "$.outcome"),
+    ]
+);
+entity!(
+    AiDataTransferApproval,
+    id,
+    "ai_transfer_approvals",
+    "id",
+    [
+        ("id", "$.id"),
+        ("project_id", "$.project_id"),
+        ("provider_id", "$.provider_id"),
+        ("destination_origin", "$.destination_origin"),
+        ("data_category", "$.data_category"),
+        ("tier", "$.tier"),
+        ("content_sha256", "$.content_sha256"),
+        ("approved_at", "$.approved_at"),
     ]
 );
 entity!(

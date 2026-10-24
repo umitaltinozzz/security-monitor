@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
+use security_monitor_ai::AiSettings;
 use security_monitor_core::{
-    Asset, Environment, FindingDispositionReason, FindingStatus, ScanOutcome,
+    AiProviderKind, AiTier, Asset, Environment, FindingDispositionReason, FindingStatus,
+    ProviderCapabilities, ScanOutcome,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -144,4 +146,62 @@ pub struct FindingStatusChange {
     pub scope: String,
     pub scope_id: String,
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiProviderInput {
+    pub id: Option<String>,
+    pub kind: AiProviderKind,
+    pub display_name: String,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub capabilities: ProviderCapabilities,
+    pub price_in: Option<f64>,
+    pub price_out: Option<f64>,
+    pub data_region: Option<String>,
+    /// Transient IPC input; never written to settings, SQLite, logs, or generated user state.
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiRequestEstimate {
+    pub project_id: String,
+    pub approval_digest: String,
+    pub provider_id: String,
+    pub provider_name: String,
+    pub model: String,
+    pub destination_origin: String,
+    pub data_region: Option<String>,
+    pub tier: AiTier,
+    pub data_category: String,
+    pub enabled_tools: Vec<String>,
+    pub redacted_values: usize,
+    pub redacted_prompt: String,
+    #[ts(type = "number")]
+    pub estimated_input_tokens: u64,
+    #[ts(type = "number")]
+    pub estimated_output_tokens: u64,
+    pub estimated_cost_usd: f64,
+    pub budget: security_monitor_ai::BudgetDecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiRunResult {
+    pub run_id: String,
+    pub response: String,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub cost_usd: f64,
+    pub files_sent: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiConfigurationView {
+    pub settings: AiSettings,
+    pub providers: Vec<security_monitor_core::AiProvider>,
+    pub runs: Vec<security_monitor_core::AiRun>,
 }

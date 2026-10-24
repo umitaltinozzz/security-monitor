@@ -12,3 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
+security-monitor-ai = { version = "0.1.0", path = "../../crates/ai" }
+security-monitor-database = { version = "0.1.0", path = "../../crates/database" }
+security-monitor-mcp-server = { version = "0.1.0", path = "../../crates/mcp-server" }
+serde_json = { workspace = true }
+tokio = { workspace = true }

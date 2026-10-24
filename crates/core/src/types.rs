@@ -405,14 +405,31 @@ pub struct AiProvider {
 pub struct AiRun {
     pub id: String,
     pub provider_id: String,
+    #[serde(default)]
+    pub model: String,
     pub tier: AiTier,
     pub finding_id: Option<String>,
+    #[ts(type = "number")]
     pub tokens_in: u64,
+    #[ts(type = "number")]
     pub tokens_out: u64,
     pub cost: Option<f64>,
     pub files_sent: Vec<String>,
     pub started_at: DateTime<Utc>,
     pub outcome: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiDataTransferApproval {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub provider_id: String,
+    pub destination_origin: String,
+    pub data_category: String,
+    pub tier: AiTier,
+    pub content_sha256: String,
+    pub approved_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

@@ -2,7 +2,7 @@
 
 Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler ve dağıtılmış ortam kanıtlarıyla yerel öncelikli bir iş akışında birleştirmeyi amaçlayan açık kaynaklı bir projedir.
 
-> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, repo-production drift, orkestrasyon, bildirim ve Linux ajanı/SSH kitaplıkları bulunur. Tauri kabuğu ve CLI henüz bu kitaplıkları çağırmaz veya tarama sonucu göstermez. Mevcut derlemeyi kullanıcıya yönelik bir güvenlik tarayıcısı ya da sistemin güvenli olduğuna dair kanıt olarak kullanmayın.
+> **Mevcut durum:** depo geliştirme aşamasındadır. Tür güvenli Rust/SQLite temeli, bağımlılık envanteri, advisory sağlayıcı, tarayıcı adaptörü, bulgu korelasyonu, repo-production drift, orkestrasyon, bildirim, Linux ajanı/SSH, masaüstü inceleme akışları ve kullanıcı onaylı AI/MCP desteği bulunur. Eksik, eski veya doğrulanmamış kanıt temiz ya da güvenli sonuç sayılmaz.
 
 ## Bugün uygulananlar
 
@@ -15,9 +15,10 @@ Security Monitor (`secmon`), yazılım güvenlik duyurularını yerel projeler v
 - Sınırlı kuyruk, kaynak kotaları, hızlı/tam profiller, üç saniyelik dosya izleyici gecikmesi, başlangıç hash kontrolü ve önbellekteki envanterle advisory yeniden eşleştirme içeren orkestrasyon kitaplığı.
 - Masaüstü, kullanıcı onaylı HTTPS webhook/Slack/Discord ve TLS SMTP bildirimleri; sırlar OS anahtarlığında tutulur, hedef onayı kaydedilir, tekilleştirme ve erteleme desteklenir.
 - Sürümlemeli sunucu envanter protokolü, salt okunur ve root gerektirmeyen Linux ajanı, OS anahtarlığında SSH eşleştirme anahtarı, zorunlu komut kısıtlamaları, host-key sabitleme, SSH yapılandırmasından host keşfi ve sabit komutlu ajansız toplama API'si.
-- Tauri masaüstü kabuğu ve `secmon --help` / `secmon --version` CLI komutları.
+- Tauri masaüstü uygulaması: proje ekleme/tarama, bulgu inceleme, sunucu eşleştirme ve envanter onayı, AI sağlayıcı ayarları, redakte istem incelemesi, bütçe sınırları ve yerel MCP sunucusu.
+- `secmon --help`, `secmon --version` ve salt okunur veritabanıyla çalışan `secmon mcp` CLI komutları.
 
-Envanter, advisory, tarayıcı, korelasyon, orkestrasyon, bildirim ve sunucu toplama kitaplıkları henüz masaüstü veya CLI yönetim akışlarına bağlanmadı. Yapay zekâ, düzeltme ve ürün ekranları kullanıma hazır değildir.
+Agent CLI yürütme, izole worktree içinde düzeltme, sandbox testleri, raporlama ve ajan entegrasyonları ilerleyen milestone'lardadır. Uygulama geliştirme aşamasındadır; mevcut derlemeyi tam güvenlik kapsamının kanıtı olarak kullanmayın.
 
 ## Yol haritası
 
@@ -47,11 +48,11 @@ flowchart LR
   MCP --> Model[İsteğe bağlı, kullanıcı seçimi yapay zekâ sağlayıcısı]
 ```
 
-Bu diyagram hedef mimariyi gösterir. Envanter, advisory sağlayıcı, tarayıcı adaptörü, korelasyon, orkestrasyon ve Linux ajanı/SSH kitaplıkları uygulanmıştır; ancak kullanıcı iş akışları, MCP araçları ve işlevsel arayüz henüz uygulanmadı.
+Masaüstü uygulaması yerel iş akışlarını ve MCP araç izinlerini sunar. AI sağlayıcıya istek göndermeden önce redakte edilmiş istem, hedef, veri kategorisi, araçlar ve maliyet üst sınırı kullanıcıya gösterilir.
 
 ## Gizlilik
 
-Mevcut masaüstü kabuğu ve CLI tarama yapmaz veya çalışma sırasında ağ isteği göndermez. Advisory kitaplığı kamuya açık verileri yalnızca çağıran kod `public_downloads_enabled` seçeneğini açıkça etkinleştirirse indirir. İstekler kaynak kodu, lockfile, paket adı veya paket sürümü içermez. OSV arşivi isteğinin URL'sinde ekosistem adı bulunur; bu, OSV'ye ekosistem hakkında sınırlı bilgi verir. Envanterden türetilen filtreleri açığa çıkaracak cve.now filtreli akışları kullanılmaz. Sağlayıcı önbellekleri yereldir; AI entegrasyonu uygulanmadı. Ayrıntılar için [Gizlilik](docs/privacy.md) belgesine bakın.
+Tarayıcılar yerelde çalışır; kamuya açık advisory güncellemeleri kullanıcı ayarına ve açık eyleme bağlıdır. AI istekleri ortak HTTP sarmalayıcısını kullanır, yönlendirmeleri izlemez ve yalnızca inceleme/onaydan sonra gönderilir. Kaynak dosya araçları varsayılan olarak kapalıdır; CLI MCP üzerinden kaynak okumak için proje başına ayrı ve denetim günlüğüne kaydedilen onay gerekir. Sırlar yalnızca işletim sistemi anahtarlığında tutulur. Ayrıntılar için [Gizlilik](docs/privacy.md), [AI sağlayıcıları](docs/ai-providers.md) ve [Yerel MCP](docs/local-mcp.md) belgelerine bakın.
 
 ## Hızlı başlangıç
 
@@ -73,9 +74,10 @@ Bu komut mevcut masaüstü kabuğunu açar; proje izleme ekranları henüz uygul
 ```text
 cargo run -p secmon -- --help
 cargo run -p secmon -- --version
+cargo run -p secmon -- mcp
 ```
 
-Mevcut CLI yalnızca yardım ve sürüm bilgisini verir. Tarama ve yönetim komutları yol haritasındadır.
+`secmon mcp`, mevcut SQLite veritabanını salt okunur açıp yalnızca AI ayarlarında etkin araçları stdio üzerinden sunar. Ayrıntılar için [Yerel MCP](docs/local-mcp.md) belgesine bakın.
 
 ### Linux ajanı
 
@@ -83,7 +85,7 @@ Salt okunur Linux sunucu ajanı ve SSH taşıma kitaplıkları uygulanmıştır;
 
 ### Yapay zekâ
 
-Yapay zekâ sağlayıcı entegrasyonu henüz uygulanmadı. Tasarlanan gizlilik ve onay modeli için [AI sağlayıcıları](docs/ai-providers.md) belgesine bakın.
+OpenAI-compatible HTTPS, Anthropic ve loopback yerel sağlayıcılar kullanıcı tarafından yapılandırılır. Bütçeler varsayılan olarak sıfırdır; her istek redakte istemi, hedefi, araçları ve maliyet üst sınırını onay ekranında gösterir. [AI sağlayıcıları](docs/ai-providers.md) ve [Yerel MCP](docs/local-mcp.md) belgelerine bakın.
 
 ## Güvenlik verisi ve kaynak gösterimi
 
@@ -102,6 +104,7 @@ Sağlayıcı kitaplığı kamuya açık güvenlik duyurusu verilerini indirebili
 - [Linux ajan kurulumu](docs/agent-install.md)
 - [Deploy ID](docs/deploy-id.md)
 - [Yapay zekâ sağlayıcıları](docs/ai-providers.md)
+- [Yerel MCP](docs/local-mcp.md)
 - [CLI](docs/cli.md)
 - [Katkıda bulunma](CONTRIBUTING.md)
 

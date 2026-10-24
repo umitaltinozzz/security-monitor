@@ -11,6 +11,7 @@ use url::Url;
 
 const MAX_BUFFERED_RESPONSE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_NOTIFICATION_RESPONSE_BYTES: u64 = 16 * 1024;
+const MAX_AI_RESPONSE_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub struct HttpPolicy {
@@ -20,8 +21,19 @@ pub struct HttpPolicy {
 #[derive(Clone)]
 pub struct PublicDataHttp {
     client: reqwest::Client,
+    approved_destination_client: reqwest::Client,
     policy: HttpPolicy,
     allow_loopback: bool,
+}
+
+pub struct ApprovedAiRequest<'a> {
+    pub address: &'a str,
+    pub approved_origin: &'a str,
+    pub payload: &'a serde_json::Value,
+    pub credential: Option<&'a str>,
+    pub anthropic_auth: bool,
+    pub local_endpoint: bool,
+    pub transfer_approved: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,8 +66,15 @@ impl PublicDataHttp {
             }))
             .build()
             .map_err(|_| ProviderError::HttpClient)?;
+        let approved_destination_client = reqwest::Client::builder()
+            .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
+            .timeout(Duration::from_secs(90))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| ProviderError::HttpClient)?;
         Ok(Self {
             client,
+            approved_destination_client,
             policy,
             allow_loopback,
         })
@@ -223,6 +242,73 @@ impl PublicDataHttp {
         )
         .await?;
         Ok(())
+    }
+
+    /// Sends one AI request to the exact authority the user approved. Redirects are disabled so
+    /// approval for one provider can never silently send prompt data to another destination.
+    pub async fn post_user_approved_ai_json(
+        &self,
+        request: ApprovedAiRequest<'_>,
+    ) -> Result<Vec<u8>, ProviderError> {
+        let ApprovedAiRequest {
+            address,
+            approved_origin,
+            payload,
+            credential,
+            anthropic_auth,
+            local_endpoint,
+            transfer_approved,
+        } = request;
+        if !transfer_approved {
+            return Err(ProviderError::NetworkDisabled);
+        }
+        let url = Url::parse(address).map_err(|_| ProviderError::InvalidUrl)?;
+        let approved = Url::parse(approved_origin).map_err(|_| ProviderError::InvalidUrl)?;
+        let host = url.host_str().ok_or(ProviderError::InvalidUrl)?.to_owned();
+        let loopback_http = local_endpoint
+            && url.scheme() == "http"
+            && matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]");
+        if url.origin().ascii_serialization() != approved.origin().ascii_serialization()
+            || approved.path() != "/"
+            || approved.query().is_some()
+            || approved.fragment().is_some()
+            || (!loopback_http && url.scheme() != "https")
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.fragment().is_some()
+            || (local_endpoint && !loopback_http)
+        {
+            return Err(ProviderError::DestinationNotAllowed);
+        }
+        tracing::info!(destination_host = %host, "sending explicitly approved AI request");
+        let mut request = self.approved_destination_client.post(url).json(payload);
+        if let Some(credential) = credential {
+            request = if anthropic_auth {
+                request
+                    .header("x-api-key", credential)
+                    .header("anthropic-version", "2023-06-01")
+            } else {
+                request.bearer_auth(credential)
+            };
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| ProviderError::Network { host: host.clone() })?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ProviderError::HttpStatus {
+                host,
+                status: status.as_u16(),
+            });
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_AI_RESPONSE_BYTES)
+        {
+            return Err(ProviderError::DownloadTooLarge);
+        }
+        collect_bounded_body(response.bytes_stream(), MAX_AI_RESPONSE_BYTES, host).await
     }
 
     fn ensure_enabled(&self) -> Result<(), ProviderError> {

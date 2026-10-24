@@ -8,6 +8,8 @@ import type { FindingStatus } from "./generated/FindingStatus";
 import type { Project } from "./generated/Project";
 import type { WorkspaceData } from "./api";
 import { api, loadWorkspace } from "./api";
+import { AiSettingsPanel } from "./AiSettings";
+import { AiChatComposer } from "./AiChatComposer";
 import "./app.css";
 
 type Language = "en" | "tr";
@@ -212,9 +214,9 @@ export function App() {
           {page === "servers" && <Servers data={data} t={t} refresh={() => setRefreshToken((n) => n + 1)} setNotice={setNotice} />}
           {page === "findings" && <Findings data={data} t={t} refresh={() => setRefreshToken((n) => n + 1)} setNotice={setNotice} updateFinding={(finding) => setData((current) => current ? { ...current, findings: current.findings.map((item) => item.id === finding.id ? finding : item) } : current)} initialFindingId={focusFindingId} onFocused={() => setFocusFindingId(null)} />}
           {page === "history" && <History data={data} t={t} />}
-          {page === "settings" && <Settings data={data} t={t} saveSettings={saveSettings} setNotice={setNotice} />}
+          {page === "settings" && <Settings data={data} t={t} saveSettings={saveSettings} setNotice={setNotice} refresh={() => setRefreshToken((n) => n + 1)} />}
         </main>
-        <ContextComposer context={context} t={t} />
+        <ContextComposer context={context} projectId={data.projects.find((project) => project.name === context)?.id ?? null} t={t} setNotice={setNotice} />
       </div>
       {paletteOpen && <CommandPalette query={paletteQuery} setQuery={setPaletteQuery} pages={pages} t={t} close={() => { setPaletteOpen(false); setPaletteQuery(""); }} navigate={(next) => { setPage(next); setContext(null); setPaletteOpen(false); setPaletteQuery(""); }} />}
     </div>
@@ -441,7 +443,7 @@ function History({ data, t }: { data: WorkspaceData; t: T }) {
   return <><PageHeading title={t("history.title")} description={t("history.description")} /><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.scanRuns")}</h2></div>{data.runs.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.project")}</th><th>{t("common.status")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{data.runs.map((run) => <tr key={run.id}><td>{run.scanner === "security-monitor" ? t("appName") : t("common.unknown")}</td><td><StatusTag value={run.outcome} t={t} /></td><td>{date(run.finished_at ?? run.started_at, data.settings.language)}</td></tr>)}</tbody></table></div>}</section><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.auditEvents")}</h2></div>{data.audit.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.updated")}</th><th>{t("history.actor")}</th><th>{t("history.action")}</th><th>{t("history.scope")}</th><th>{t("history.outcome")}</th></tr></thead><tbody>{[...data.audit].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((event) => <tr key={event.id}><td>{date(event.timestamp, data.settings.language)}</td><td>{event.actor === "user" ? t("common.user") : t("common.unknown")}</td><td>{auditAction(event.action, t)}</td><td>{event.scope.resource_type === "project" ? t("common.project") : event.scope.resource_type === "asset" ? t("common.server") : t("common.unknown")}</td><td>{t(`status.${event.result}`)}</td></tr>)}</tbody></table></div>}</section></>;
 }
 
-function Settings({ data, t, saveSettings, setNotice }: { data: WorkspaceData; t: T; saveSettings: (settings: AppSettings) => Promise<void>; setNotice: NoticeSetter }) {
+function Settings({ data, t, saveSettings, setNotice, refresh }: { data: WorkspaceData; t: T; saveSettings: (settings: AppSettings) => Promise<void>; setNotice: NoticeSetter; refresh: () => void }) {
   const settings = data.settings;
   const [scanners, setScanners] = useState<{ engine: string; status: string; version: string | null }[]>([]);
   const [busyEngine, setBusyEngine] = useState<string | null>(null);
@@ -484,20 +486,14 @@ function Settings({ data, t, saveSettings, setNotice }: { data: WorkspaceData; t
       {scanners.length === 0 ? <p>{t("common.unverified")}</p> : <ul className="scanner-list">{scanners.map((scanner) => <li key={scanner.engine}><span>{t(`scanner.${scanner.engine.replaceAll("-", "_")}`)}</span><span className={`tag ${scanner.status === "available" ? "verified" : "unverified"}`}>{t(`scanner.${scanner.status}`)}</span>{scanner.version && <small>{scanner.version}</small>}{scanner.status === "missing" && ["osv-scanner", "trivy", "semgrep"].includes(scanner.engine) && <button className="button secondary" disabled={!settings.public_downloads_enabled || busyEngine === scanner.engine} onClick={() => void install(scanner.engine)}>{busyEngine === scanner.engine ? t("common.loading") : t("actions.install")}</button>}</li>)}</ul>}
     </section>
     <section className="panel settings-panel"><h2>{t("settings.appearance")}</h2><label className="field"><span>{t("settings.appearance")}</span><select value={settings.theme} onChange={(event) => void saveSettings({ ...settings, theme: event.target.value as AppSettings["theme"] })}>{["system", "light", "dark"].map((value) => <option value={value} key={value}>{t(`theme.${value}`)}</option>)}</select></label><label className="field"><span>{t("settings.language")}</span><select value={settings.language} onChange={(event) => void saveSettings({ ...settings, language: event.target.value as AppSettings["language"] })}><option value="en">{en.languageName}</option><option value="tr">{tr.languageName}</option></select></label></section>
+    <AiSettingsPanel data={data} t={t} setNotice={setNotice} refresh={refresh} />
     <section className="panel settings-panel"><h2>{t("settings.backup")}</h2><p>{t("settings.backupHelp")}</p></section>
   </>;
 }
 
-function ContextComposer({ context, t }: { context: string | null; t: T }) {
-  const [draft, setDraft] = useState("");
-  return <form className="composer" onSubmit={(event) => event.preventDefault()}>
-    <div className="composer-context"><span>{t("composer.context")}</span><span className="context-chip">@{context ?? t("common.workspace")}</span><span className="tag unverified">{t("composer.notConfigured")}</span></div>
-    <label className="sr-only" htmlFor="question-composer">{t("composer.placeholder")}</label>
-    <div className="composer-input"><textarea id="question-composer" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t("composer.placeholder")} rows={2} disabled /><button className="button primary" type="submit" aria-label={t("composer.send")} disabled><span aria-hidden="true">↑</span></button></div>
-    <div className="composer-meta"><span>{t("composer.provider")}: {t("common.notConfigured")}</span><span>{t("composer.tier")}: {t("common.unknown")}</span><span>{t("composer.cost")}</span></div>
-  </form>;
+function ContextComposer({ context, projectId, t, setNotice }: { context: string | null; projectId: string | null; t: T; setNotice: NoticeSetter }) {
+  return <AiChatComposer context={context} projectId={projectId} t={t} setNotice={setNotice} />;
 }
-
 function CommandPalette({ query, setQuery, pages: availablePages, t, close, navigate }: { query: string; setQuery: (value: string) => void; pages: Page[]; t: T; close: () => void; navigate: (page: Page) => void }) {
   const results = availablePages.filter((page) => t(`navigation.${page}`).toLowerCase().includes(query.toLowerCase()));
   return <div className="dialog-backdrop palette-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className="command-palette panel" role="dialog" aria-modal="true" aria-labelledby="palette-title"><h2 id="palette-title">{t("actions.commandPalette")}</h2><label className="sr-only" htmlFor="command-search">{t("common.search")}</label><input id="command-search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("common.search")} />{results.length === 0 ? <p>{t("common.noResults")}</p> : <ul>{results.map((page) => <li key={page}><button onClick={() => navigate(page)}>{t(`navigation.${page}`)}</button></li>)}</ul>}</section></div>;

@@ -33,6 +33,7 @@ export default defineConfig({
             { label: 'Linux agent', link: '/agent-install/' },
             { label: 'Deploy ID', link: '/deploy-id/' },
             { label: 'AI providers', link: '/ai-providers/' },
+            { label: 'Local MCP', link: '/local-mcp/' },
             { label: 'CLI', link: '/cli/' },
           ],
         },

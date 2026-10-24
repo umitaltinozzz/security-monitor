@@ -38,6 +38,7 @@ try {
   await page.addInitScript((initial) => {
     const state = {
       settings: initial.settings,
+      aiConfiguration: initial.ai_configuration,
       projects: [],
       assets: [],
       findings: [],
@@ -62,6 +63,8 @@ try {
         switch (command) {
           case "get_app_settings": return state.settings;
           case "save_app_settings": state.settings = args.settings; return null;
+          case "get_ai_configuration": return state.aiConfiguration;
+          case "save_ai_settings": state.aiConfiguration.settings = args.settings; return null;
           case "list_projects": return state.projects;
           case "add_project": {
             const project = { id: "project-fixture-1", name: "Fixture Project", root_path: args.path, git_remote: null, reference_branch: null, allowed_ai_providers: [], last_scan_at: null, created_at: timestamp, updated_at: timestamp };
@@ -169,6 +172,7 @@ try {
     for (const [label, slug] of mainPages) {
       await page.getByRole("button", { name: label, exact: label !== "Review" }).first().click();
       await page.waitForTimeout(80);
+      if (slug === "settings") await page.getByText("No AI providers are configured.").waitFor();
       await page.addScriptTag({ path: axePath });
       const accessibility = await page.evaluate(async () => window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } }));
       assert.equal(accessibility.violations.length, 0, `${theme} ${label} axe violations: ${JSON.stringify(accessibility.violations.map((item) => ({ id: item.id, nodes: item.nodes.map((node) => ({ target: node.target, checks: node.any.map((check) => check.data) })) })))}`);

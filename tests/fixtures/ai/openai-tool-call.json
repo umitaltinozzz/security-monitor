@@ -1,0 +1,1 @@
+{"usage":{"prompt_tokens":50,"completion_tokens":10},"choices":[{"message":{"tool_calls":[{"id":"call-1","type":"function","function":{"name":"search_project","arguments":"{\"query\":\"CVE-1\"}"}}]}}]}
