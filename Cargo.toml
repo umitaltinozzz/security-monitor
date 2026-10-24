@@ -55,7 +55,7 @@ semver = "1"
 sqlx = { version = "0.8", default-features = false, features = ["chrono", "json", "macros", "migrate", "runtime-tokio", "sqlite"] }
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
-toml = "0.9"
+toml = "1.1"
 ts-rs = { version = "11", features = ["chrono-impl", "serde-compat"] }
 url = "2"
 uuid = { version = "1", features = ["v4"] }
