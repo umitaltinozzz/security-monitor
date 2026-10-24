@@ -1,22 +1,48 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const apiMocks = vi.hoisted(() => ({ loadWorkspace: vi.fn() }));
+
+vi.mock("./api", () => ({
+  api: {
+    saveSettings: vi.fn(async () => undefined),
+  },
+  loadWorkspace: apiMocks.loadWorkspace,
+}));
+
 import { App } from "./App";
 
-describe("Security Monitor shell", () => {
+describe("Security Monitor first-run experience", () => {
   beforeEach(() => {
-    vi.stubGlobal("navigator", { language: "en-US" });
+    apiMocks.loadWorkspace.mockResolvedValue({
+      settings: {
+        language: "en",
+        theme: "system",
+        onboarding_completed: false,
+        public_downloads_enabled: false,
+        notifications_enabled: true,
+        scan_interval_hours: 24,
+        ecosystems: ["npm", "pypi", "cargo"],
+      },
+      projects: [],
+      assets: [],
+      findings: [],
+      advisories: [],
+      components: [],
+      instances: [],
+      evidence: [],
+      runs: [],
+      audit: [],
+    });
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("shows the English welcome view and switches to Turkish", () => {
+  it("explains the local-first privacy defaults before setup choices", async () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Security visibility, kept local" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Switch language to Turkish" }));
-    expect(screen.getByRole("heading", { name: "Güvenlik görünürlüğü, cihazınızda" })).toBeVisible();
-    expect(document.documentElement).toHaveAttribute("lang", "tr");
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Your data stays local by default" })).toBeVisible();
+    });
+    expect(screen.getByText(/Project paths, source code, lockfiles, and inventory stay on this device/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Skip for now" })).toBeEnabled();
   });
 });

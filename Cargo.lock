@@ -5008,8 +5008,22 @@ dependencies = [
 name = "security-monitor-desktop"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "security-monitor-advisory-providers",
+ "security-monitor-agent-protocol",
+ "security-monitor-agent-transport",
+ "security-monitor-core",
+ "security-monitor-correlation",
+ "security-monitor-database",
+ "security-monitor-scan-orchestrator",
+ "security-monitor-scanner-adapters",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]

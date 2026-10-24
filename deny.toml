@@ -28,6 +28,7 @@ exceptions = [
     { crate = "foldhash@0.2.0", allow = ["Zlib"] },
     { crate = "inotify@0.11.5", allow = ["ISC"] },
     { crate = "inotify-sys@0.1.8", allow = ["ISC"] },
+    { crate = "libloading@0.7.4", allow = ["ISC"] },
     { crate = "notify@8.2.0", allow = ["CC0-1.0"] },
     { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
     { crate = "quoted_printable@0.5.2", allow = ["0BSD"] },

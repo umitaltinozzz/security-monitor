@@ -1,0 +1,89 @@
+{
+  "settings": {
+    "language": "en",
+    "theme": "system",
+    "onboarding_completed": false,
+    "public_downloads_enabled": false,
+    "notifications_enabled": true,
+    "scan_interval_hours": 24,
+    "ecosystems": ["npm", "pypi", "cargo"]
+  },
+  "scan_result": {
+    "scan_id": "scan-fixture",
+    "outcome": "partial",
+    "inventory_complete": false,
+    "component_count": 1,
+    "finding_count": 1,
+    "scanner_finding_count": 0,
+    "diagnostics": ["advisory_data_stale"]
+  },
+  "finding": {
+    "id": "finding-fixture-1",
+    "advisory_id": "GHSA-fixture-2025",
+    "component_instance_id": "instance-fixture-1",
+    "status": "needs_review",
+    "severity": "high",
+    "priority_score": 82,
+    "priority_reasons": ["severity_base_high"],
+    "fingerprint": "fixture-fingerprint-1",
+    "repo_status": "unknown",
+    "production_status": "unknown",
+    "disposition": null,
+    "risk_expires_at": null,
+    "fix_version": "2.0.0",
+    "created_at": "2026-10-24T08:00:00Z",
+    "updated_at": "2026-10-24T08:00:00Z"
+  },
+  "advisory": {
+    "canonical_id": "GHSA-fixture-2025",
+    "title": "Fixture package input validation issue",
+    "summary": "Deterministic test advisory. This record has no affected user data.",
+    "summary_model": null,
+    "description": "A fixture-only advisory used to verify local filtering and review controls.",
+    "source_attributions": [],
+    "aliases": [],
+    "affected_ranges": [],
+    "fixed_versions": ["2.0.0"],
+    "cvss": 7.5,
+    "severity": "high",
+    "kev": false,
+    "epss": 0.1,
+    "epss_date": "2026-10-23T00:00:00Z",
+    "source_urls": [],
+    "source_updated_at": "2026-10-24T08:00:00Z",
+    "created_at": "2026-10-24T08:00:00Z",
+    "updated_at": "2026-10-24T08:00:00Z"
+  },
+  "component": {
+    "id": "component-fixture-1",
+    "purl": "pkg:npm/fixture-parser@1.2.3",
+    "ecosystem": "npm",
+    "name": "fixture-parser",
+    "version": "1.2.3",
+    "source_type": "lockfile",
+    "created_at": "2026-10-24T08:00:00Z"
+  },
+  "instance": {
+    "id": "instance-fixture-1",
+    "component_id": "component-fixture-1",
+    "project_id": "project-fixture-1",
+    "asset_id": null,
+    "service_id": null,
+    "deployment_id": null,
+    "evidence": [{"evidence_type": "lockfile", "file_path_redacted": "package-lock.json", "reference": null}]
+  },
+  "run": {
+    "id": "run-fixture-1",
+    "scope": {"resource_type": "project", "resource_id": "project-fixture-1"},
+    "scanner": "security-monitor",
+    "scanner_version": "0.1.0",
+    "started_at": "2026-10-24T08:00:00Z",
+    "finished_at": "2026-10-24T08:00:01Z",
+    "outcome": "partial",
+    "error": null
+  },
+  "ssh": {
+    "fingerprint": "SHA256:fixtureHostKeyFingerprint",
+    "authorized_keys_line": "restrict,command=\"/usr/local/bin/secmon-agent --stdio\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixtureOnlyPublicKey secmon-desktop-fixture"
+  }
+}
