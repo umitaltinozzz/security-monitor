@@ -200,9 +200,11 @@ fn deleted_shared_libraries(path: &Path) -> (Vec<String>, bool) {
     };
     let mut names = BTreeSet::new();
     for line in contents.lines().take(100_000) {
-        let Some(mapped_path) = line.split_whitespace().nth(5) else {
+        let mut fields = line.split_whitespace();
+        if fields.nth(4).is_none() {
             continue;
-        };
+        }
+        let mapped_path = fields.collect::<Vec<_>>().join(" ");
         let Some(path) = mapped_path.strip_suffix(" (deleted)") else {
             continue;
         };
