@@ -61,7 +61,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\.dev-drive\cargo-target" >> $env:GITHUB_ENV
+          $cargoTargetDir = Join-Path $env:GITHUB_WORKSPACE '.dev-drive\cargo-target'
+          New-Item -ItemType Directory -Force -Path $env:CARGO_HOME, $cargoTargetDir | Out-Null
+          "CARGO_TARGET_DIR=$cargoTargetDir" >> $env:GITHUB_ENV
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
