@@ -250,6 +250,7 @@ mod tests {
             assert!(!AGENT_ENV_ALLOWLIST.contains(&forbidden));
         }
         assert!(is_agent_config_name("AGENTS.md"));
+        assert!(is_agent_config_name("AGENTS.override.md"));
         assert!(is_agent_config_name(".CLAUDE"));
     }
 }
