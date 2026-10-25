@@ -27,6 +27,8 @@ use security_monitor_remediation::GitCommandSafety;
 
 /// Server inventory older than this no longer counts as current production evidence.
 const PRODUCTION_SNAPSHOT_MAX_AGE_HOURS: i64 = 24;
+/// Large enough for real lockfiles; anything bigger is treated as unverifiable, not read.
+const MAX_DEPENDENCY_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DriftSyncSummary {
@@ -445,7 +447,14 @@ pub fn read_git_reference(
                 .map(str::to_owned)
                 .collect::<HashSet<_>>();
             dependency_tree_status(root, &tracked, dependency_paths, |path| {
-                git(&["cat-file", "blob", &format!("HEAD:{path}")])
+                let object = format!("HEAD:{path}");
+                let size = git(&["cat-file", "-s", &object])
+                    .and_then(text)
+                    .and_then(|value| value.parse::<u64>().ok())?;
+                if size > MAX_DEPENDENCY_FILE_BYTES {
+                    return None;
+                }
+                git(&["cat-file", "blob", &object])
             })
         }
         None => WorkingTreeStatus::Unknown,
@@ -475,17 +484,59 @@ fn dependency_tree_status(
         .iter()
         .filter(|path| is_dependency_file(Path::new(path.as_str())))
     {
+        let current = match read_dependency_file(root, path) {
+            DependencyFile::Read(bytes) => bytes,
+            DependencyFile::Missing => return WorkingTreeStatus::HasUncommittedChanges,
+            DependencyFile::Unverifiable => return WorkingTreeStatus::Unknown,
+        };
         let Some(committed) = committed_blob(path) else {
             return WorkingTreeStatus::Unknown;
-        };
-        let Ok(current) = std::fs::read(root.join(path)) else {
-            return WorkingTreeStatus::HasUncommittedChanges;
         };
         if without_carriage_returns(&current) != without_carriage_returns(&committed) {
             return WorkingTreeStatus::HasUncommittedChanges;
         }
     }
     WorkingTreeStatus::Clean
+}
+
+enum DependencyFile {
+    Read(Vec<u8>),
+    Missing,
+    Unverifiable,
+}
+
+/// Repository paths are untrusted: symlinks, non-regular files, paths that resolve outside the
+/// project root, and oversized files are never read.
+fn read_dependency_file(root: &Path, relative: &str) -> DependencyFile {
+    let path = root.join(relative);
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return DependencyFile::Missing;
+        }
+        Err(_) => return DependencyFile::Unverifiable,
+    };
+    if !metadata.file_type().is_file() || metadata.len() > MAX_DEPENDENCY_FILE_BYTES {
+        return DependencyFile::Unverifiable;
+    }
+    let (Ok(canonical_root), Ok(canonical_path)) = (root.canonicalize(), path.canonicalize())
+    else {
+        return DependencyFile::Unverifiable;
+    };
+    if !canonical_path.starts_with(&canonical_root) {
+        return DependencyFile::Unverifiable;
+    }
+    let Ok(file) = std::fs::File::open(&canonical_path) else {
+        return DependencyFile::Unverifiable;
+    };
+    let mut bytes = Vec::new();
+    match std::io::Read::read_to_end(
+        &mut std::io::Read::take(file, MAX_DEPENDENCY_FILE_BYTES + 1),
+        &mut bytes,
+    ) {
+        Ok(read) if read as u64 <= MAX_DEPENDENCY_FILE_BYTES => DependencyFile::Read(bytes),
+        _ => DependencyFile::Unverifiable,
+    }
 }
 
 fn without_carriage_returns(bytes: &[u8]) -> Vec<u8> {

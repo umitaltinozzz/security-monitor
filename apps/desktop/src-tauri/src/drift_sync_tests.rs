@@ -369,6 +369,19 @@ fn dependency_files_must_match_the_committed_blob_and_be_tracked() {
         dependency_tree_status(root, &tracked, &[], |_: &str| None),
         WorkingTreeStatus::Unknown
     );
+
+    // A tracked dependency path that is a directory is never read as a file.
+    std::fs::create_dir(root.join("yarn.lock")).expect("directory created");
+    let directory_lock = HashSet::from(["yarn.lock".to_owned()]);
+    assert_eq!(
+        dependency_tree_status(root, &directory_lock, &[], committed),
+        WorkingTreeStatus::Unknown
+    );
+    let missing = HashSet::from(["Cargo.lock".to_owned()]);
+    assert_eq!(
+        dependency_tree_status(root, &missing, &[], committed),
+        WorkingTreeStatus::HasUncommittedChanges
+    );
 }
 
 fn run_git(root: &Path, args: &[&str]) {
