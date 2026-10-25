@@ -5,12 +5,10 @@ mod drift_sync;
 mod ipc;
 mod ipc_types;
 
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::PathBuf};
 
 use app_state::{AppState, load_settings};
+use security_monitor_app_services::app_data_dir_for_build;
 use security_monitor_database::Database;
 use tauri::{
     Manager,
@@ -56,14 +54,6 @@ fn destroy_main_window(window: &tauri::Window) {
 
 fn should_keep_tray_process_alive(exit_code: Option<i32>) -> bool {
     exit_code.is_none()
-}
-
-fn app_data_dir_for_build(app_data_dir: &Path, debug_build: bool) -> PathBuf {
-    if debug_build {
-        app_data_dir.join("development")
-    } else {
-        app_data_dir.to_path_buf()
-    }
 }
 
 fn main() {

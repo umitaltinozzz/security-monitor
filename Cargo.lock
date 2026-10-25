@@ -5163,6 +5163,7 @@ dependencies = [
  "security-monitor-agent-protocol",
  "security-monitor-agent-transport",
  "security-monitor-ai",
+ "security-monitor-app-services",
  "security-monitor-core",
  "security-monitor-database",
  "security-monitor-integrations",
@@ -5320,6 +5321,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-monitor-app-services"
+version = "0.1.0"
+dependencies = [
+ "security-monitor-agent-protocol",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "security-monitor-core"
 version = "0.1.0"
 dependencies = [
@@ -5376,6 +5387,7 @@ dependencies = [
  "security-monitor-agent-protocol",
  "security-monitor-agent-transport",
  "security-monitor-ai",
+ "security-monitor-app-services",
  "security-monitor-core",
  "security-monitor-correlation",
  "security-monitor-database",

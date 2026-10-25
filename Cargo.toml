@@ -18,6 +18,7 @@ members = [
     "crates/remediation",
     "crates/reporting",
     "crates/integrations",
+    "crates/app-services",
     "agents/linux",
 ]
 resolver = "3"

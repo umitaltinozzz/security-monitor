@@ -17,6 +17,7 @@ hex = { workspace = true }
 security-monitor-advisory-providers = { version = "0.1.0", path = "../../crates/advisory-providers" }
 security-monitor-agent-protocol = { version = "0.1.0", path = "../../crates/agent-protocol" }
 security-monitor-agent-transport = { version = "0.1.0", path = "../../crates/agent-transport" }
+security-monitor-app-services = { version = "0.1.0", path = "../../crates/app-services" }
 security-monitor-ai = { version = "0.1.0", path = "../../crates/ai" }
 security-monitor-core = { version = "0.1.0", path = "../../crates/core" }
 security-monitor-database = { version = "0.1.0", path = "../../crates/database" }

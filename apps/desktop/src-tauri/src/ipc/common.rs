@@ -14,6 +14,8 @@ pub(super) use security_monitor_ai::{
     maximum_run_token_bounds, redact_text_with_host_aliases, run_tool_loop,
     validate_provider_config,
 };
+pub(super) use security_monitor_app_services::ServerSnapshotError;
+pub(super) use security_monitor_app_services::persist_server_snapshot as write_server_snapshot;
 pub(super) use security_monitor_core::{
     Advisory, AgentCliProduct, AiDataTransferApproval, AiProvider, AiProviderKind, AiRun, AiTier,
     ApprovalState, Asset, AssetType, AuditEvent, AuditResult, AuditScope, Component,
@@ -76,18 +78,11 @@ pub(super) fn persist_server_snapshot(
     asset_id: &str,
     inventory: &AgentInventory,
 ) -> Result<(), String> {
-    if Uuid::parse_str(asset_id).is_err() {
-        return Err("collection_failed".to_owned());
-    }
-    let directory = app_data_dir.join("server-inventory");
-    fs::create_dir_all(&directory).map_err(|_| "storage_unavailable".to_owned())?;
-    let destination = directory.join(format!("{asset_id}.json"));
-    let temporary = directory.join(format!(".{asset_id}-{}.tmp", Uuid::new_v4()));
-    let bytes = serde_json::to_vec(inventory).map_err(|_| "collection_failed".to_owned())?;
-    fs::write(&temporary, bytes).map_err(|_| "storage_unavailable".to_owned())?;
-    fs::rename(&temporary, &destination).map_err(|_| {
-        let _ = fs::remove_file(&temporary);
-        "storage_unavailable".to_owned()
+    write_server_snapshot(app_data_dir, asset_id, inventory).map_err(|error| match error {
+        ServerSnapshotError::InvalidAssetId | ServerSnapshotError::Serialization => {
+            "collection_failed".to_owned()
+        }
+        ServerSnapshotError::Storage => "storage_unavailable".to_owned(),
     })
 }
 

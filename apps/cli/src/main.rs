@@ -1,10 +1,11 @@
 mod commands;
 mod hooks;
 
-use std::{env, io::Write, path::PathBuf, sync::Arc};
+use std::{io::Write, path::PathBuf, sync::Arc};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use security_monitor_ai::{AiSettings, ToolPermission};
+use security_monitor_app_services::database_locations;
 use security_monitor_core::{AuditEvent, AuditResult};
 use security_monitor_database::Database;
 use security_monitor_mcp_server::{McpServer, WorkspaceTools, supported_tools};
@@ -213,8 +214,8 @@ async fn run_mcp(database: Option<PathBuf>, agent: &str) -> Result<(), &'static 
     {
         return Err("invalid_agent");
     }
-    let database_path = database
-        .unwrap_or_else(default_database_path)
+    let (database_path, _) = database_locations(database);
+    let database_path = database_path
         .canonicalize()
         .map_err(|_| "database_unavailable")?;
     let app_data = database_path
@@ -356,34 +357,6 @@ async fn workspace_tools(
         .collect::<Vec<_>>();
     WorkspaceTools::with_approved_source_projects(database.clone(), approved_projects)
         .with_remediation_queue_dir(app_data_dir)
-}
-
-fn default_database_path() -> PathBuf {
-    let directory = if cfg!(target_os = "windows") {
-        env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(env::temp_dir)
-            .join("org.securitymonitor.desktop")
-    } else if cfg!(target_os = "macos") {
-        env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(env::temp_dir)
-            .join("Library")
-            .join("Application Support")
-            .join("org.securitymonitor.desktop")
-    } else {
-        env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                env::var_os("HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(env::temp_dir)
-                    .join(".local")
-                    .join("share")
-            })
-            .join("org.securitymonitor.desktop")
-    };
-    directory.join("security-monitor.sqlite3")
 }
 
 #[cfg(test)]

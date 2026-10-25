@@ -43,6 +43,22 @@ fn validate_expected_update_version(version: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+fn build_updater(
+    app: &AppHandle,
+    public_key: &str,
+    error_code: &'static str,
+) -> Result<tauri_plugin_updater::Updater, String> {
+    let endpoint = Url::parse(UPDATE_MANIFEST_URL).map_err(|_| error_code.to_owned())?;
+    app.updater_builder()
+        .timeout(Duration::from_secs(30))
+        .pubkey(public_key)
+        .endpoints(vec![endpoint])
+        .map_err(|_| error_code.to_owned())?
+        .configure_client(configure_updater_client)
+        .build()
+        .map_err(|_| error_code.to_owned())
+}
+
 #[tauri::command]
 pub async fn check_for_updates(
     app: AppHandle,
@@ -61,16 +77,7 @@ pub async fn check_for_updates(
     .map_err(map_update_destination_error)
     .map_err(str::to_owned)?;
 
-    let endpoint = Url::parse(UPDATE_MANIFEST_URL).map_err(|_| "update_check_failed".to_owned())?;
-    let updater = app
-        .updater_builder()
-        .timeout(Duration::from_secs(30))
-        .pubkey(public_key)
-        .endpoints(vec![endpoint])
-        .map_err(|_| "update_check_failed".to_owned())?
-        .configure_client(configure_updater_client)
-        .build()
-        .map_err(|_| "update_check_failed".to_owned())?;
+    let updater = build_updater(&app, public_key, "update_check_failed")?;
     let update = updater
         .check()
         .await
@@ -118,17 +125,7 @@ pub async fn install_update(
     .map_err(map_update_destination_error)
     .map_err(str::to_owned)?;
 
-    let endpoint =
-        Url::parse(UPDATE_MANIFEST_URL).map_err(|_| "update_install_failed".to_owned())?;
-    let updater = app
-        .updater_builder()
-        .timeout(Duration::from_secs(30))
-        .pubkey(public_key)
-        .endpoints(vec![endpoint])
-        .map_err(|_| "update_install_failed".to_owned())?
-        .configure_client(configure_updater_client)
-        .build()
-        .map_err(|_| "update_install_failed".to_owned())?;
+    let updater = build_updater(&app, public_key, "update_install_failed")?;
     let update = updater
         .check()
         .await

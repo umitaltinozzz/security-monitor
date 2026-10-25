@@ -9,10 +9,12 @@ use chrono::Utc;
 use security_monitor_advisory_providers::{
     HttpPolicy, OsvDatabaseUpdater, PublicDataHttp, ecosystem_slug,
 };
-use security_monitor_agent_protocol::AgentInventory;
 use security_monitor_agent_transport::{
     CredentialStore, InventoryCollectionApproval, OsCredentialStore, SshIdentity, SshTarget,
     collect_agent,
+};
+use security_monitor_app_services::{
+    ServerSnapshotError, database_locations, persist_server_snapshot,
 };
 use security_monitor_core::{
     Asset, AuditEvent, AuditResult, AuditScope, Project, ScanOutcome, ScanRun,
@@ -364,7 +366,13 @@ pub async fn run_server_collect(
         .inventory
         .validate()
         .map_err(|_| "server_collection_failed")?;
-    persist_server_inventory(&app_data, asset_id, &collection.inventory)?;
+    persist_server_snapshot(&app_data, asset_id, &collection.inventory).map_err(
+        |error| match error {
+            ServerSnapshotError::InvalidAssetId => "server_unavailable",
+            ServerSnapshotError::Serialization => "server_collection_failed",
+            ServerSnapshotError::Storage => "storage_unavailable",
+        },
+    )?;
     let mut updated = asset.clone();
     updated.last_seen_at = Some(collection.inventory.captured_at);
     if collection.inventory.complete {
@@ -697,73 +705,8 @@ async fn write_audit_event(
         .map_err(|_| "audit_storage_unavailable")
 }
 
-fn persist_server_inventory(
-    app_data: &Path,
-    asset_id: &str,
-    inventory: &AgentInventory,
-) -> Result<(), &'static str> {
-    let asset_id = Uuid::parse_str(asset_id).map_err(|_| "server_unavailable")?;
-    let directory = app_data.join("server-inventory");
-    fs::create_dir_all(&directory).map_err(|_| "storage_unavailable")?;
-    let canonical_directory = directory
-        .canonicalize()
-        .map_err(|_| "storage_unavailable")?;
-    let canonical_app_data = app_data.canonicalize().map_err(|_| "storage_unavailable")?;
-    if !canonical_directory.starts_with(&canonical_app_data) {
-        return Err("storage_unavailable");
-    }
-    let destination = canonical_directory.join(format!("{asset_id}.json"));
-    let temporary = canonical_directory.join(format!(".{asset_id}-{}.tmp", Uuid::new_v4()));
-    let bytes = serde_json::to_vec(inventory).map_err(|_| "server_collection_failed")?;
-    fs::write(&temporary, bytes).map_err(|_| "storage_unavailable")?;
-    fs::rename(&temporary, &destination).map_err(|_| {
-        let _ = fs::remove_file(&temporary);
-        "storage_unavailable"
-    })
-}
-
-fn database_locations(database_path: Option<PathBuf>) -> (PathBuf, PathBuf) {
-    let database_path = database_path.unwrap_or_else(default_database_path);
-    let app_data = database_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(default_app_data_dir);
-    (database_path, app_data)
-}
-
 fn osv_database_directory(app_data: &Path) -> PathBuf {
     app_data.join("advisories").join("osv")
-}
-
-fn default_database_path() -> PathBuf {
-    default_app_data_dir().join("security-monitor.sqlite3")
-}
-
-fn default_app_data_dir() -> PathBuf {
-    if cfg!(target_os = "windows") {
-        std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("org.securitymonitor.desktop")
-    } else if cfg!(target_os = "macos") {
-        std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("Library")
-            .join("Application Support")
-            .join("org.securitymonitor.desktop")
-    } else {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                std::env::var_os("HOME")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(std::env::temp_dir)
-                    .join(".local")
-                    .join("share")
-            })
-            .join("org.securitymonitor.desktop")
-    }
 }
 
 fn load_settings(app_data: &Path) -> LocalSettings {

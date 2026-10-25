@@ -1,0 +1,15 @@
+[package]
+name = "security-monitor-app-services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared local application services for CLI and desktop"
+
+[dependencies]
+security-monitor-agent-protocol = { version = "0.1.0", path = "../agent-protocol" }
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
