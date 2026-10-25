@@ -399,6 +399,10 @@ pub struct RemediationTest {
     pub name: String,
     pub passed: bool,
     pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub output: Option<String>,
+    #[serde(default)]
+    pub output_truncated: bool,
     pub log_reference: Option<String>,
 }
 

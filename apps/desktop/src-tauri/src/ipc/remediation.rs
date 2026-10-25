@@ -501,10 +501,12 @@ pub async fn run_safe_tests(
     let result = run_sandbox_test(engine, &worktree, &command, true)
         .await
         .map_err(remediation_error_key);
-    let (passed, exit_code) = match result {
+    let (passed, exit_code, output, output_truncated) = match result {
         Ok(result) => (
             result.exit_code == Some(0) && !result.timed_out,
             result.exit_code,
+            Some(security_monitor_ai::redact_text(&result.output).text),
+            result.output_truncated,
         ),
         Err(error) => {
             let _ = write_audit_event(
@@ -523,6 +525,8 @@ pub async fn run_safe_tests(
         name: command.executable.clone(),
         passed,
         exit_code,
+        output,
+        output_truncated,
         log_reference: None,
     });
     remediation.diff_hash = Some(

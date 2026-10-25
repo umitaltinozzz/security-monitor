@@ -275,6 +275,8 @@
       "testExecutable": "Test programı (kabuk olmadan)",
       "testArguments": "Argümanlar (her satıra bir tane)",
       "testImage": "SHA-256 özetiyle sabitlenmiş yerel konteyner imajı",
+      "testOutput": "Test çıktısı",
+      "outputTruncated": "kısaltıldı",
       "imagePlaceholder": "registry.example/image@sha256:64-hex-digits",
       "executeApproval": "Bu test komutunu ağ erişimi olmadan çalıştırmayı onaylıyorum.",
       "approveAndRun": "Onayla ve testleri çalıştır",

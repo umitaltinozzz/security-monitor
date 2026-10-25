@@ -1,4 +1,10 @@
 use super::*;
+#[cfg(unix)]
+use std::io;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 
 pub(super) async fn run_command(
     executable: &str,
@@ -29,6 +35,7 @@ async fn run_command_with_git_safety(
 ) -> Result<(Vec<u8>, bool), RemediationError> {
     let mut command = Command::new(executable);
     command.args(args).kill_on_drop(true);
+    configure_process_group(&mut command);
     if let Some(safety) = git_safety {
         safety.configure(&mut command);
     }
@@ -55,6 +62,7 @@ async fn run_command_with_git_safety(
 
 pub(super) struct CapturedProcess {
     pub(super) stdout: Vec<u8>,
+    pub(super) stderr: Vec<u8>,
     pub(super) exit_code: Option<i32>,
     pub(super) output_truncated: bool,
 }
@@ -66,49 +74,148 @@ pub(super) async fn capture_child(
 ) -> Result<CapturedProcess, RemediationError> {
     let stdout = child.stdout.take().ok_or(RemediationError::ProcessFailed)?;
     let stderr = child.stderr.take().ok_or(RemediationError::ProcessFailed)?;
-    let capture = async {
-        let stdout_reader = async {
-            let mut bytes = Vec::new();
-            stdout
-                .take(max_output.saturating_add(1) as u64)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| RemediationError::ProcessFailed)?;
-            Ok::<_, RemediationError>(bytes)
-        };
-        let stderr_reader = async {
-            let mut bytes = Vec::new();
-            stderr
-                .take(max_output.saturating_add(1) as u64)
-                .read_to_end(&mut bytes)
-                .await
-                .map_err(|_| RemediationError::ProcessFailed)?;
-            Ok::<_, RemediationError>(bytes)
-        };
-        let status_wait = async {
-            child
-                .wait()
-                .await
-                .map_err(|_| RemediationError::ProcessFailed)
-        };
-        let (mut stdout, stderr, status) =
-            tokio::try_join!(stdout_reader, stderr_reader, status_wait)
-                .map_err(|_| RemediationError::ProcessFailed)?;
-        let truncated = stdout.len().saturating_add(stderr.len()) > max_output;
-        stdout.truncate(max_output);
-        Ok::<_, RemediationError>((stdout, status.code(), truncated))
-    };
-    match timeout(limit, capture).await {
-        Ok(result) => {
-            let (stdout, exit_code, output_truncated) = result?;
-            Ok(CapturedProcess {
-                stdout,
-                exit_code,
-                output_truncated,
-            })
+    let total_bytes = Arc::new(AtomicUsize::new(0));
+    let truncated = Arc::new(AtomicBool::new(false));
+    let (limit_sender, mut limit_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let stdout_reader = read_output_stream(
+        stdout,
+        max_output,
+        total_bytes.clone(),
+        truncated.clone(),
+        limit_sender.clone(),
+    );
+    let stderr_reader = read_output_stream(
+        stderr,
+        max_output,
+        total_bytes,
+        truncated.clone(),
+        limit_sender,
+    );
+    let output_capture = tokio::spawn(async move {
+        tokio::try_join!(stdout_reader, stderr_reader).map_err(|_| RemediationError::ProcessFailed)
+    });
+    let status = match timeout(limit, async {
+        tokio::select! {
+            status = child.wait() => status.map_err(|_| RemediationError::ProcessFailed),
+            signal = limit_receiver.recv() => {
+                if signal.is_some() {
+                    terminate_process_group(&mut child)?;
+                }
+                child.wait().await.map_err(|_| RemediationError::ProcessFailed)
+            }
         }
-        Err(_) => Err(RemediationError::TimedOut),
+    })
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            terminate_process_group(&mut child)?;
+            let _ = child.wait().await;
+            return Err(RemediationError::TimedOut);
+        }
+    };
+    let (stdout, stderr) = output_capture
+        .await
+        .map_err(|_| RemediationError::ProcessFailed)??;
+    Ok(CapturedProcess {
+        stdout,
+        stderr,
+        exit_code: status.code(),
+        output_truncated: truncated.load(Ordering::Relaxed),
+    })
+}
+
+async fn read_output_stream<R>(
+    mut reader: R,
+    max_output: usize,
+    total_bytes: Arc<AtomicUsize>,
+    truncated: Arc<AtomicBool>,
+    limit_sender: tokio::sync::mpsc::UnboundedSender<()>,
+) -> Result<Vec<u8>, RemediationError>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let count = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|_| RemediationError::ProcessFailed)?;
+        if count == 0 {
+            break;
+        }
+        let previous = reserve_output_bytes(&total_bytes, count);
+        let allowed = max_output.saturating_sub(previous).min(count);
+        output.extend_from_slice(&chunk[..allowed]);
+        if allowed < count && !truncated.swap(true, Ordering::Relaxed) {
+            let _ = limit_sender.send(());
+        }
     }
+    Ok(output)
+}
+
+fn reserve_output_bytes(total_bytes: &AtomicUsize, count: usize) -> usize {
+    let mut total = total_bytes.load(Ordering::Relaxed);
+    loop {
+        match total_bytes.compare_exchange_weak(
+            total,
+            total.saturating_add(count),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(previous) => return previous,
+            Err(updated) => total = updated,
+        }
+    }
+}
+
+pub(super) fn configure_process_group(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
+}
+
+fn terminate_process_group(child: &mut tokio::process::Child) -> Result<(), RemediationError> {
+    #[cfg(unix)]
+    {
+        let Some(process_id) = child.id() else {
+            return Ok(());
+        };
+        let result = unsafe { libc::kill(-(process_id as i32), libc::SIGKILL) };
+        if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(RemediationError::ProcessFailed)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        child
+            .start_kill()
+            .map_err(|_| RemediationError::ProcessFailed)
+    }
+}
+
+pub(super) fn captured_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut output = String::new();
+    if !stdout.is_empty() {
+        output.push_str("stdout:\n");
+        output.push_str(&String::from_utf8_lossy(stdout));
+    }
+    if !stderr.is_empty() {
+        if !output.is_empty() && !output.ends_with('\n') {
+            output.push('\n');
+        }
+        output.push_str("stderr:\n");
+        output.push_str(&String::from_utf8_lossy(stderr));
+    }
+    output
 }
 
 pub(super) fn path_arg(path: &Path) -> Result<&str, RemediationError> {

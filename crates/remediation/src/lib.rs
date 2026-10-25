@@ -136,6 +136,7 @@ pub struct ProcessResult {
     pub exit_code: Option<i32>,
     pub timed_out: bool,
     pub output_truncated: bool,
+    pub output: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

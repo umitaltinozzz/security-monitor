@@ -310,7 +310,7 @@ export function RemediationSection({
                           </p>
                         )}
                         {item.tests.map((test, index) => (
-                          <p className="remediation-test" key={`${item.id}-${index}`}>
+                          <div className="remediation-test" key={`${item.id}-${index}`}>
                             <StatusTag value={test.passed ? "succeeded" : "failed"} t={t} />
                             <span>{test.name}</span>
                             <small>
@@ -318,7 +318,17 @@ export function RemediationSection({
                                 ? t("findings.remediationWorkflow.exitUnknown")
                                 : `${t("findings.remediationWorkflow.exitCode")}: ${test.exit_code}`}
                             </small>
-                          </p>
+                            {test.output && (
+                              <details className="remediation-test-output">
+                                <summary>
+                                  {t("findings.remediationWorkflow.testOutput")}
+                                  {test.output_truncated &&
+                                    ` (${t("findings.remediationWorkflow.outputTruncated")})`}
+                                </summary>
+                                <pre>{test.output}</pre>
+                              </details>
+                            )}
+                          </div>
                         ))}
                         {sandbox?.available && (
                           <div className="remediation-test-form">

@@ -95,6 +95,7 @@ pub async fn run_sandbox_test(
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     let mut process = Command::new(engine.executable());
+    process::configure_process_group(&mut process);
     process.args(&command_args).kill_on_drop(true);
     process.stdout(Stdio::piped()).stderr(Stdio::piped());
     let child = match process.spawn() {
@@ -105,38 +106,49 @@ pub async fn run_sandbox_test(
         }
     };
     let result = match capture_child(child, DEFAULT_PROCESS_TIMEOUT, MAX_TEST_OUTPUT_BYTES).await {
-        Ok(output) => Ok(ProcessResult {
-            exit_code: output.exit_code,
-            timed_out: false,
-            output_truncated: output.output_truncated,
-        }),
+        Ok(output) => {
+            if output.output_truncated {
+                stop_sandbox_container(engine, &container_name).await;
+            }
+            Ok(ProcessResult {
+                exit_code: output.exit_code,
+                timed_out: false,
+                output_truncated: output.output_truncated,
+                output: process::captured_output(&output.stdout, &output.stderr),
+            })
+        }
         Err(RemediationError::TimedOut) => {
-            let _ = run_command(
-                engine.executable(),
-                &["stop", "--time", "1", &container_name],
-                None,
-                Duration::from_secs(5),
-                1024,
-            )
-            .await;
-            let _ = run_command(
-                engine.executable(),
-                &["rm", "--force", &container_name],
-                None,
-                Duration::from_secs(5),
-                1024,
-            )
-            .await;
+            stop_sandbox_container(engine, &container_name).await;
             Ok(ProcessResult {
                 exit_code: None,
                 timed_out: true,
                 output_truncated: false,
+                output: String::new(),
             })
         }
         Err(error) => Err(error),
     };
     remove_sandbox_temp(&worktree)?;
     result
+}
+
+async fn stop_sandbox_container(engine: SandboxEngine, container_name: &str) {
+    let _ = run_command(
+        engine.executable(),
+        &["kill", container_name],
+        None,
+        Duration::from_secs(5),
+        1024,
+    )
+    .await;
+    let _ = run_command(
+        engine.executable(),
+        &["rm", "--force", container_name],
+        None,
+        Duration::from_secs(5),
+        1024,
+    )
+    .await;
 }
 
 pub async fn engine_available(engine: SandboxEngine) -> bool {

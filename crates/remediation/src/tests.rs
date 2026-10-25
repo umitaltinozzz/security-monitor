@@ -1,6 +1,51 @@
 use super::*;
-use std::{collections::BTreeMap, fs, process::Command as StdCommand};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::Write as StdWrite,
+    process::{Command as StdCommand, Stdio},
+    time::{Duration, Instant},
+};
 use tempfile::TempDir;
+
+#[test]
+fn process_output_child_fixture() {
+    if std::env::var_os("SECMON_CAPTURE_CHILD_FIXTURE").is_none() {
+        return;
+    }
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(b"fixture-output-start\n").unwrap();
+    stdout.write_all(&vec![b'x'; 2 * 1024 * 1024]).unwrap();
+    stdout.flush().unwrap();
+    std::thread::sleep(Duration::from_secs(20));
+}
+
+#[tokio::test]
+async fn capture_child_kills_its_process_group_when_output_exceeds_the_limit() {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "tests::process_output_child_fixture",
+            "--nocapture",
+        ])
+        .env("SECMON_CAPTURE_CHILD_FIXTURE", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    process::configure_process_group(&mut command);
+    let child = command.spawn().unwrap();
+    let started = Instant::now();
+
+    let output = process::capture_child(child, Duration::from_secs(10), 8192)
+        .await
+        .unwrap();
+
+    assert!(output.output_truncated);
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("fixture-output-start"));
+    assert!(output.stdout.len() + output.stderr.len() <= 8192);
+}
 
 fn fixture_repository() -> (TempDir, PathBuf) {
     let temp = TempDir::new().unwrap();

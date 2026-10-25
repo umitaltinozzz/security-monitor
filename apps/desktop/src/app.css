@@ -1785,6 +1785,19 @@ td:first-child {
   flex-wrap: wrap;
   gap: 8px;
 }
+.remediation-test-output {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.remediation-test-output pre {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .remediation-test-form textarea {
   min-height: 72px;
 }

@@ -39,6 +39,7 @@ pub async fn run_agent_cli(
     }
     reject_agent_project_configuration(&worktree)?;
     let mut command = Command::new(agent_cli_executable(product));
+    process::configure_process_group(&mut command);
     configure_agent_environment(&mut command, &worktree);
     let _opencode_policy = if product == AgentCliProduct::OpenCode {
         Some(ScopedOpenCodePolicy::create(&worktree)?)
@@ -103,6 +104,7 @@ pub async fn run_agent_cli(
         exit_code: output.exit_code,
         timed_out: false,
         output_truncated: output.output_truncated,
+        output: process::captured_output(&output.stdout, &output.stderr),
     })
 }
 
