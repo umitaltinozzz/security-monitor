@@ -183,6 +183,27 @@ fn record_literal_assignments(tokens: &[String], variables: &mut BTreeMap<String
     if tokens.is_empty() {
         return;
     }
+    match tokens[0].as_str() {
+        "export" => {
+            for token in tokens
+                .iter()
+                .skip(1)
+                .filter(|token| !token.starts_with('-'))
+            {
+                record_variable_assignment(token, variables);
+            }
+            return;
+        }
+        "unset" => {
+            for name in tokens.iter().skip(1).filter(|name| !name.starts_with('-')) {
+                if valid_shell_variable_name(name) {
+                    variables.remove(name);
+                }
+            }
+            return;
+        }
+        _ => {}
+    }
     let assignments = tokens
         .iter()
         .map(|token| token.split_once('='))
@@ -191,9 +212,30 @@ fn record_literal_assignments(tokens: &[String], variables: &mut BTreeMap<String
         return;
     };
     for (name, value) in assignments {
-        if valid_shell_variable_name(name) && !is_dynamic_command_name(value) {
-            variables.insert(name.to_owned(), value.to_owned());
+        if valid_shell_variable_name(name) {
+            record_variable_assignment_parts(name, value, variables);
         }
+    }
+}
+
+fn record_variable_assignment(token: &str, variables: &mut BTreeMap<String, String>) {
+    if let Some((name, value)) = token
+        .split_once('=')
+        .filter(|(name, _)| valid_shell_variable_name(name))
+    {
+        record_variable_assignment_parts(name, value, variables);
+    }
+}
+
+fn record_variable_assignment_parts(
+    name: &str,
+    value: &str,
+    variables: &mut BTreeMap<String, String>,
+) {
+    if is_dynamic_command_name(value) {
+        variables.remove(name);
+    } else {
+        variables.insert(name.to_owned(), value.to_owned());
     }
 }
 
@@ -398,6 +440,15 @@ mod tests {
             Ok(GitHookActions {
                 pre_commit: false,
                 pre_push: true,
+            })
+        );
+        assert_eq!(
+            actions_from_event(&event(
+                "OTHER=echo; export OTHER=git; \"$OTHER\" commit -m ready"
+            )),
+            Ok(GitHookActions {
+                pre_commit: true,
+                pre_push: false,
             })
         );
         assert_eq!(
