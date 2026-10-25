@@ -333,7 +333,11 @@
     "fixedInRepo": "Repo'da düzeltildi",
     "fixedInProduction": "Production'da düzeltildi",
     "noSnapshot": "Doğrulanmış karşılaştırma yok",
-    "noSnapshotBody": "Bilinmeyen dağıtım kimlikleri, eski anlık görüntüler ve eksik referans verisi doğrulanmamış kalır."
+    "noSnapshotBody": "Bilinmeyen dağıtım kimlikleri, eski anlık görüntüler ve eksik referans verisi doğrulanmamış kalır.",
+    "noLinkedServer": "Bağlı sunucu yok. Production'ı karşılaştırmak için bu kodu çalıştıran sunucuyu Sunucular bölümünden bağla.",
+    "repoFixedStillProduction": "Repoda düzeldi, production'da hâlâ çalışıyor",
+    "stillAffectedInProduction": "Production'da hâlâ açık",
+    "fixedInProductionCount": "Production'da düzeldi"
   },
   "ai": {
     "title": "AI sağlayıcıları ve gizlilik",

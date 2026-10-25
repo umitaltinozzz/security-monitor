@@ -334,7 +334,7 @@ function Projects({ data, t, addProject, startScan, cancelScan, scanState, activ
           <div className="project-meta"><span>{t("projects.lastScan")}: {date(project.last_scan_at, data.settings.language)}</span><span>{project.reference_branch ? `${t("projects.referenceBranch")}: ${project.reference_branch}` : t("common.unverified")}</span></div>
           <section className="project-subsection"><h3>{t("navigation.findings")}</h3>{projectFindings.length === 0 ? <p>{t("common.unverified")}</p> : <><p className="risk-summary">{(["critical", "high", "medium", "low"] as const).map((severity) => `${projectFindings.filter((finding) => finding.severity === severity).length} ${t(`severity.${severity}`)}`).join(" · ")}</p><ul>{projectFindings.slice(0, 3).map((finding) => <li key={finding.id}><button className="text-button" onClick={() => { setPage("findings"); setFocusFindingId(finding.id); setContext(project.name); }}>{data.advisories.find((item) => item.canonical_id === finding.advisory_id)?.canonical_id ?? finding.advisory_id}</button><span><StatusTag value={finding.status} t={t} /> <small>{t("findings.priority")}: {finding.priority_score}</small></span></li>)}</ul></>}</section>
           <section className="project-subsection"><h3>{t("projects.inventory")}</h3>{projectComponents.length === 0 ? <p>{project.last_scan_at ? t("common.noResults") : t("common.unverified")}</p> : <ul>{projectComponents.slice(0, 8).map((component) => <li key={component.id}><span>{component.name}@{component.version}</span><small>{t(`ecosystems.${component.ecosystem}`) === `ecosystems.${component.ecosystem}` ? t("common.unverified") : t(`ecosystems.${component.ecosystem}`)}</small></li>)}</ul>}</section>
-          <section className="project-subsection"><div className="subsection-title"><h3>{t("drift.title")}</h3><StatusTag value="unverified" t={t} /></div><p>{t("drift.noSnapshotBody")}</p></section>
+          <section className="project-subsection"><DriftSummary findings={projectFindings} linkedServers={data.links.filter((link) => link.project_id === project.id).length} t={t} /></section>
           <section className="project-subsection"><h3>{t("projects.scanHistory")}</h3>{projectRuns.length === 0 ? <p>{t("common.unverified")}</p> : <ul>{projectRuns.map((run) => <li key={run.id}><StatusTag value={run.outcome} t={t} /><small>{date(run.finished_at ?? run.started_at, data.settings.language)}</small><ScanDiagnostics error={run.error} t={t} /></li>)}</ul>}</section>
           <MemoryNotes scope="project" scopeId={project.id} t={t} setNotice={setNotice} />
           <div className="project-meta"><span>{project.git_remote ? t("projects.remoteConfigured") : t("projects.noRemote")}</span><span>{t("common.updated")}: {date(project.updated_at, data.settings.language)}</span></div>
@@ -500,7 +500,16 @@ function StatusDialog({ finding, instance, t, close, onSave }: { finding: Findin
 }
 
 function Drift({ data, t }: { data: WorkspaceData; t: T }) {
-  return <section className="panel drift-section"><div className="panel-heading"><h2>{t("drift.title")}</h2><StatusTag value="unverified" t={t} /></div><p>{t("drift.noSnapshotBody")}</p><div className="drift-summary"><span>{t("drift.repository")}: {t("common.unverified")}</span><span>{t("drift.deployment")}: {data.assets.length || t("common.unknown")}</span></div></section>;
+  return <section className="panel drift-section"><DriftSummary findings={data.findings} linkedServers={data.links.length} t={t} /></section>;
+}
+
+function DriftSummary({ findings, linkedServers, t }: { findings: WorkspaceData["findings"]; linkedServers: number; t: T }) {
+  const repoFixedStillProduction = findings.filter((finding) => finding.repo_status === "fixed_in_repo" && finding.production_status === "still_affected").length;
+  const stillAffected = findings.filter((finding) => finding.production_status === "still_affected").length;
+  const fixedInProduction = findings.filter((finding) => finding.production_status === "fixed_in_production").length;
+  const unverified = findings.filter((finding) => finding.production_status === "unknown").length;
+  const tag = findings.length === 0 || unverified === findings.length ? "unverified" : stillAffected > 0 || unverified > 0 ? "partial" : "fixed_in_production";
+  return <><div className="subsection-title"><h3>{t("drift.title")}</h3><StatusTag value={tag} t={t} /></div>{linkedServers === 0 ? <p>{t("drift.noLinkedServer")}</p> : <ul className="drift-lines"><li><span>{t("drift.repoFixedStillProduction")}</span><strong>{repoFixedStillProduction}</strong></li><li><span>{t("drift.stillAffectedInProduction")}</span><strong>{stillAffected}</strong></li><li><span>{t("drift.fixedInProductionCount")}</span><strong>{fixedInProduction}</strong></li><li><span>{t("common.unverified")}</span><strong>{unverified}</strong></li></ul>}<p className="link-note">{t("drift.noSnapshotBody")}</p></>;
 }
 
 function History({ data, t }: { data: WorkspaceData; t: T }) {

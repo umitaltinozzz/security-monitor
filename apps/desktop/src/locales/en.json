@@ -333,7 +333,11 @@
     "fixedInRepo": "Fixed in repo",
     "fixedInProduction": "Fixed in production",
     "noSnapshot": "No verified comparison is available",
-    "noSnapshotBody": "Unknown deployment IDs, stale snapshots, and missing reference data stay unverified."
+    "noSnapshotBody": "Unknown deployment IDs, stale snapshots, and missing reference data stay unverified.",
+    "noLinkedServer": "No server is linked. Link the server that runs this code under Servers to compare production.",
+    "repoFixedStillProduction": "Fixed in repo, still running in production",
+    "stillAffectedInProduction": "Still affected in production",
+    "fixedInProductionCount": "Fixed in production"
   },
   "ai": {
     "title": "AI providers and privacy",

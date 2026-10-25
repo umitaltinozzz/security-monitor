@@ -78,8 +78,9 @@ export function MemoryNotes({ scope, scopeId = null, t, setNotice }: {
     }
   }
 
-  return <section className="memory-notes project-subsection">
-    <h3>{t("memory.title")}</h3>
+  // Notes stay collapsed so each project and server card leads with its security state.
+  return <details className="memory-notes project-subsection" open={memories.length > 0 && scope === "global"}>
+    <summary><h3>{t("memory.title")}{memories.length > 0 ? ` (${memories.length})` : ""}</h3></summary>
     <form className="memory-create" onSubmit={(event) => void add(event)}>
       <label className="field"><span>{t("memory.kind")}</span><select value={kind} onChange={(event) => setKind(event.target.value as MemoryKind)}>
         {(["finding_note", "user_decision", "project_context", "failed_fix", "agent_summary"] as const).map((value) => <option value={value} key={value}>{t(`memory.kinds.${value}`)}</option>)}
@@ -98,5 +99,5 @@ export function MemoryNotes({ scope, scopeId = null, t, setNotice }: {
       </div>
       <small>{t("memory.expires")}: {memory.expires_at ? new Date(memory.expires_at).toLocaleDateString() : t("common.unknown")}</small>
     </li>)}</ul>}
-  </section>;
+  </details>;
 }
