@@ -15,7 +15,7 @@ pub(super) async fn prepare_ai_request(
         .repository::<Project>()
         .get(project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     let settings = state.ai_settings.read().await.clone();
     let assignment = settings
@@ -49,9 +49,9 @@ pub(super) async fn prepare_ai_request(
         .repository::<AiProvider>()
         .get(provider_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "provider_not_found".to_owned())?;
-    validate_provider_config(&provider).map_err(|_| "invalid_input".to_owned())?;
+    validate_provider_config(&provider).map_err(|error| opaque(error, "invalid_input"))?;
     let host_aliases = load_ai_host_aliases(&state.database).await;
     let redacted = redact_text_with_host_aliases(prompt, &host_aliases);
     Ok((
@@ -128,7 +128,7 @@ pub(super) async fn make_ai_estimate(
         .repository::<AiRun>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let budget = enforce_budget(&settings.budget, &provider, &runs, cost, Utc::now())
         .map_err(|error| ai_error_code(&error.to_string()))?;
     let destination_origin = Url::parse(
@@ -137,7 +137,7 @@ pub(super) async fn make_ai_estimate(
             .as_deref()
             .ok_or_else(|| "invalid_input".to_owned())?,
     )
-    .map_err(|_| "invalid_input".to_owned())?
+    .map_err(|error| opaque(error, "invalid_input"))?
     .origin()
     .ascii_serialization();
     let data_category = configured_data_category(&settings, provider.capabilities.tool_calling);
@@ -221,7 +221,7 @@ pub(super) fn make_ai_approval_digest(
             budget,
         ),
     ))
-    .map_err(|_| "storage_unavailable".to_owned())?;
+    .map_err(|error| opaque(error, "storage_unavailable"))?;
     Ok(hex::encode(Sha256::digest(binding)))
 }
 

@@ -7,7 +7,7 @@ pub async fn list_remediations(state: State<'_, AppState>) -> Result<Vec<Remedia
         .repository::<Remediation>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -30,7 +30,7 @@ pub async fn list_mcp_remediation_requests(
         .repository::<AuditEvent>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     for request in &requests {
         let already_recorded = events.iter().any(|event| {
             event.action == "mcp_remediation_request_received"
@@ -84,14 +84,14 @@ pub async fn request_remediation(
         .repository::<Finding>()
         .get(&finding_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "finding_not_found".to_owned())?;
     let instance = state
         .database
         .repository::<ComponentInstance>()
         .get(&finding.component_instance_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     let project_id = instance
         .project_id
@@ -102,14 +102,14 @@ pub async fn request_remediation(
         .repository::<Project>()
         .get(project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     let provider = state
         .database
         .repository::<AiProvider>()
         .get(&provider_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "provider_not_found".to_owned())?;
     if provider.kind != AiProviderKind::AgentCli
         || provider.cli_product.is_none()
@@ -142,7 +142,7 @@ pub async fn request_remediation(
     repository
         .create(&remediation)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     if let Err(error) = write_audit_event(
         &state.database,
         "remediation_write_approval_requested",
@@ -169,7 +169,7 @@ pub async fn approve_remediation(
     let mut remediation = repository
         .get(&remediation_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "remediation_not_found".to_owned())?;
     if remediation.approval_state != ApprovalState::Pending {
         return Err("invalid_input".to_owned());
@@ -195,7 +195,7 @@ pub async fn approve_remediation(
         .repository::<AiProvider>()
         .get(provider_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "provider_not_found".to_owned())?;
     let product = provider
         .cli_product
@@ -208,14 +208,14 @@ pub async fn approve_remediation(
         .repository::<Finding>()
         .get(&remediation.finding_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "finding_not_found".to_owned())?;
     let instance = state
         .database
         .repository::<ComponentInstance>()
         .get(&finding.component_instance_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     let project_id = instance
         .project_id
@@ -226,7 +226,7 @@ pub async fn approve_remediation(
         .repository::<Project>()
         .get(project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     if !project
         .allowed_ai_providers
@@ -283,7 +283,7 @@ pub async fn approve_remediation(
     repository
         .update(&remediation)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
 
     write_audit_event(
         &state.database,
@@ -306,7 +306,7 @@ pub async fn approve_remediation(
         repository
             .update(&remediation)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?;
+            .map_err(|error| opaque(error, "storage_unavailable"))?;
     }
     match agent_result {
         Ok(result) => {
@@ -349,7 +349,7 @@ pub async fn reject_remediation(
     let mut remediation = repository
         .get(&remediation_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "remediation_not_found".to_owned())?;
     if remediation.approval_state != ApprovalState::Pending {
         return Err("invalid_input".to_owned());
@@ -359,7 +359,7 @@ pub async fn reject_remediation(
     repository
         .update(&remediation)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "remediation_write_rejected",
@@ -383,7 +383,7 @@ pub async fn run_safe_tests(
     let mut remediation = repository
         .get(&remediation_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "remediation_not_found".to_owned())?;
     if remediation.approval_state != ApprovalState::Approved {
         return Err("permission_denied".to_owned());
@@ -451,7 +451,7 @@ pub async fn run_safe_tests(
     repository
         .update(&remediation)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         if passed {

@@ -39,7 +39,7 @@ pub async fn save_ai_provider(
         Some(id) => repository
             .get(id)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?,
+            .map_err(|error| opaque(error, "storage_unavailable"))?,
         None => None,
     };
     if input.id.is_some() && existing.is_none() {
@@ -59,7 +59,7 @@ pub async fn save_ai_provider(
         Some(
             OsCredentialStore
                 .put(secret.as_bytes())
-                .map_err(|_| "credential_store_unavailable".to_owned())?,
+                .map_err(|error| opaque(error, "credential_store_unavailable"))?,
         )
     } else {
         old_credential_ref.clone()
@@ -144,7 +144,7 @@ pub async fn set_project_ai_providers(
         .repository::<AiProvider>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let known = providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -162,14 +162,14 @@ pub async fn set_project_ai_providers(
     let mut project = repository
         .get(&project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     project.allowed_ai_providers = deduplicated;
     project.updated_at = Utc::now();
     repository
         .update(&project)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "project_ai_providers_updated",
@@ -243,7 +243,7 @@ pub async fn run_ai_request(
         .repository::<AiDataTransferApproval>()
         .create(&approval_record)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "ai_data_transfer_approved",
@@ -258,7 +258,7 @@ pub async fn run_ai_request(
         Some(reference) => Some(
             OsCredentialStore
                 .get(reference)
-                .map_err(|_| "credential_store_unavailable".to_owned())?,
+                .map_err(|error| opaque(error, "credential_store_unavailable"))?,
         ),
         None => None,
     };
@@ -285,7 +285,7 @@ pub async fn run_ai_request(
         .repository::<AiRun>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let sent_files = Arc::new(std::sync::Mutex::new(Vec::new()));
     let network_attempted = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let request = AiRequest {
@@ -312,7 +312,7 @@ pub async fn run_ai_request(
         PublicDataHttp::new(HttpPolicy {
             public_downloads_enabled: false,
         })
-        .map_err(|_| "storage_unavailable".to_owned())?,
+        .map_err(|error| opaque(error, "storage_unavailable"))?,
     );
     let transport = HttpAiTransport::new(http);
     let host_aliases = load_ai_host_aliases(&state.database).await;
@@ -351,7 +351,7 @@ pub async fn run_ai_request(
             Ok(())
         })
         .await
-        .map_err(|_| "storage_unavailable".to_owned())??;
+        .map_err(|error| opaque(error, "storage_unavailable"))??;
     match run_tool_loop(&transport, &request, &executor).await {
         Ok(response) => {
             let run = AiRun {
@@ -370,7 +370,7 @@ pub async fn run_ai_request(
             if !run_repository
                 .update(&run)
                 .await
-                .map_err(|_| "storage_unavailable".to_owned())?
+                .map_err(|error| opaque(error, "storage_unavailable"))?
             {
                 return Err("storage_unavailable".to_owned());
             }
@@ -420,7 +420,7 @@ pub async fn run_ai_request(
             if !run_repository
                 .update(&run)
                 .await
-                .map_err(|_| "storage_unavailable".to_owned())?
+                .map_err(|error| opaque(error, "storage_unavailable"))?
             {
                 return Err("storage_unavailable".to_owned());
             }

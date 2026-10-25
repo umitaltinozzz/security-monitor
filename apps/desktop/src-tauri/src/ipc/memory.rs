@@ -20,7 +20,7 @@ pub async fn list_memories(
         .repository::<Memory>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .into_iter()
         .filter(|memory| memory.expires_at.is_none_or(|expires| expires > now))
         .filter(|memory| match scope {
@@ -80,7 +80,7 @@ pub async fn create_memory(
         .repository::<Memory>()
         .create(&memory)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "memory_created",
@@ -106,7 +106,7 @@ pub async fn update_memory(
         .repository::<Memory>()
         .get(&memory_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "not_found".to_owned())?;
     let now = Utc::now();
     if let Some(content) = content {
@@ -129,7 +129,7 @@ pub async fn update_memory(
         .repository::<Memory>()
         .update(&memory)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
     {
         return Err("not_found".to_owned());
     }
@@ -152,7 +152,7 @@ pub async fn delete_memory(state: State<'_, AppState>, memory_id: String) -> Res
         .repository::<Memory>()
         .delete(&memory_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
     {
         return Err("not_found".to_owned());
     }
@@ -175,7 +175,7 @@ pub async fn export_memories(state: State<'_, AppState>) -> Result<MemoryArchive
         .repository::<Memory>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .into_iter()
         .filter(|memory| memory.expires_at.is_none_or(|expires| expires > now))
         .collect::<Vec<_>>();
@@ -242,7 +242,7 @@ pub async fn import_memories(
             .repository::<Memory>()
             .create(memory)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?;
+            .map_err(|error| opaque(error, "storage_unavailable"))?;
     }
     write_audit_event(
         &state.database,
@@ -262,7 +262,7 @@ pub async fn delete_all_memories(state: State<'_, AppState>) -> Result<u64, Stri
         .database
         .delete_all_memories()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "memories_deleted_all",
@@ -286,19 +286,19 @@ async fn validate_memory_scope(
             .repository::<Project>()
             .get(scope_id)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?
+            .map_err(|error| opaque(error, "storage_unavailable"))?
             .is_some(),
         MemoryScope::Server => database
             .repository::<Asset>()
             .get(scope_id)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?
+            .map_err(|error| opaque(error, "storage_unavailable"))?
             .is_some(),
         MemoryScope::Finding => database
             .repository::<Finding>()
             .get(scope_id)
             .await
-            .map_err(|_| "storage_unavailable".to_owned())?
+            .map_err(|error| opaque(error, "storage_unavailable"))?
             .is_some(),
     };
     if exists {

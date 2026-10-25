@@ -7,7 +7,7 @@ pub async fn list_news_signals(state: State<'_, AppState>) -> Result<Vec<NewsSig
         .repository::<NewsSignal>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -23,8 +23,8 @@ pub async fn refresh_news_signals(state: State<'_, AppState>) -> Result<NewsSync
         state.database.clone(),
         state.app_data_dir.clone(),
     )
-    .map_err(|_| "unknown".to_owned())?
+    .map_err(|error| opaque(error, "unknown"))?
     .refresh()
     .await
-    .map_err(|_| "unknown".to_owned())
+    .map_err(|error| opaque(error, "unknown"))
 }

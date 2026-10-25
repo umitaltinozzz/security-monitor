@@ -7,14 +7,14 @@ pub async fn list_projects(state: State<'_, AppState>) -> Result<Vec<Project>, S
         .repository::<Project>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
 pub async fn add_project(state: State<'_, AppState>, path: String) -> Result<Project, String> {
     let canonical = PathBuf::from(path)
         .canonicalize()
-        .map_err(|_| "invalid_project_path".to_owned())?;
+        .map_err(|error| opaque(error, "invalid_project_path"))?;
     if !canonical.is_dir() {
         return Err("invalid_project_path".to_owned());
     }
@@ -27,7 +27,7 @@ pub async fn add_project(state: State<'_, AppState>, path: String) -> Result<Pro
         .repository::<Project>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     if projects
         .iter()
         .any(|project| project.root_path == root_path)
@@ -57,7 +57,7 @@ pub async fn add_project(state: State<'_, AppState>, path: String) -> Result<Pro
         .repository::<Project>()
         .create(&project)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "project_added",
@@ -72,7 +72,7 @@ pub async fn add_project(state: State<'_, AppState>, path: String) -> Result<Pro
 
 #[tauri::command]
 pub async fn discover_local_projects(path: String) -> Result<ProjectDiscoveryView, String> {
-    let result = discover_projects(path).map_err(|_| "invalid_project_path".to_owned())?;
+    let result = discover_projects(path).map_err(|error| opaque(error, "invalid_project_path"))?;
     let candidates = result
         .candidates
         .into_iter()

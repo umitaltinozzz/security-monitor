@@ -11,7 +11,7 @@ pub(super) use security_monitor_agent_transport::{
 pub(super) use security_monitor_ai::{
     AiRequest, AiSettings, DataCategory, HttpAiTransport, MAX_OUTPUT_TOKENS_PER_CALL,
     TransferApprovalInput, create_transfer_approval, enforce_budget, estimate_cost,
-    maximum_run_token_bounds, redact_text_with_host_aliases, run_tool_loop,
+    maximum_run_token_bounds, redact_text, redact_text_with_host_aliases, run_tool_loop,
     validate_provider_config,
 };
 pub(super) use security_monitor_app_services::ServerSnapshotError;
@@ -57,6 +57,12 @@ pub(super) use uuid::Uuid;
 
 pub(super) use crate::{app_state::AppState, ipc_types::*};
 
+pub(super) fn opaque<E: std::fmt::Debug>(error: E, code: &str) -> String {
+    let redacted = redact_text(&format!("{error:?}"));
+    tracing::warn!(error_code = code, error = %redacted.text, "IPC operation failed");
+    code.to_owned()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct StoredSshTarget {
     pub(super) target: SshTargetInput,
@@ -71,7 +77,7 @@ pub(super) fn to_ssh_target(input: SshTargetInput) -> Result<SshTarget, String> 
         input.port,
         None,
     )
-    .map_err(|_| "invalid_input".to_owned())
+    .map_err(|error| opaque(error, "invalid_input"))
 }
 
 pub(super) fn persist_server_snapshot(
@@ -99,11 +105,11 @@ pub(crate) fn load_server_snapshot(
         .join(format!("{asset_id}.json"));
     match fs::read(path) {
         Ok(bytes) => {
-            let inventory: AgentInventory =
-                serde_json::from_slice(&bytes).map_err(|_| "collection_failed".to_owned())?;
+            let inventory: AgentInventory = serde_json::from_slice(&bytes)
+                .map_err(|error| opaque(error, "collection_failed"))?;
             inventory
                 .validate()
-                .map_err(|_| "collection_failed".to_owned())?;
+                .map_err(|error| opaque(error, "collection_failed"))?;
             Ok(Some(inventory))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -154,7 +160,7 @@ pub(super) async fn write_audit_event_as(
             result,
         })
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 pub(super) fn status_key(status: &FindingStatus) -> &'static str {

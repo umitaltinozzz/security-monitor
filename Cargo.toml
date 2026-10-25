@@ -65,3 +65,4 @@ zeroize = "1.8"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 yarn-lock-parser = "0.14"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }

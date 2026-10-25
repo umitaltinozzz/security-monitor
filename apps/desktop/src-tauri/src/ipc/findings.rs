@@ -7,7 +7,7 @@ pub async fn list_findings(state: State<'_, AppState>) -> Result<Vec<Finding>, S
         .repository::<Finding>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -17,7 +17,7 @@ pub async fn list_advisories(state: State<'_, AppState>) -> Result<Vec<Advisory>
         .repository::<Advisory>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -27,7 +27,7 @@ pub async fn list_components(state: State<'_, AppState>) -> Result<Vec<Component
         .repository::<Component>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -39,7 +39,7 @@ pub async fn list_component_instances(
         .repository::<ComponentInstance>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -51,7 +51,7 @@ pub async fn list_finding_evidence(
         .repository::<FindingEvidence>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -61,7 +61,7 @@ pub async fn list_scan_runs(state: State<'_, AppState>) -> Result<Vec<ScanRun>, 
         .repository::<ScanRun>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -71,7 +71,7 @@ pub async fn list_audit_events(state: State<'_, AppState>) -> Result<Vec<AuditEv
         .repository::<AuditEvent>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -83,7 +83,7 @@ pub async fn set_finding_status(
     let mut finding = repository
         .get(&change.finding_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "finding_not_found".to_owned())?;
     let scope = match change.scope.as_str() {
         "finding" => DispositionScope::Finding,
@@ -106,11 +106,12 @@ pub async fn set_finding_status(
         current_risk_expires_at: finding.risk_expires_at,
         at: Utc::now(),
     };
-    apply_transition(&mut finding, &transition).map_err(|_| "status_rejected".to_owned())?;
+    apply_transition(&mut finding, &transition)
+        .map_err(|error| opaque(error, "status_rejected"))?;
     repository
         .update(&finding)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let action = format!(
         "finding_status_changed:{}:{}",
         status_key(&finding.status),

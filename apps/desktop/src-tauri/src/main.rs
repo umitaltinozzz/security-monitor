@@ -5,6 +5,7 @@ mod background;
 mod drift_sync;
 mod ipc;
 mod ipc_types;
+mod logging;
 
 use std::{fs, io, path::PathBuf};
 
@@ -81,6 +82,7 @@ fn main() {
                 cfg!(debug_assertions),
             );
             fs::create_dir_all(&app_data_dir)?;
+            logging::initialize(&app_data_dir.join("logs"))?;
             let settings = load_settings(&app_data_dir);
             let database_path: PathBuf = app_data_dir.join("security-monitor.sqlite3");
             let database = tauri::async_runtime::block_on(Database::open(database_path))?;

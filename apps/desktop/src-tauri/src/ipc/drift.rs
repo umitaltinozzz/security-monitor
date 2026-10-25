@@ -9,7 +9,7 @@ pub async fn list_project_server_links(
         .repository::<ProjectServerLink>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 /// Links a server to a project only after the user confirms it runs that project's deployments;
@@ -28,7 +28,7 @@ pub async fn link_project_server(
     if projects
         .get(&project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .is_none()
     {
         return Err("project_not_found".to_owned());
@@ -38,7 +38,7 @@ pub async fn link_project_server(
         .repository::<Asset>()
         .get(&asset_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .is_none()
     {
         return Err("server_not_found".to_owned());
@@ -47,7 +47,7 @@ pub async fn link_project_server(
     if let Some(existing) = links
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .into_iter()
         .find(|link| link.project_id == project_id && link.asset_id == asset_id)
     {
@@ -63,7 +63,7 @@ pub async fn link_project_server(
     links
         .create(&link)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "project_server_link_confirmed",
@@ -92,14 +92,14 @@ pub async fn unlink_project_server(
     let Some(link) = links
         .get(&link_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
     else {
         return Ok(false);
     };
     links
         .delete(&link.id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let now = Utc::now();
     write_audit_event(
         &state.database,
@@ -129,7 +129,7 @@ pub(super) async fn refresh_linked_projects(
         .repository::<ProjectServerLink>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .into_iter()
         .filter(|link| link.asset_id == asset_id)
         .map(|link| link.project_id)
@@ -156,7 +156,7 @@ pub async fn get_server_inventory_summary(
         .repository::<Asset>()
         .get(&asset_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let Some(asset) = asset else {
         return Ok(None);
     };
@@ -168,7 +168,7 @@ pub async fn get_server_inventory_summary(
         .repository::<AuditEvent>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .into_iter()
         .filter(|event| {
             event.action == "server_inventory_collection_approved"

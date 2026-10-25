@@ -23,13 +23,13 @@ pub async fn get_ai_configuration(
         .repository::<AiProvider>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let runs = state
         .database
         .repository::<AiRun>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     Ok(AiConfigurationView {
         settings,
         providers,
@@ -51,13 +51,13 @@ pub(super) async fn save_ai_settings_for_app(
 ) -> Result<(), String> {
     settings
         .validate()
-        .map_err(|_| "invalid_input".to_owned())?;
+        .map_err(|error| opaque(error, "invalid_input"))?;
     let providers = state
         .database
         .repository::<AiProvider>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let provider_ids = providers
         .iter()
         .map(|provider| provider.id.as_str())
@@ -105,7 +105,7 @@ pub(super) async fn save_ai_settings_for_app(
         .repository::<Project>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     if settings
         .mcp_source_access_projects
         .iter()

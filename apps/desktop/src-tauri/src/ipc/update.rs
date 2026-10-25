@@ -48,15 +48,15 @@ fn build_updater(
     public_key: &str,
     error_code: &'static str,
 ) -> Result<tauri_plugin_updater::Updater, String> {
-    let endpoint = Url::parse(UPDATE_MANIFEST_URL).map_err(|_| error_code.to_owned())?;
+    let endpoint = Url::parse(UPDATE_MANIFEST_URL).map_err(|error| opaque(error, error_code))?;
     app.updater_builder()
         .timeout(Duration::from_secs(30))
         .pubkey(public_key)
         .endpoints(vec![endpoint])
-        .map_err(|_| error_code.to_owned())?
+        .map_err(|error| opaque(error, error_code))?
         .configure_client(configure_updater_client)
         .build()
-        .map_err(|_| error_code.to_owned())
+        .map_err(|error| opaque(error, error_code))
 }
 
 #[tauri::command]
@@ -81,7 +81,7 @@ pub async fn check_for_updates(
     let update = updater
         .check()
         .await
-        .map_err(|_| "update_check_failed".to_owned())?;
+        .map_err(|error| opaque(error, "update_check_failed"))?;
     let Some(update) = update else {
         return Ok(UpdateCheckResult {
             available: false,
@@ -129,7 +129,7 @@ pub async fn install_update(
     let update = updater
         .check()
         .await
-        .map_err(|_| "update_install_failed".to_owned())?
+        .map_err(|error| opaque(error, "update_install_failed"))?
         .filter(|update| update.version == expected_version)
         .ok_or_else(|| "update_changed".to_owned())?;
     authorize_updater_destination(
@@ -143,7 +143,7 @@ pub async fn install_update(
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|_| "update_install_failed".to_owned())?;
+        .map_err(|error| opaque(error, "update_install_failed"))?;
     app.restart();
 }
 

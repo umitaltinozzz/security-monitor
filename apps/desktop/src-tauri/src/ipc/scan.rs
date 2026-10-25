@@ -17,11 +17,11 @@ pub async fn start_project_scan(
         .repository::<Project>()
         .get(&project_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "project_not_found".to_owned())?;
     let root = PathBuf::from(&project.root_path)
         .canonicalize()
-        .map_err(|_| "invalid_project_path".to_owned())?;
+        .map_err(|error| opaque(error, "invalid_project_path"))?;
     if !root.is_dir() {
         return Err("invalid_project_path".to_owned());
     }
@@ -34,7 +34,7 @@ pub async fn start_project_scan(
             reason: ScanReason::Manual,
         })
         .await
-        .map_err(|_| "scan_failed".to_owned())?;
+        .map_err(|error| opaque(error, "scan_failed"))?;
     let scan_id = handle.id.clone();
     let returned_id = scan_id.clone();
     let result_store = Arc::clone(&state.scan_results);
@@ -110,7 +110,7 @@ pub async fn detect_scanners(
     let http = PublicDataHttp::new(HttpPolicy {
         public_downloads_enabled: settings.public_downloads_enabled,
     })
-    .map_err(|_| "storage_unavailable".to_owned())?;
+    .map_err(|error| opaque(error, "storage_unavailable"))?;
     let adapters = ScannerAdapters::new(http, state.app_data_dir.clone());
     let mut results = Vec::new();
     for engine in [
@@ -164,12 +164,12 @@ pub async fn install_scanner(
     let http = PublicDataHttp::new(HttpPolicy {
         public_downloads_enabled: true,
     })
-    .map_err(|_| "unknown".to_owned())?;
+    .map_err(|error| opaque(error, "unknown"))?;
     let adapters = ScannerAdapters::new(http, state.app_data_dir.clone());
     adapters
         .install_pinned(engine_kind, true)
         .await
-        .map_err(|_| "unknown".to_owned())?;
+        .map_err(|error| opaque(error, "unknown"))?;
     write_audit_event(
         &state.database,
         "scanner_installed",
@@ -192,7 +192,7 @@ pub async fn update_advisory_data(
     let http = PublicDataHttp::new(HttpPolicy {
         public_downloads_enabled: true,
     })
-    .map_err(|_| "unknown".to_owned())?;
+    .map_err(|error| opaque(error, "unknown"))?;
     let updater = OsvDatabaseUpdater::new(http);
     let mut ecosystems = settings.ecosystems;
     if let Ok(assets) = state.database.repository::<Asset>().list().await {
@@ -215,12 +215,12 @@ pub async fn update_advisory_data(
             ecosystems,
         )
         .await
-        .map_err(|_| "unknown".to_owned())?;
+        .map_err(|error| opaque(error, "unknown"))?;
     let queue = state.scans.read().await.queue.clone();
     queue
         .refresh_advisories()
         .await
-        .map_err(|_| "scan_failed".to_owned())?;
+        .map_err(|error| opaque(error, "scan_failed"))?;
     Ok(statuses
         .into_iter()
         .map(|status| AdvisoryUpdateStatus {

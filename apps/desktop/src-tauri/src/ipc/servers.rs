@@ -9,7 +9,7 @@ pub async fn list_server_assets(state: State<'_, AppState>) -> Result<Vec<Asset>
         .repository::<Asset>()
         .list()
         .await
-        .map_err(|_| "storage_unavailable".to_owned())
+        .map_err(|error| opaque(error, "storage_unavailable"))
 }
 
 #[tauri::command]
@@ -34,7 +34,7 @@ pub async fn inspect_server_host_key(input: SshTargetInput) -> Result<String, St
     let target = to_ssh_target(input)?;
     let candidate = inspect_host_key(&target)
         .await
-        .map_err(|_| "host_key_failed".to_owned())?;
+        .map_err(|error| opaque(error, "host_key_failed"))?;
     Ok(candidate.fingerprint)
 }
 
@@ -52,19 +52,19 @@ pub async fn pair_server(
     let target = to_ssh_target(input.clone())?;
     let candidate = inspect_host_key(&target)
         .await
-        .map_err(|_| "host_key_failed".to_owned())?;
+        .map_err(|error| opaque(error, "host_key_failed"))?;
     if candidate.fingerprint != confirmed_fingerprint {
         return Err("host_key_changed".to_owned());
     }
     let store = OsCredentialStore;
     let instructions = create_pairing_instructions(&store, &device_label)
-        .map_err(|_| "pairing_failed".to_owned())?;
+        .map_err(|error| opaque(error, "pairing_failed"))?;
     let credential = StoredSshTarget {
         target: input.clone(),
         private_key_ref: instructions.private_key_ref.clone(),
     };
     let credential_bytes =
-        serde_json::to_vec(&credential).map_err(|_| "pairing_failed".to_owned())?;
+        serde_json::to_vec(&credential).map_err(|error| opaque(error, "pairing_failed"))?;
     let target_ref = match store.put(&credential_bytes) {
         Ok(reference) => reference,
         Err(_) => {
@@ -126,7 +126,7 @@ pub async fn collect_server_inventory(
         .repository::<Asset>()
         .get(&asset_id)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?
+        .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "server_not_found".to_owned())?;
     let target_ref = asset
         .ssh_target_ref
@@ -139,9 +139,9 @@ pub async fn collect_server_inventory(
     let store = OsCredentialStore;
     let target_bytes = store
         .get(target_ref)
-        .map_err(|_| "collection_failed".to_owned())?;
-    let stored: StoredSshTarget =
-        serde_json::from_slice(&target_bytes).map_err(|_| "collection_failed".to_owned())?;
+        .map_err(|error| opaque(error, "collection_failed"))?;
+    let stored: StoredSshTarget = serde_json::from_slice(&target_bytes)
+        .map_err(|error| opaque(error, "collection_failed"))?;
     let target = to_ssh_target(stored.target)?;
     let approved_at = Utc::now();
     let collection = collect_agent(
@@ -152,11 +152,11 @@ pub async fn collect_server_inventory(
         InventoryCollectionApproval::after_explicit_user_confirmation(approved_at),
     )
     .await
-    .map_err(|_| "collection_failed".to_owned())?;
+    .map_err(|error| opaque(error, "collection_failed"))?;
     collection
         .inventory
         .validate()
-        .map_err(|_| "collection_failed".to_owned())?;
+        .map_err(|error| opaque(error, "collection_failed"))?;
     persist_server_snapshot(&state.app_data_dir, &asset.id, &collection.inventory)?;
     let evaluation = evaluate_server_os_packages(
         state.app_data_dir.join("advisories").join("osv"),
@@ -175,7 +175,7 @@ pub async fn collect_server_inventory(
         .repository::<Asset>()
         .update(&updated_asset)
         .await
-        .map_err(|_| "storage_unavailable".to_owned())?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     write_audit_event(
         &state.database,
         "server_inventory_collection_approved",
@@ -199,5 +199,5 @@ pub(super) async fn evaluate_server_os_packages(
 ) -> Result<super::os_packages::OsPackageEvaluation, String> {
     tokio::task::spawn_blocking(move || evaluate_os_packages(&cache_root, &inventory))
         .await
-        .map_err(|_| "collection_failed".to_owned())
+        .map_err(|error| opaque(error, "collection_failed"))
 }
