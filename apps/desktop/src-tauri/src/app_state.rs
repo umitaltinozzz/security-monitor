@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    fs,
+    fs::{self, OpenOptions},
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -12,6 +13,7 @@ use security_monitor_scan_orchestrator::{
     LocalProjectScanner, LocalScanSettings, ScanLimits, ScanQueue,
 };
 use tokio::sync::{Mutex, RwLock};
+use uuid::Uuid;
 
 use crate::ipc_types::{AppSettings, ScanResult};
 
@@ -106,7 +108,8 @@ impl AppState {
         }
         let next_scans = ScanServices::new(&self.database, &self.app_data_dir, &settings)?;
         let bytes = serde_json::to_vec(&settings).map_err(|_| "storage_unavailable".to_owned())?;
-        fs::write(&self.settings_path, bytes).map_err(|_| "storage_unavailable".to_owned())?;
+        write_settings_atomically(&self.settings_path, &bytes)
+            .map_err(|_| "storage_unavailable".to_owned())?;
         *self.settings.write().await = settings;
         *self.scans.write().await = next_scans;
         Ok(())
@@ -118,7 +121,8 @@ impl AppState {
             .map_err(|_| "invalid_input".to_owned())?;
         let bytes =
             serde_json::to_vec_pretty(&settings).map_err(|_| "storage_unavailable".to_owned())?;
-        fs::write(&self.ai_settings_path, bytes).map_err(|_| "storage_unavailable".to_owned())?;
+        write_settings_atomically(&self.ai_settings_path, &bytes)
+            .map_err(|_| "storage_unavailable".to_owned())?;
         *self.ai_settings.write().await = settings;
         Ok(())
     }
@@ -126,27 +130,149 @@ impl AppState {
 
 pub fn load_settings(app_data_dir: &Path) -> AppSettings {
     let path = app_data_dir.join("settings.json");
-    fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    match fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(settings) => settings,
+            Err(_) => {
+                warn_corrupt_settings(&path, "settings");
+                AppSettings::default()
+            }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => AppSettings::default(),
+        Err(_) => {
+            tracing::warn!(
+                setting = "settings",
+                reason = "read_failed",
+                "Settings could not be loaded"
+            );
+            AppSettings::default()
+        }
+    }
 }
 
 fn load_ai_settings(app_data_dir: &Path) -> AiSettings {
     let path = app_data_dir.join("ai-settings.json");
-    fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<AiSettings>(&bytes).ok())
-        .filter(|settings| settings.validate().is_ok())
-        .unwrap_or_default()
+    match fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice::<AiSettings>(&bytes) {
+            Ok(settings) if settings.validate().is_ok() => settings,
+            _ => {
+                warn_corrupt_settings(&path, "ai-settings");
+                AiSettings::default()
+            }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => AiSettings::default(),
+        Err(_) => {
+            tracing::warn!(
+                setting = "ai-settings",
+                reason = "read_failed",
+                "Settings could not be loaded"
+            );
+            AiSettings::default()
+        }
+    }
+}
+
+fn warn_corrupt_settings(path: &Path, setting: &'static str) {
+    let Some(parent) = path.parent() else {
+        tracing::warn!(
+            setting,
+            reason = "invalid_file",
+            "Settings could not be loaded"
+        );
+        return;
+    };
+    let quarantined_path = parent.join(format!("{setting}.corrupt-{}.json", Uuid::new_v4()));
+    match fs::rename(path, quarantined_path) {
+        Ok(()) => {
+            tracing::warn!(
+                setting,
+                reason = "invalid_file_quarantined",
+                "Settings could not be loaded; a copy was preserved"
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                setting,
+                reason = "invalid_file_quarantine_failed",
+                "Settings could not be loaded or preserved"
+            );
+        }
+    }
+}
+
+fn write_settings_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "settings path has no parent")
+        })?;
+    fs::create_dir_all(parent)?;
+    let filename = path
+        .file_name()
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "settings path has no filename")
+        })?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{filename}.{}.tmp", Uuid::new_v4()));
+    let mut created = false;
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        created = true;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        replace_file(&temporary, path)
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_file(temporary: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(temporary, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(temporary: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let temporary = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+    let result = unsafe { MoveFileExW(temporary.as_ptr(), destination.as_ptr(), flags) };
+    if result == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AppSettings, MAX_RETAINED_SCAN_RESULTS, retain_scan_result, take_scan_result};
+    use super::{
+        AiSettings, AppSettings, MAX_RETAINED_SCAN_RESULTS, load_ai_settings, load_settings,
+        retain_scan_result, take_scan_result, write_settings_atomically,
+    };
     use crate::ipc_types::ScanResult;
     use security_monitor_core::ScanOutcome;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, fs};
 
     #[test]
     fn saved_settings_ignore_the_removed_notification_toggle() {
@@ -177,5 +303,44 @@ mod tests {
         let scan_id = results.keys().next().cloned().unwrap();
         assert!(take_scan_result(&mut results, &scan_id).is_some());
         assert!(take_scan_result(&mut results, &scan_id).is_none());
+    }
+
+    #[test]
+    fn corrupt_settings_are_quarantined_and_replaced_with_defaults() {
+        let directory = tempfile::tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        let ai_settings_path = directory.path().join("ai-settings.json");
+        fs::write(&settings_path, b"not json").unwrap();
+        fs::write(&ai_settings_path, b"not json").unwrap();
+
+        assert_eq!(load_settings(directory.path()), AppSettings::default());
+        assert_eq!(load_ai_settings(directory.path()), AiSettings::default());
+        assert!(!settings_path.exists());
+        assert!(!ai_settings_path.exists());
+
+        let quarantined = fs::read_dir(directory.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert!(quarantined.iter().any(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("settings.corrupt-"))
+        }));
+        assert!(quarantined.iter().any(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("ai-settings.corrupt-"))
+        }));
+    }
+
+    #[test]
+    fn settings_are_replaced_atomically_without_leaving_temporary_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        fs::write(&path, b"old settings").unwrap();
+
+        write_settings_atomically(&path, b"new settings").unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"new settings");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 }
