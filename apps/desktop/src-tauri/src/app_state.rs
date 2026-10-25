@@ -16,6 +16,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::ipc_types::{AppSettings, ScanResult};
 
 pub struct ScanServices {
+    pub scanner: Arc<LocalProjectScanner>,
     pub queue: Arc<ScanQueue>,
 }
 
@@ -41,7 +42,7 @@ impl ScanServices {
                 .queue(ScanLimits::default())
                 .map_err(|_| "storage_unavailable".to_owned())?,
         );
-        Ok(Self { queue })
+        Ok(Self { scanner, queue })
     }
 }
 
@@ -119,4 +120,19 @@ fn load_ai_settings(app_data_dir: &Path) -> AiSettings {
         .and_then(|bytes| serde_json::from_slice::<AiSettings>(&bytes).ok())
         .filter(|settings| settings.validate().is_ok())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+
+    #[test]
+    fn saved_settings_ignore_the_removed_notification_toggle() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"notifications_enabled":true,"scan_interval_hours":12}"#)
+                .expect("older settings remain readable");
+
+        assert_eq!(settings.scan_interval_hours, 12);
+        assert_eq!(settings.ecosystems, AppSettings::default().ecosystems);
+    }
 }

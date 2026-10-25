@@ -498,7 +498,7 @@
   },
   "settings": {
     "title": "Settings",
-    "description": "Privacy, update, notification, appearance, and language preferences.",
+    "description": "Privacy, update, appearance, and language preferences.",
     "privacyTitle": "Privacy and network",
     "ecosystems": "Ecosystems for advisory downloads",
     "scanners": "Scanner and runtime tools",
@@ -517,7 +517,8 @@
     "updatesNeedDownloads": "Enable public downloads above to check for signed updates.",
     "releaseNotes": "Release notes",
     "updateInstalled": "The update was verified and installed. The app is restarting.",
-    "notifications": "Desktop notifications",
+    "notifications": "Notifications",
+    "notificationsUnavailable": "Notification delivery is not available in this build.",
     "scanInterval": "Scheduled scan interval",
     "backup": "Local database backup",
     "backupHelp": "Backup and restore controls are available after the reporting milestone.",

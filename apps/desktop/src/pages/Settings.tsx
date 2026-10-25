@@ -159,18 +159,12 @@ export function Settings() {
             </button>
           </div>
         )}
-        <label className="setting-row">
+        <div className="setting-row">
           <span>
             <strong>{t("settings.notifications")}</strong>
+            <small>{t("settings.notificationsUnavailable")}</small>
           </span>
-          <input
-            type="checkbox"
-            checked={settings.notifications_enabled}
-            onChange={(event) =>
-              void saveSettings({ ...settings, notifications_enabled: event.target.checked })
-            }
-          />
-        </label>
+        </div>
         <label className="setting-row">
           <span>
             <strong>{t("settings.scanInterval")}</strong>

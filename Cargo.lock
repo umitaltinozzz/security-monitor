@@ -5405,6 +5405,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
  "ts-rs",
  "url",

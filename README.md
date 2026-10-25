@@ -66,7 +66,7 @@ flowchart LR
   Server["Linux server: read-only agent or agentless SSH"] -- "approved, pinned SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "only with public downloads on" --> Engine
   Desktop -. "reviewed and approved request" .-> AI["Optional AI provider you choose"]
-  Desktop -. "approved destinations" .-> Notify["Webhook, Slack, Discord, email"]
+  Notify["Notification delivery is not available in this build"]
 ```
 
 The agent has no remote-command feature: it runs only a fixed, compile-time list of read-only collectors and never needs root.
@@ -140,7 +140,7 @@ Screenshots come from the deterministic test fixture, not a real scan or server.
 Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
 - Using it: [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
-- How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration and notifications](docs/orchestration.md)
+- How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration](docs/orchestration.md)
 - Trust: [Privacy](docs/privacy.md) · [Threat model](docs/threat-model.md) · [Data sources](docs/data-sources.md) · [Signed releases and updates](docs/release.md) · [Performance budgets](docs/performance.md)
 
 ## Contributing and security

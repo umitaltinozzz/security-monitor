@@ -41,7 +41,6 @@ pub struct AppSettings {
     pub theme: ThemePreference,
     pub onboarding_completed: bool,
     pub public_downloads_enabled: bool,
-    pub notifications_enabled: bool,
     pub scan_interval_hours: u16,
     pub ecosystems: Vec<String>,
 }
@@ -53,7 +52,6 @@ impl Default for AppSettings {
             theme: ThemePreference::System,
             onboarding_completed: false,
             public_downloads_enabled: false,
-            notifications_enabled: true,
             scan_interval_hours: 24,
             ecosystems: vec!["npm".to_owned(), "pypi".to_owned(), "cargo".to_owned()],
         }

@@ -66,7 +66,7 @@ flowchart LR
   Server["Linux sunucu: salt okunur ajan veya ajansız SSH"] -- "onaylı, sabitlenmiş SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "yalnızca genel indirmeler açıkken" --> Engine
   Desktop -. "incelenip onaylanan istek" .-> AI["Seçtiğin isteğe bağlı AI sağlayıcısı"]
-  Desktop -. "onaylı hedefler" .-> Notify["Webhook, Slack, Discord, e-posta"]
+  Notify["Bildirim gönderimi bu derlemede kullanılamıyor"]
 ```
 
 Ajanda uzaktan komut çalıştırma özelliği yoktur: yalnızca derleme zamanında sabitlenmiş, salt okunur toplayıcıları çalıştırır ve root yetkisi istemez.
@@ -140,7 +140,7 @@ Ekran görüntüleri gerçek bir taramadan veya sunucudan değil, deterministik 
 Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
 - Kullanım: [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
-- Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu ve bildirimler](docs/orchestration.md)
+- Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu](docs/orchestration.md)
 - Güven: [Gizlilik](docs/privacy.md) · [Tehdit modeli](docs/threat-model.md) · [Veri kaynakları](docs/data-sources.md) · [İmzalı sürümler ve güncellemeler](docs/release.md) · [Performans bütçeleri](docs/performance.md)
 
 ## Katkı ve güvenlik

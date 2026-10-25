@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
+mod background;
 mod drift_sync;
 mod ipc;
 mod ipc_types;
@@ -15,6 +16,7 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+use tokio_util::sync::CancellationToken;
 
 const EN_TRAY_LOCALE: &str = include_str!("../../src/locales/en.json");
 const TR_TRAY_LOCALE: &str = include_str!("../../src/locales/tr.json");
@@ -58,6 +60,8 @@ fn should_keep_tray_process_alive(exit_code: Option<i32>) -> bool {
 
 fn main() {
     let smoke_test = std::env::args_os().any(|argument| argument == "--smoke-test");
+    let background_cancellation = CancellationToken::new();
+    let setup_background_cancellation = background_cancellation.clone();
     let builder = tauri::Builder::default();
     let builder = if let Some(public_key) =
         option_env!("SECMON_UPDATE_PUBLIC_KEY").filter(|key| !key.trim().is_empty())
@@ -122,6 +126,7 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+            background::start(app.handle().clone(), setup_background_cancellation.clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -187,12 +192,14 @@ fn main() {
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Security Monitor");
-    app.run(|_, event| {
-        if let tauri::RunEvent::ExitRequested { code, api, .. } = event
-            && should_keep_tray_process_alive(code)
+    app.run(move |_, event| match event {
+        tauri::RunEvent::Exit => background_cancellation.cancel(),
+        tauri::RunEvent::ExitRequested { code, api, .. }
+            if should_keep_tray_process_alive(code) =>
         {
             api.prevent_exit();
         }
+        _ => {}
     });
 }
 

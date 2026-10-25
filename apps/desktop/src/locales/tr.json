@@ -498,7 +498,7 @@
   },
   "settings": {
     "title": "Ayarlar",
-    "description": "Gizlilik, güncelleme, bildirim, görünüm ve dil tercihleri.",
+    "description": "Gizlilik, güncelleme, görünüm ve dil tercihleri.",
     "privacyTitle": "Gizlilik ve ağ",
     "ecosystems": "Duyuru indirmeleri için ekosistemler",
     "scanners": "Tarayıcı ve çalışma zamanı araçları",
@@ -517,7 +517,8 @@
     "updatesNeedDownloads": "İmzalı güncellemeleri denetlemek için yukarıdan herkese açık indirmeleri etkinleştirin.",
     "releaseNotes": "Sürüm notları",
     "updateInstalled": "Güncelleme doğrulanıp yüklendi. Uygulama yeniden başlatılıyor.",
-    "notifications": "Masaüstü bildirimleri",
+    "notifications": "Bildirimler",
+    "notificationsUnavailable": "Bildirim gönderimi bu derlemede kullanılamıyor.",
     "scanInterval": "Zamanlanmış tarama aralığı",
     "backup": "Yerel veritabanı yedeği",
     "backupHelp": "Yedekleme ve geri yükleme araçları raporlama milestone'ında eklenecek.",

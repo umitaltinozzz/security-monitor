@@ -4,7 +4,6 @@
     "theme": "system",
     "onboarding_completed": false,
     "public_downloads_enabled": false,
-    "notifications_enabled": true,
     "scan_interval_hours": 24,
     "ecosystems": ["npm", "pypi", "cargo"]
   },
