@@ -3,6 +3,9 @@
   "identifier": "main-window",
   "description": "Security Monitor's local main window and explicitly registered IPC commands.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://tauri.localhost/*"]
+  },
   "permissions": [
     "core:default",
     "allow-get-app-settings",
