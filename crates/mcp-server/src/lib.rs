@@ -13,7 +13,7 @@ use security_monitor_ai::{
 use security_monitor_core::{
     Advisory, AiProvider, AiProviderKind, ApprovalState, Asset, AuditEvent, AuditResult,
     AuditScope, Component, ComponentInstance, Finding, FindingEvidence, Memory, MemoryKind,
-    MemoryScope, Project, Remediation, is_source_code_like,
+    MemoryScope, Project, ProjectServerLink, Remediation, is_source_code_like,
 };
 use security_monitor_database::Database;
 use security_monitor_remediation::{

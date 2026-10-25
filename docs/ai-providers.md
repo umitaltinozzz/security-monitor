@@ -25,6 +25,8 @@ Only enabled tools are sent to the API. Source reads are available only for anal
 
 CLI MCP opens an existing database without creating or migrating it and exposes only enabled tools. Source-file reads and search require both tools to be enabled and a successful per-project grant under **Settings → AI → Local MCP source access**. The CLI intersects the configured project list with the latest successful grant/revocation audit event and denies when either source is missing. Grants and revocations are recorded in Activity. A local MCP client may forward returned text, so grant only projects suitable for that client. Desktop AI source reads remain inside the reviewed provider request and require the project provider allowlist. When enabled, MCP agents can write only bounded, redacted shared notes; see [Shared local memory](shared-memory.md).
 
+Every project, asset, finding, and project-memory read is restricted to the executor's approved project set. Desktop AI binds that set to the selected project; CLI MCP uses the projects with a current local grant. Explicit IDs outside the set are denied. Recall without a scope returns only notes for the approved project set (or global notes in the local CLI workspace); it never returns every memory note.
+
 ## Data and authority limits
 
 Repository files, advisory text, scanner output, MCP results, and model output are untrusted data. Models cannot change finding priority or set `not_reachable`, `false_positive`, or `accepted_risk`. The AI tool list has no shell, generic process execution, remote-command, finding-status, priority, or write-to-project operation. Missing, stale, or unverified evidence remains uncertain.

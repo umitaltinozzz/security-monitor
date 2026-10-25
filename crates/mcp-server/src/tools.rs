@@ -2,7 +2,8 @@ use super::*;
 
 pub struct WorkspaceTools {
     pub(super) database: Database,
-    pub(super) source_access_projects: BTreeSet<String>,
+    pub(super) approved_projects: BTreeSet<String>,
+    pub(super) global_memory_allowed: bool,
     pub(super) host_aliases: BTreeMap<String, String>,
     pub(super) remediation_queue_dir: Option<PathBuf>,
     pub(super) memory_agent: String,
@@ -13,7 +14,10 @@ pub struct WorkspaceTools {
 
 impl WorkspaceTools {
     pub fn new(database: Database, source_access_project: Option<String>) -> Self {
-        Self::with_approved_source_projects(database, source_access_project)
+        let global_memory_allowed = source_access_project.is_none();
+        let mut tools = Self::with_approved_source_projects(database, source_access_project);
+        tools.global_memory_allowed = global_memory_allowed;
+        tools
     }
 
     pub fn with_approved_source_projects(
@@ -22,7 +26,8 @@ impl WorkspaceTools {
     ) -> Self {
         Self {
             database,
-            source_access_projects: source_access_projects.into_iter().collect(),
+            approved_projects: source_access_projects.into_iter().collect(),
+            global_memory_allowed: true,
             host_aliases: BTreeMap::new(),
             remediation_queue_dir: None,
             memory_agent: "agent".into(),
@@ -74,6 +79,7 @@ impl WorkspaceTools {
                 Ok(json!(
                     projects
                         .into_iter()
+                        .filter(|project| self.approved_projects.contains(&project.id))
                         .map(|project| json!({"id":project.id,"name":project.name,
                     "last_scan_at":project.last_scan_at}))
                         .collect::<Vec<_>>()
@@ -86,7 +92,18 @@ impl WorkspaceTools {
                     .list()
                     .await
                     .map_err(McpError::Database)?;
-                Ok(json!(assets.into_iter().map(|asset| json!({"id":asset.id,"alias":asset.hostname_alias,
+                let links = self
+                    .database
+                    .repository::<ProjectServerLink>()
+                    .list()
+                    .await
+                    .map_err(McpError::Database)?;
+                let approved_assets: BTreeSet<_> = links
+                    .into_iter()
+                    .filter(|link| self.approved_projects.contains(&link.project_id))
+                    .map(|link| link.asset_id)
+                    .collect();
+                Ok(json!(assets.into_iter().filter(|asset| approved_assets.contains(&asset.id)).map(|asset| json!({"id":asset.id,"alias":asset.hostname_alias,
                     "environment":asset.environment,"last_success_at":asset.last_success_at,
                     "verification":if asset.last_success_at.is_some() {"observed"} else {"needs_review"}})).collect::<Vec<_>>()))
             }
@@ -116,6 +133,12 @@ impl WorkspaceTools {
 
     async fn list_findings(&self, arguments: &Value) -> Result<Value, McpError> {
         let project_id = optional_string(arguments, "project_id")?;
+        if project_id
+            .as_deref()
+            .is_some_and(|id| !self.approved_projects.contains(id))
+        {
+            return Err(McpError::PermissionDenied);
+        }
         let findings = self
             .database
             .repository::<Finding>()
@@ -154,7 +177,14 @@ impl WorkspaceTools {
             .collect();
         let output = findings.into_iter().filter_map(|finding| {
             let instance = instance_by_id.get(&finding.component_instance_id)?;
-            if project_id.as_deref().is_some_and(|id| instance.project_id.as_deref() != Some(id)) { return None; }
+            let instance_project_id = instance.project_id.as_deref()?;
+            if !self.approved_projects.contains(instance_project_id)
+                || project_id
+                    .as_deref()
+                    .is_some_and(|id| instance_project_id != id)
+            {
+                return None;
+            }
             let component = component_by_id.get(&instance.component_id)?;
             let advisory = advisory_by_id.get(&finding.advisory_id)?;
             Some(json!({"id":finding.id,"advisory_id":advisory.canonical_id,"title":advisory.title,
@@ -168,6 +198,7 @@ impl WorkspaceTools {
 
     async fn get_finding_evidence(&self, arguments: &Value) -> Result<Value, McpError> {
         let finding_id = required_string(arguments, "finding_id")?;
+        self.require_finding_in_approved_project(finding_id).await?;
         let evidence = self
             .database
             .repository::<FindingEvidence>()
@@ -188,13 +219,7 @@ impl WorkspaceTools {
 
     async fn compare_repo_deployment(&self, arguments: &Value) -> Result<Value, McpError> {
         let finding_id = required_string(arguments, "finding_id")?;
-        let finding = self
-            .database
-            .repository::<Finding>()
-            .get(finding_id)
-            .await
-            .map_err(McpError::Database)?
-            .ok_or(McpError::ResourceUnavailable)?;
+        let (finding, _) = self.require_finding_in_approved_project(finding_id).await?;
         Ok(
             json!({"finding_id":finding.id,"repo_status":finding.repo_status,
             "production_status":finding.production_status,
@@ -204,20 +229,7 @@ impl WorkspaceTools {
 
     async fn analyze_impact(&self, arguments: &Value) -> Result<Value, McpError> {
         let finding_id = required_string(arguments, "finding_id")?;
-        let finding = self
-            .database
-            .repository::<Finding>()
-            .get(finding_id)
-            .await
-            .map_err(McpError::Database)?
-            .ok_or(McpError::ResourceUnavailable)?;
-        let instance = self
-            .database
-            .repository::<ComponentInstance>()
-            .get(&finding.component_instance_id)
-            .await
-            .map_err(McpError::Database)?
-            .ok_or(McpError::ResourceUnavailable)?;
+        let (finding, instance) = self.require_finding_in_approved_project(finding_id).await?;
         let component = self
             .database
             .repository::<Component>()
@@ -242,14 +254,13 @@ impl WorkspaceTools {
             .filter(|item| item.finding_id == finding.id)
             .collect::<Vec<_>>();
         let memory_context = if self.memory_context_enabled {
-            let mut scopes = vec![
-                (MemoryScope::Global, None),
-                (MemoryScope::Finding, Some(finding.id.clone())),
-            ];
+            let mut scopes = vec![(MemoryScope::Finding, Some(finding.id.clone()))];
             if let Some(project_id) = instance.project_id.clone() {
                 scopes.push((MemoryScope::Project, Some(project_id)));
             }
-            if let Some(asset_id) = instance.asset_id.clone() {
+            if let Some(asset_id) = instance.asset_id.clone()
+                && self.is_asset_approved_for_any_project(&asset_id).await?
+            {
                 scopes.push((MemoryScope::Server, Some(asset_id)));
             }
             self.memories_for_scopes(&scopes, "", 12).await?
@@ -271,20 +282,7 @@ impl WorkspaceTools {
     async fn prepare_patch(&self, arguments: &Value) -> Result<Value, McpError> {
         let finding_id = required_string(arguments, "finding_id")?;
         let provider_id = required_string(arguments, "provider_id")?;
-        let finding = self
-            .database
-            .repository::<Finding>()
-            .get(finding_id)
-            .await
-            .map_err(McpError::Database)?
-            .ok_or(McpError::ResourceUnavailable)?;
-        let instance = self
-            .database
-            .repository::<ComponentInstance>()
-            .get(&finding.component_instance_id)
-            .await
-            .map_err(McpError::Database)?
-            .ok_or(McpError::ResourceUnavailable)?;
+        let (finding, instance) = self.require_finding_in_approved_project(finding_id).await?;
         let project_id = instance.project_id.ok_or(McpError::ResourceUnavailable)?;
         let project = self.project(&project_id).await?;
         let provider = self
@@ -323,6 +321,8 @@ impl WorkspaceTools {
             .await
             .map_err(McpError::Database)?
             .ok_or(McpError::ResourceUnavailable)?;
+        self.require_finding_in_approved_project(&remediation.finding_id)
+            .await?;
         if remediation.approval_state != ApprovalState::Approved {
             return Err(McpError::PermissionDenied);
         }
@@ -350,7 +350,7 @@ impl WorkspaceTools {
         let project = self
             .project(required_string(arguments, "project_id")?)
             .await?;
-        self.require_source_project(&project.id)?;
+        self.require_approved_project(&project.id)?;
         let relative = safe_relative_path(required_string(arguments, "path")?)?;
         let root = CapabilityDir::open_ambient_dir(&project.root_path, ambient_authority())
             .map_err(|_| McpError::ResourceUnavailable)?;
@@ -388,7 +388,7 @@ impl WorkspaceTools {
         let project = self
             .project(required_string(arguments, "project_id")?)
             .await?;
-        self.require_source_project(&project.id)?;
+        self.require_approved_project(&project.id)?;
         let query = required_string(arguments, "query")?.to_ascii_lowercase();
         if query.is_empty() || query.len() > 256 {
             return Err(McpError::InvalidArguments);
@@ -480,12 +480,53 @@ impl WorkspaceTools {
         )
     }
 
-    fn require_source_project(&self, project_id: &str) -> Result<(), McpError> {
-        if self.source_access_projects.contains(project_id) {
+    pub(super) fn require_approved_project(&self, project_id: &str) -> Result<(), McpError> {
+        if self.approved_projects.contains(project_id) {
             Ok(())
         } else {
             Err(McpError::PermissionDenied)
         }
+    }
+
+    pub(super) async fn require_finding_in_approved_project(
+        &self,
+        finding_id: &str,
+    ) -> Result<(Finding, ComponentInstance), McpError> {
+        let finding = self
+            .database
+            .repository::<Finding>()
+            .get(finding_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        let instance = self
+            .database
+            .repository::<ComponentInstance>()
+            .get(&finding.component_instance_id)
+            .await
+            .map_err(McpError::Database)?
+            .ok_or(McpError::ResourceUnavailable)?;
+        let project_id = instance
+            .project_id
+            .as_deref()
+            .ok_or(McpError::PermissionDenied)?;
+        self.require_approved_project(project_id)?;
+        Ok((finding, instance))
+    }
+
+    pub(super) async fn is_asset_approved_for_any_project(
+        &self,
+        asset_id: &str,
+    ) -> Result<bool, McpError> {
+        let links = self
+            .database
+            .repository::<ProjectServerLink>()
+            .list()
+            .await
+            .map_err(McpError::Database)?;
+        Ok(links.iter().any(|link| {
+            link.asset_id == asset_id && self.approved_projects.contains(&link.project_id)
+        }))
     }
 }
 #[async_trait::async_trait]

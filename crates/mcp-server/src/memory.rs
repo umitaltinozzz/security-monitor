@@ -11,27 +11,40 @@ impl WorkspaceTools {
         }
         let scope = arguments.get("scope").map(parse_memory_scope).transpose()?;
         let scope_id = optional_string(arguments, "scope_id")?;
-        if scope == Some(MemoryScope::Global) && scope_id.is_some()
-            || scope.is_some_and(|scope| scope != MemoryScope::Global) && scope_id.is_none()
-        {
-            return Err(McpError::InvalidArguments);
-        }
-        if let Some(scope) = scope
-            && scope != MemoryScope::Global
-        {
-            self.require_memory_scope_exists(scope, scope_id.as_deref().unwrap_or_default())
-                .await?;
-        }
-        let notes = self
-            .database
-            .search_memories(query, chrono::Utc::now(), 100)
-            .await
-            .map_err(McpError::Database)?
-            .into_iter()
-            .filter(|memory| memory_matches_scope(memory, scope, scope_id.as_deref()))
-            .take(30)
-            .map(|memory| self.memory_json(memory))
-            .collect::<Vec<_>>();
+        let scopes = if let Some(scope) = scope {
+            if scope == MemoryScope::Global {
+                if scope_id.is_some() {
+                    return Err(McpError::InvalidArguments);
+                }
+                if !self.global_memory_allowed {
+                    return Err(McpError::PermissionDenied);
+                }
+                vec![(MemoryScope::Global, None)]
+            } else {
+                let Some(scope_id) = scope_id else {
+                    return Err(McpError::InvalidArguments);
+                };
+                self.require_memory_scope_exists(scope, &scope_id).await?;
+                vec![(scope, Some(scope_id))]
+            }
+        } else {
+            if scope_id.is_some() {
+                return Err(McpError::InvalidArguments);
+            }
+            if self.approved_projects.is_empty() {
+                if self.global_memory_allowed {
+                    vec![(MemoryScope::Global, None)]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                self.approved_projects
+                    .iter()
+                    .map(|project_id| (MemoryScope::Project, Some(project_id.clone())))
+                    .collect()
+            }
+        };
+        let notes = self.memories_for_scopes(&scopes, query, 30).await?;
         Ok(json!({"memories":notes,"untrusted_data":true}))
     }
 
@@ -41,13 +54,13 @@ impl WorkspaceTools {
         }
         let scope = parse_memory_scope(arguments.get("scope").ok_or(McpError::InvalidArguments)?)?;
         let scope_id = optional_string(arguments, "scope_id")?;
-        if scope == MemoryScope::Global && scope_id.is_some()
-            || scope != MemoryScope::Global && scope_id.is_none()
-        {
+        if scope_id.is_some() != (scope != MemoryScope::Global) {
             return Err(McpError::InvalidArguments);
         }
         if let Some(scope_id) = scope_id.as_deref() {
             self.require_memory_scope_exists(scope, scope_id).await?;
+        } else if !self.global_memory_allowed {
+            return Err(McpError::PermissionDenied);
         }
         let kind: MemoryKind = serde_json::from_value(
             arguments
@@ -119,6 +132,11 @@ impl WorkspaceTools {
             .await
             .map_err(McpError::Database)?
             .ok_or(McpError::ResourceUnavailable)?;
+        self.require_memory_scope_exists(
+            memory.scope,
+            memory.scope_id.as_deref().unwrap_or_default(),
+        )
+        .await?;
         if memory.author != author {
             return Err(McpError::PermissionDenied);
         }
@@ -160,25 +178,27 @@ impl WorkspaceTools {
         scope_id: &str,
     ) -> Result<(), McpError> {
         let exists = match scope {
-            MemoryScope::Global => true,
+            MemoryScope::Global => self.global_memory_allowed,
             MemoryScope::Project => {
+                self.require_approved_project(scope_id)?;
                 self.project(scope_id).await?;
                 true
             }
-            MemoryScope::Server => self
-                .database
-                .repository::<Asset>()
-                .get(scope_id)
-                .await
-                .map_err(McpError::Database)?
-                .is_some(),
-            MemoryScope::Finding => self
-                .database
-                .repository::<Finding>()
-                .get(scope_id)
-                .await
-                .map_err(McpError::Database)?
-                .is_some(),
+            MemoryScope::Server => {
+                if !self.is_asset_approved_for_any_project(scope_id).await? {
+                    return Err(McpError::PermissionDenied);
+                }
+                self.database
+                    .repository::<Asset>()
+                    .get(scope_id)
+                    .await
+                    .map_err(McpError::Database)?
+                    .is_some()
+            }
+            MemoryScope::Finding => {
+                self.require_finding_in_approved_project(scope_id).await?;
+                true
+            }
         };
         if exists {
             Ok(())
@@ -227,21 +247,5 @@ fn parse_memory_scope(value: &Value) -> Result<MemoryScope, McpError> {
         Some("server") => Ok(MemoryScope::Server),
         Some("finding") => Ok(MemoryScope::Finding),
         _ => Err(McpError::InvalidArguments),
-    }
-}
-
-fn memory_matches_scope(
-    memory: &Memory,
-    scope: Option<MemoryScope>,
-    scope_id: Option<&str>,
-) -> bool {
-    match scope {
-        None => true,
-        Some(MemoryScope::Global) => memory.scope == MemoryScope::Global,
-        Some(scope) if scope_id.is_some() => {
-            memory.scope == MemoryScope::Global
-                || (memory.scope == scope && memory.scope_id.as_deref() == scope_id)
-        }
-        Some(_) => false,
     }
 }

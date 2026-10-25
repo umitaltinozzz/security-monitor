@@ -1,6 +1,6 @@
 use super::*;
 use chrono::Utc;
-use security_monitor_core::Project;
+use security_monitor_core::{Memory, MemoryKind, MemoryScope, Project};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 struct NoopExecutor;
@@ -235,6 +235,119 @@ async fn reviewed_ai_source_reads_are_capability_limited_and_redacted() {
             tools.execute(&read_call("escape.txt")).await,
             Err(ToolError::InvalidArguments)
         );
+    }
+    database.close().await;
+}
+
+#[tokio::test]
+async fn approved_project_scope_limits_mcp_reads_and_unscoped_memory_recall() {
+    let first_root = tempfile::tempdir().unwrap();
+    let second_root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        second_root.path().join("secret.txt"),
+        "second-project-secret",
+    )
+    .unwrap();
+    let database = database_with_project(first_root.path()).await;
+    let now = Utc::now();
+    database
+        .repository::<Project>()
+        .create(&Project {
+            id: "project-2".into(),
+            name: "second fixture".into(),
+            root_path: second_root
+                .path()
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            git_remote: None,
+            reference_branch: None,
+            allowed_ai_providers: vec![],
+            last_scan_at: None,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .unwrap();
+    for (id, scope, scope_id, content) in [
+        (
+            "memory-project-1",
+            MemoryScope::Project,
+            Some("project-1"),
+            "approved project context",
+        ),
+        (
+            "memory-project-2",
+            MemoryScope::Project,
+            Some("project-2"),
+            "other project context",
+        ),
+        ("memory-global", MemoryScope::Global, None, "global context"),
+    ] {
+        database
+            .repository::<Memory>()
+            .create(&Memory {
+                id: id.into(),
+                scope,
+                scope_id: scope_id.map(str::to_owned),
+                kind: MemoryKind::ProjectContext,
+                content: content.into(),
+                author: "user".into(),
+                source_run_id: None,
+                created_at: now,
+                expires_at: None,
+                pinned: false,
+                verified_at: None,
+                verified_by: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    let tools = WorkspaceTools::new(database.clone(), Some("project-1".into()));
+    let projects = tools
+        .execute(&ToolCall {
+            id: "projects".into(),
+            name: "list_projects".into(),
+            arguments: json!({}),
+        })
+        .await
+        .unwrap();
+    assert_eq!(projects.as_array().unwrap().len(), 1);
+    assert_eq!(projects[0]["id"], "project-1");
+
+    let recall = tools
+        .execute(&ToolCall {
+            id: "recall".into(),
+            name: "recall".into(),
+            arguments: json!({}),
+        })
+        .await
+        .unwrap();
+    let recall = recall.to_string();
+    assert!(recall.contains("approved project context"));
+    assert!(!recall.contains("other project context"));
+    assert!(!recall.contains("global context"));
+
+    for call in [
+        ToolCall {
+            id: "findings".into(),
+            name: "list_findings".into(),
+            arguments: json!({"project_id":"project-2"}),
+        },
+        ToolCall {
+            id: "file".into(),
+            name: "read_project_file".into(),
+            arguments: json!({"project_id":"project-2","path":"secret.txt"}),
+        },
+        ToolCall {
+            id: "global-memory".into(),
+            name: "recall".into(),
+            arguments: json!({"scope":"global"}),
+        },
+    ] {
+        assert_eq!(tools.execute(&call).await, Err(ToolError::InvalidArguments));
     }
     database.close().await;
 }
