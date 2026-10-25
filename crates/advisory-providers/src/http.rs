@@ -236,25 +236,13 @@ impl PublicDataHttp {
     }
 
     async fn feed_client(&self, url: &Url, host: &str) -> Result<reqwest::Client, ProviderError> {
-        let mut builder = reqwest::Client::builder()
-            .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none());
-        if self.allow_loopback && url.scheme() == "http" {
-            return builder.build().map_err(|_| ProviderError::HttpClient);
-        }
-        let port = url
-            .port_or_known_default()
-            .ok_or(ProviderError::InvalidUrl)?;
-        let addresses = tokio::net::lookup_host((host, port))
-            .await
-            .map_err(|_| ProviderError::DestinationNotAllowed)?
-            .collect::<Vec<SocketAddr>>();
-        if addresses.is_empty() || addresses.iter().any(|address| !is_public_ip(address.ip())) {
-            return Err(ProviderError::DestinationNotAllowed);
-        }
-        builder = builder.resolve(host, addresses[0]);
-        builder.build().map_err(|_| ProviderError::HttpClient)
+        pinned_destination_client(
+            url,
+            host,
+            self.allow_loopback && url.scheme() == "http",
+            Duration::from_secs(30),
+        )
+        .await
     }
 
     pub async fn download_to(
@@ -345,8 +333,9 @@ impl PublicDataHttp {
             return Err(ProviderError::DestinationNotAllowed);
         }
         tracing::info!(destination_host = %host, "sending user-approved notification summary");
-        let response = self
-            .client
+        let client =
+            pinned_destination_client(&url, &host, loopback_http, Duration::from_secs(90)).await?;
+        let response = client
             .post(url)
             .json(payload)
             .send()
@@ -448,6 +437,39 @@ impl PublicDataHttp {
             Err(ProviderError::NetworkDisabled)
         }
     }
+}
+
+async fn pinned_destination_client(
+    url: &Url,
+    host: &str,
+    allow_loopback: bool,
+    timeout: Duration,
+) -> Result<reqwest::Client, ProviderError> {
+    let port = url
+        .port_or_known_default()
+        .ok_or(ProviderError::InvalidUrl)?;
+    let lookup_host = host.trim_start_matches('[').trim_end_matches(']');
+    let addresses = tokio::net::lookup_host((lookup_host, port))
+        .await
+        .map_err(|_| ProviderError::DestinationNotAllowed)?
+        .collect::<Vec<SocketAddr>>();
+    if !resolved_addresses_allowed(&addresses, allow_loopback) {
+        return Err(ProviderError::DestinationNotAllowed);
+    }
+    reqwest::Client::builder()
+        .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(lookup_host, &addresses)
+        .build()
+        .map_err(|_| ProviderError::HttpClient)
+}
+
+fn resolved_addresses_allowed(addresses: &[SocketAddr], allow_loopback: bool) -> bool {
+    !addresses.is_empty()
+        && addresses.iter().all(|address| {
+            is_public_ip(address.ip()) || (allow_loopback && address.ip().is_loopback())
+        })
 }
 
 fn ensure_rustls_crypto_provider() -> Result<(), ProviderError> {
@@ -671,6 +693,7 @@ impl From<zip::result::ZipError> for ProviderError {
 mod tests {
     use futures_util::stream;
     use serde_json::json;
+    use std::net::SocketAddr;
     use url::Url;
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
@@ -680,6 +703,7 @@ mod tests {
     use super::{
         HttpPolicy, ProviderError, PublicDataHttp, authorize_updater_destination,
         collect_bounded_body, configure_updater_client, is_allowed_updater_url, is_allowed_url,
+        resolved_addresses_allowed,
     };
 
     #[test]
@@ -869,6 +893,59 @@ mod tests {
         http.post_user_approved_json(&destination, &server.uri(), &payload, true)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn approved_notification_post_does_not_follow_redirects() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/hook"))
+            .respond_with(ResponseTemplate::new(302).insert_header("Location", "/target"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/target"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let http = PublicDataHttp::for_tests();
+        let destination = format!("{}/hook", server.uri());
+        let error = http
+            .post_user_approved_json(
+                &destination,
+                &server.uri(),
+                &json!({"event":"security_finding"}),
+                true,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ProviderError::HttpStatus { status: 302, .. }
+        ));
+    }
+
+    #[test]
+    fn notification_destinations_reject_private_and_link_local_dns_answers() {
+        let address = |value: &str| value.parse::<SocketAddr>().unwrap();
+
+        for blocked in [
+            address("10.0.0.1:443"),
+            address("169.254.1.2:443"),
+            address("127.0.0.1:443"),
+            address("[fc00::1]:443"),
+            address("[fe80::1]:443"),
+        ] {
+            assert!(!resolved_addresses_allowed(&[blocked], false));
+        }
+        assert!(resolved_addresses_allowed(&[address("8.8.8.8:443")], false));
+        assert!(resolved_addresses_allowed(
+            &[address("127.0.0.1:8080")],
+            true
+        ));
     }
 
     #[tokio::test]
