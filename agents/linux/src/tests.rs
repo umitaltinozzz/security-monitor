@@ -7,9 +7,33 @@ use super::{
     parse_package_output,
 };
 use security_monitor_agent_protocol::{
-    CheckKind, CheckStatus, DeploymentSource, DiagnosticCode, PackageSource,
-    osv_os_package_ecosystem,
+    CheckKind, CheckStatus, DeploymentSource, DiagnosticCode, MapsStatus, PackageSource,
+    ProcessRecord, osv_os_package_ecosystem,
 };
+
+#[test]
+fn malformed_process_rows_are_skipped_and_reported_as_stale() {
+    let mut processes = Vec::new();
+    let mut had_stale_observation = false;
+    let retained = super::processes::retain_valid_process(
+        &mut processes,
+        ProcessRecord {
+            pid: 42,
+            executable_path: Some("/usr/bin/bad\npath".to_owned()),
+            user_name: None,
+            service_unit: None,
+            container_id: None,
+            runtime_name: None,
+            maps_status: MapsStatus::Checked,
+            deleted_shared_libraries: Vec::new(),
+        },
+        &mut had_stale_observation,
+    );
+
+    assert!(!retained);
+    assert!(processes.is_empty());
+    assert!(had_stale_observation);
+}
 
 #[test]
 fn system_metadata_parsers_return_only_allowlisted_fields() {

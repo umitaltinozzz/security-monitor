@@ -124,7 +124,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             Some(_) => had_stale_observation = true,
             None => {}
         }
-        processes.push(ProcessRecord {
+        let process = ProcessRecord {
             pid,
             executable_path,
             user_name,
@@ -133,7 +133,8 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             runtime_name: runtime_name.map(str::to_owned),
             maps_status,
             deleted_shared_libraries,
-        });
+        };
+        retain_valid_process(&mut processes, process, &mut had_stale_observation);
     }
     processes.sort_by_key(|process| process.pid);
 
@@ -214,6 +215,40 @@ fn process_collection_status(
     } else {
         (CheckStatus::Complete, None)
     }
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn retain_valid_process(
+    processes: &mut Vec<ProcessRecord>,
+    process: ProcessRecord,
+    had_stale_observation: &mut bool,
+) -> bool {
+    let valid_text = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 16 * 1024
+            && !value.bytes().any(|byte| byte.is_ascii_control())
+    };
+    let valid_optional_text = |value: Option<&str>| value.is_none_or(valid_text);
+    if process.pid == 0
+        || process
+            .executable_path
+            .as_deref()
+            .is_some_and(|path| !path.starts_with('/') || !valid_text(path))
+        || !valid_optional_text(process.user_name.as_deref())
+        || !valid_optional_text(process.service_unit.as_deref())
+        || !valid_optional_text(process.container_id.as_deref())
+        || !valid_optional_text(process.runtime_name.as_deref())
+        || process.deleted_shared_libraries.len() > 256
+        || process
+            .deleted_shared_libraries
+            .iter()
+            .any(|name| !valid_text(name) || name.contains('/') || !name.starts_with("lib"))
+    {
+        *had_stale_observation = true;
+        return false;
+    }
+    processes.push(process);
+    true
 }
 
 #[cfg(target_os = "linux")]
@@ -387,7 +422,7 @@ fn runtime_name(value: &str) -> Option<&'static str> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use security_monitor_agent_protocol::{CheckStatus, DiagnosticCode, MapsStatus};
+    use security_monitor_agent_protocol::{CheckStatus, DiagnosticCode, MapsStatus, ProcessRecord};
 
     #[test]
     fn runtime_matching_uses_only_known_executable_names() {
@@ -424,6 +459,33 @@ mod tests {
         assert_eq!(
             super::process_collection_status(false, false, false),
             (CheckStatus::Complete, None)
+        );
+    }
+
+    #[test]
+    fn invalid_process_record_is_skipped_and_marks_processes_partial() {
+        let mut processes = Vec::new();
+        let mut had_stale_observation = false;
+        super::retain_valid_process(
+            &mut processes,
+            ProcessRecord {
+                pid: 42,
+                executable_path: Some("/usr/bin/bad\npath".to_owned()),
+                user_name: None,
+                service_unit: None,
+                container_id: None,
+                runtime_name: None,
+                maps_status: MapsStatus::Checked,
+                deleted_shared_libraries: Vec::new(),
+            },
+            &mut had_stale_observation,
+        );
+
+        assert!(processes.is_empty());
+        assert!(had_stale_observation);
+        assert_eq!(
+            super::process_collection_status(false, false, had_stale_observation),
+            (CheckStatus::Partial, Some(DiagnosticCode::StaleObservation))
         );
     }
 
