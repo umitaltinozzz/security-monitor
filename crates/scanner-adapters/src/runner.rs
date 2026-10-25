@@ -25,26 +25,21 @@ use crate::{
 
 impl ScannerAdapters {
     pub async fn detect_engine(&self, engine: EngineKind) -> EngineDetection {
+        let managed = self
+            .managed_path(engine)
+            .and_then(|managed_path| managed_path.parent().map(|parent| parent.to_path_buf()));
+        let managed = match managed {
+            Some(directory) => Some(detect_in_paths(engine, [directory]).await),
+            None => None,
+        };
+        if let Some(detection) = managed
+            .as_ref()
+            .filter(|detection| detection.status == EngineStatus::Available)
+        {
+            return detection.clone();
+        }
         let system = detect_in_paths(engine, executable_search_paths()).await;
-        if system.status == EngineStatus::Available {
-            return system;
-        }
-
-        let Some(managed_path) = self.managed_path(engine) else {
-            return unsupported_or_system(engine, system);
-        };
-        let Some(parent) = managed_path.parent() else {
-            return system;
-        };
-        let managed = detect_in_paths(engine, [parent.to_path_buf()]).await;
-        if managed.status == EngineStatus::Available {
-            return managed;
-        }
-        if system.status == EngineStatus::Missing {
-            unsupported_or_system(engine, managed)
-        } else {
-            system
-        }
+        select_detection(engine, system, managed)
     }
 
     pub async fn scan(&self, request: ScanRequest) -> Result<ScanExecution, ScannerError> {
@@ -131,6 +126,23 @@ impl ScannerAdapters {
         let canonical = path.canonicalize().ok()?;
         canonical.starts_with(&app_root).then_some(canonical)
     }
+}
+
+pub(crate) fn select_detection(
+    engine: EngineKind,
+    system: EngineDetection,
+    managed: Option<EngineDetection>,
+) -> EngineDetection {
+    if let Some(detection) = managed
+        .as_ref()
+        .filter(|detection| detection.status == EngineStatus::Available)
+    {
+        return detection.clone();
+    }
+    if system.status != EngineStatus::Missing {
+        return system;
+    }
+    unsupported_or_system(engine, managed.unwrap_or(system))
 }
 
 pub(crate) fn contains_semgrepignore(root: &Path) -> Result<bool, ScannerError> {

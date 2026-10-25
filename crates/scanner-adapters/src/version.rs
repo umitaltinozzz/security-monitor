@@ -193,11 +193,32 @@ pub(crate) fn managed_executable_path(
 
 pub(crate) fn executable_search_paths() -> Vec<PathBuf> {
     env::var_os("PATH")
-        .map(|path| env::split_paths(&path).collect())
+        .map(|path| absolute_search_paths(env::split_paths(&path)))
         .unwrap_or_default()
+}
+
+fn absolute_search_paths(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    paths
+        .into_iter()
+        .filter(|path| path.is_absolute())
+        .collect()
 }
 
 #[cfg(test)]
 pub(crate) fn parse_version_for_test(text: &str) -> Option<Version> {
     parse_version_from_text(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::absolute_search_paths;
+    use std::{env, path::PathBuf};
+
+    #[test]
+    fn executable_search_paths_drop_relative_entries() {
+        let absolute = env::temp_dir().join("scanner-bin");
+        let paths = absolute_search_paths([PathBuf::from("relative-bin"), absolute.clone()]);
+
+        assert_eq!(paths, vec![absolute]);
+    }
 }

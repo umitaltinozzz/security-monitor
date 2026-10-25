@@ -4,10 +4,11 @@ use security_monitor_advisory_providers::{HttpPolicy, PublicDataHttp};
 use tempfile::tempdir;
 
 use crate::{
-    EngineKind, EngineStatus, FindingKind, NormalizedScan, ScanMode, ScanRequest,
+    EngineDetection, EngineKind, EngineStatus, FindingKind, NormalizedScan, ScanMode, ScanRequest,
     normalize_osv_scanner, normalize_semgrep, normalize_trivy,
     runner::args_for_test,
     runner::contains_semgrepignore,
+    runner::select_detection,
     version::{detect_in_paths, minimum_supported_version, parse_version_for_test},
 };
 
@@ -144,6 +145,27 @@ fn minimum_engine_versions_are_read_from_the_pinned_data_file() {
             .unwrap()
             .to_string(),
         "0.70.0"
+    );
+}
+
+#[test]
+fn available_managed_scanner_is_preferred_over_a_system_installation() {
+    let system = EngineDetection {
+        engine: EngineKind::Trivy,
+        status: EngineStatus::Available,
+        version: Some("0.76.1".to_owned()),
+        executable: Some("system/trivy".into()),
+    };
+    let managed = EngineDetection {
+        engine: EngineKind::Trivy,
+        status: EngineStatus::Available,
+        version: Some("0.76.1".to_owned()),
+        executable: Some("app-data/scanners/trivy/0.76.1/trivy".into()),
+    };
+
+    assert_eq!(
+        select_detection(EngineKind::Trivy, system, Some(managed.clone())),
+        managed
     );
 }
 
