@@ -16,6 +16,7 @@ security-monitor-ai = { version = "0.1.0", path = "../../../crates/ai" }
 security-monitor-agent-protocol = { version = "0.1.0", path = "../../../crates/agent-protocol" }
 security-monitor-agent-transport = { version = "0.1.0", path = "../../../crates/agent-transport" }
 security-monitor-app-services = { version = "0.1.0", path = "../../../crates/app-services" }
+security-monitor-bounded-reader = { version = "0.1.0", path = "../../../crates/bounded-reader" }
 chrono.workspace = true
 security-monitor-correlation = { version = "0.1.0", path = "../../../crates/correlation" }
 security-monitor-core = { version = "0.1.0", path = "../../../crates/core" }

@@ -7,6 +7,7 @@ license.workspace = true
 description = "Offline repository dependency inventory and PURL generation for Security Monitor"
 
 [dependencies]
+security-monitor-bounded-reader = { version = "0.1.0", path = "../bounded-reader" }
 cargo-lock = { workspace = true }
 gomod-parser = { workspace = true }
 pep508_rs = { workspace = true }

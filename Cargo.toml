@@ -3,6 +3,7 @@ members = [
     "apps/cli",
     "apps/desktop/src-tauri",
     "crates/core",
+    "crates/bounded-reader",
     "crates/database",
     "crates/inventory",
     "crates/advisory-providers",

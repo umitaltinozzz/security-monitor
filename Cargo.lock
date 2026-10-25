@@ -5196,6 +5196,7 @@ dependencies = [
  "chrono",
  "libc",
  "security-monitor-agent-protocol",
+ "security-monitor-bounded-reader",
  "security-monitor-inventory",
  "serde",
  "serde_json",
@@ -5340,6 +5341,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "security-monitor-bounded-reader"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+]
+
+[[package]]
 name = "security-monitor-core"
 version = "0.1.0"
 dependencies = [
@@ -5397,6 +5406,7 @@ dependencies = [
  "security-monitor-agent-transport",
  "security-monitor-ai",
  "security-monitor-app-services",
+ "security-monitor-bounded-reader",
  "security-monitor-core",
  "security-monitor-correlation",
  "security-monitor-database",
@@ -5462,6 +5472,7 @@ dependencies = [
  "gomod-parser",
  "pep508_rs",
  "purl",
+ "security-monitor-bounded-reader",
  "serde",
  "serde_json",
  "serde_yaml_ng",

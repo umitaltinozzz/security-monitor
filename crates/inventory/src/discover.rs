@@ -8,12 +8,15 @@ use crate::{
     },
     purl::package_url,
 };
+use security_monitor_bounded_reader::read_bounded_text;
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
     path::{Component, Path, PathBuf},
 };
 use thiserror::Error;
+
+const MAX_INVENTORY_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum InventoryError {
@@ -113,7 +116,7 @@ pub fn scan_repository(root: impl AsRef<Path>) -> Result<Inventory, InventoryErr
                 continue;
             }
         };
-        let contents = match fs::read_to_string(canonical) {
+        let contents = match read_bounded_text(&canonical, MAX_INVENTORY_FILE_BYTES) {
             Ok(contents) => contents,
             Err(_) => {
                 state.diagnostics.push(Diagnostic {
@@ -280,7 +283,7 @@ fn parse_requirements_file(
         });
         return;
     }
-    let contents = match fs::read_to_string(canonical_file) {
+    let contents = match read_bounded_text(canonical_file, MAX_INVENTORY_FILE_BYTES) {
         Ok(contents) => contents,
         Err(_) => {
             diagnostics.push(Diagnostic {

@@ -10,6 +10,7 @@ use std::{
 
 use chrono::{DateTime, Duration, Utc};
 use security_monitor_agent_protocol::{AgentInventory, DeploymentIdentity};
+use security_monitor_bounded_reader::read_bounded_text;
 use security_monitor_core::{
     Advisory, Component, ComponentInstance, Finding, FindingStatus, ProductionStatus, Project,
     ProjectServerLink, RepoStatus,
@@ -526,16 +527,9 @@ fn read_dependency_file(root: &Path, relative: &str) -> DependencyFile {
     if !canonical_path.starts_with(&canonical_root) {
         return DependencyFile::Unverifiable;
     }
-    let Ok(file) = std::fs::File::open(&canonical_path) else {
-        return DependencyFile::Unverifiable;
-    };
-    let mut bytes = Vec::new();
-    match std::io::Read::read_to_end(
-        &mut std::io::Read::take(file, MAX_DEPENDENCY_FILE_BYTES + 1),
-        &mut bytes,
-    ) {
-        Ok(read) if read as u64 <= MAX_DEPENDENCY_FILE_BYTES => DependencyFile::Read(bytes),
-        _ => DependencyFile::Unverifiable,
+    match read_bounded_text(&canonical_path, MAX_DEPENDENCY_FILE_BYTES) {
+        Ok(contents) => DependencyFile::Read(contents.into_bytes()),
+        Err(_) => DependencyFile::Unverifiable,
     }
 }
 

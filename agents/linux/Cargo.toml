@@ -9,6 +9,7 @@ description = "Read-only Linux inventory agent for Security Monitor"
 [dependencies]
 chrono = { workspace = true }
 libc = { workspace = true }
+security-monitor-bounded-reader = { version = "0.1.0", path = "../../crates/bounded-reader" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 security-monitor-agent-protocol = { version = "0.1.0", path = "../../crates/agent-protocol" }

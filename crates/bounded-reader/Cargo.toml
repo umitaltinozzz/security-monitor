@@ -1,0 +1,13 @@
+[package]
+name = "security-monitor-bounded-reader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Bounded, no-follow regular file reader shared by repository and server inventory"
+
+[dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
