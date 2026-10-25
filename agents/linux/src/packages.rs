@@ -19,7 +19,8 @@ pub(super) async fn collect_os_packages(os: Option<&OperatingSystem>) -> Package
     };
     match run_allowlisted(&command).await {
         Ok(output) => {
-            let parsed = parse_package_output(&output.stdout, ecosystem, source);
+            let ecosystem = package_ecosystem(os, ecosystem);
+            let parsed = parse_package_output(&output.stdout, &ecosystem, source);
             let status = if parsed.partial {
                 CheckStatus::Partial
             } else {
@@ -45,6 +46,11 @@ pub(super) async fn collect_os_packages(os: Option<&OperatingSystem>) -> Package
             ),
         },
     }
+}
+
+pub(super) fn package_ecosystem(os: Option<&OperatingSystem>, fallback: &str) -> String {
+    os.and_then(osv_os_package_ecosystem)
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 pub(super) fn package_command_for_os(

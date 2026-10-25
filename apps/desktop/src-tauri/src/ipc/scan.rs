@@ -194,10 +194,25 @@ pub async fn update_advisory_data(
     })
     .map_err(|_| "unknown".to_owned())?;
     let updater = OsvDatabaseUpdater::new(http);
+    let mut ecosystems = settings.ecosystems;
+    if let Ok(assets) = state.database.repository::<Asset>().list().await {
+        for asset in assets {
+            let Ok(Some(inventory)) = load_server_snapshot(&state.app_data_dir, &asset.id) else {
+                continue;
+            };
+            if let Some(ecosystem) = inventory
+                .operating_system
+                .as_ref()
+                .and_then(security_monitor_agent_protocol::osv_os_package_ecosystem)
+            {
+                ecosystems.push(ecosystem);
+            }
+        }
+    }
     let statuses = updater
         .update_ecosystems(
             state.app_data_dir.join("advisories").join("osv"),
-            settings.ecosystems,
+            ecosystems,
         )
         .await
         .map_err(|_| "unknown".to_owned())?;

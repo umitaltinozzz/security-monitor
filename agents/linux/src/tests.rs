@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use super::{
     collect_dependency_inventory, is_well_formed_version_id, kernel_restart_required,
     manual_product_name, newest_installed_kernel, os_collection_is_complete,
-    package_command_for_os, parse_docker_inspect, parse_os_release, parse_package_output,
+    package_command_for_os, package_ecosystem, parse_docker_inspect, parse_os_release,
+    parse_package_output,
 };
 use security_monitor_agent_protocol::{
     CheckKind, CheckStatus, DeploymentSource, DiagnosticCode, PackageSource,
+    osv_os_package_ecosystem,
 };
 
 #[test]
@@ -14,6 +16,8 @@ fn system_metadata_parsers_return_only_allowlisted_fields() {
     let os = parse_os_release("ID=debian\nNAME=Debian\nVERSION_ID=12\nSECRET=value\n").expect("OS");
     assert_eq!(os.id.as_deref(), Some("debian"));
     assert_eq!(os.name.as_deref(), Some("Debian"));
+    assert_eq!(osv_os_package_ecosystem(&os).as_deref(), Some("Debian:12"));
+    assert_eq!(package_ecosystem(Some(&os), "deb"), "Debian:12");
     let packages = parse_package_output(
         b"pkg\t1.2.3\tamd64\nmalformed\n",
         "deb",
@@ -27,6 +31,18 @@ fn system_metadata_parsers_return_only_allowlisted_fields() {
     assert_eq!(alpine.records[0].name, "lib-example");
     assert_eq!(alpine.records[0].version.as_deref(), Some("2.4.1-r3"));
     assert!(!alpine.partial);
+}
+
+#[test]
+fn package_ecosystem_maps_supported_osv_distros_and_keeps_others_unmapped() {
+    let ubuntu = parse_os_release("ID=ubuntu\nVERSION_ID=22.04.5\n").expect("Ubuntu OS");
+    assert_eq!(package_ecosystem(Some(&ubuntu), "deb"), "Ubuntu:22.04:LTS");
+
+    let rocky = parse_os_release("ID=rocky\nVERSION_ID=9.5\n").expect("Rocky OS");
+    assert_eq!(package_ecosystem(Some(&rocky), "rpm"), "rpm");
+
+    let alpine = parse_os_release("ID=alpine\nVERSION_ID=3.22\n").expect("Alpine OS");
+    assert_eq!(package_ecosystem(Some(&alpine), "apk"), "apk");
 }
 
 #[test]

@@ -179,13 +179,24 @@ pub async fn get_server_inventory_summary(
     let approved_at = audit
         .map(|event| event.timestamp)
         .ok_or_else(|| "collection_failed".to_owned())?;
-    Ok(Some(collection_summary(asset.id, &inventory, approved_at)))
+    let evaluation = super::servers::evaluate_server_os_packages(
+        state.app_data_dir.join("advisories").join("osv"),
+        inventory.clone(),
+    )
+    .await?;
+    Ok(Some(collection_summary(
+        asset.id,
+        &inventory,
+        approved_at,
+        evaluation,
+    )))
 }
 
 pub(super) fn collection_summary(
     asset_id: String,
     inventory: &AgentInventory,
     approved_at: chrono::DateTime<Utc>,
+    os_package_evaluation: super::os_packages::OsPackageEvaluation,
 ) -> CollectionSummary {
     let mut services_needing_restart = inventory
         .processes
@@ -237,6 +248,8 @@ pub(super) fn collection_summary(
                 )
             })
             .count(),
+        os_package_evaluation_status: os_package_evaluation.status,
+        os_package_findings: os_package_evaluation.findings,
         approved_at,
     }
 }
@@ -247,6 +260,7 @@ mod collection_summary_tests {
     use security_monitor_agent_protocol::{MapsStatus, decode_inventory};
 
     use super::collection_summary;
+    use crate::{ipc::os_packages::OsPackageEvaluation, ipc_types::OsPackageEvaluationStatus};
 
     #[test]
     fn collection_summary_counts_unknown_and_unavailable_maps_per_process() {
@@ -262,7 +276,15 @@ mod collection_summary_tests {
         unknown.maps_status = MapsStatus::Unknown;
         inventory.processes = vec![unavailable, not_applicable, unknown];
 
-        let summary = collection_summary("asset-1".to_owned(), &inventory, Utc::now());
+        let summary = collection_summary(
+            "asset-1".to_owned(),
+            &inventory,
+            Utc::now(),
+            OsPackageEvaluation {
+                status: OsPackageEvaluationStatus::NotEvaluated,
+                findings: Vec::new(),
+            },
+        );
 
         assert_eq!(summary.maps_unverified_process_count, 2);
     }

@@ -4,6 +4,7 @@ pub(crate) mod drift;
 pub(crate) mod findings;
 pub(crate) mod memory;
 pub(crate) mod news;
+mod os_packages;
 pub(crate) mod projects;
 pub(crate) mod remediation;
 pub(crate) mod scan;

@@ -399,6 +399,51 @@ fn pinned_osv_fixture_queries_are_deterministic_and_package_scoped() {
     assert!(!database.status().stale);
 }
 
+#[test]
+fn debian_and_ubuntu_osv_fixtures_use_the_distro_ecosystem_and_dpkg_ordering() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/advisory-db");
+    for (slug, ecosystem, package, affected, fixed, advisory_id) in [
+        (
+            "Debian",
+            "Debian:12",
+            "openssl",
+            "3.0.14-1~deb12u0",
+            "3.0.14-1~deb12u1",
+            "CVE-2026-9001",
+        ),
+        (
+            "Ubuntu",
+            "Ubuntu:22.04:LTS",
+            "curl",
+            "7.81.0-1ubuntu1.19",
+            "7.81.0-1ubuntu1.20",
+            "CVE-2026-9002",
+        ),
+    ] {
+        let database = OsvDatabase::open(root.join(slug)).expect("OSV distro fixture opens");
+        let advisories = database.query(ecosystem, package);
+        assert_eq!(advisories.len(), 1);
+        assert_eq!(advisories[0].canonical_id, advisory_id);
+        let affected_findings = evaluate_inventory(
+            &advisories,
+            &inventory(component(package, Some(affected), ecosystem)),
+        );
+        assert_eq!(affected_findings.len(), 1);
+        assert_eq!(affected_findings[0].reason, FindingReason::AffectedVersion);
+        assert!(
+            evaluate_inventory(
+                &advisories,
+                &inventory(component(package, Some(fixed), ecosystem)),
+            )
+            .is_empty()
+        );
+    }
+    assert_eq!(crate::ecosystem_slug("Debian:12"), Some("Debian"));
+    assert_eq!(crate::ecosystem_slug("Ubuntu:22.04:LTS"), Some("Ubuntu"));
+    assert_eq!(crate::ecosystem_slug("rpm"), None);
+    assert_eq!(crate::ecosystem_slug("apk"), None);
+}
+
 #[tokio::test]
 async fn stale_osv_cache_remains_queryable_when_refresh_is_disabled() {
     let temp = tempfile::tempdir().unwrap();
@@ -490,6 +535,66 @@ async fn osv_updater_installs_a_downloaded_ecosystem_archive_atomically() {
     )
     .unwrap();
     assert!(!scanner_status.stale);
+}
+
+#[tokio::test]
+async fn versioned_distro_ecosystems_share_one_offline_fixture_dump_per_distro() {
+    let server = MockServer::start().await;
+    let mut distro_archives = Vec::new();
+    for (slug, file_name, bytes) in [
+        (
+            "Debian",
+            "CVE-2026-9001.json",
+            include_bytes!("../../../tests/fixtures/advisory-db/Debian/CVE-2026-9001.json")
+                .as_slice(),
+        ),
+        (
+            "Ubuntu",
+            "CVE-2026-9002.json",
+            include_bytes!("../../../tests/fixtures/advisory-db/Ubuntu/CVE-2026-9002.json")
+                .as_slice(),
+        ),
+    ] {
+        let mut writer = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                file_name,
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+        distro_archives.push((slug, writer.finish().unwrap().into_inner()));
+    }
+    for (slug, archive) in &distro_archives {
+        Mock::given(method("GET"))
+            .and(path(format!("/{slug}/all.zip")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(archive.clone()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let updater = OsvDatabaseUpdater::with_base_url(PublicDataHttp::for_tests(), server.uri());
+    let statuses = updater
+        .update_ecosystems(
+            temp.path(),
+            [
+                "Debian:12".to_owned(),
+                "Debian:13".to_owned(),
+                "Ubuntu:22.04:LTS".to_owned(),
+                "Ubuntu:24.04:LTS".to_owned(),
+            ],
+        )
+        .await
+        .expect("one dump serves all releases of each distro");
+    assert_eq!(statuses.len(), 2);
+    assert_eq!(statuses[0].ecosystem, "debian:12");
+    assert_eq!(statuses[1].ecosystem, "ubuntu:22.04:lts");
+    let database = OsvDatabase::open(temp.path().join("Debian")).unwrap();
+    assert_eq!(database.query("Debian:12", "openssl").len(), 1);
+    let database = OsvDatabase::open(temp.path().join("Ubuntu")).unwrap();
+    assert_eq!(database.query("Ubuntu:22.04:LTS", "curl").len(), 1);
 }
 
 #[tokio::test]
@@ -722,6 +827,25 @@ fn ecosystem_versions_use_supported_comparators_or_stay_reviewable() {
         &inventory(component("fixture-package", Some("1:9.2p1-2"), "Debian:12")),
     );
     assert_eq!(debian_epoch[0].status, FindingStatus::New);
+
+    advisory.affected_ranges[0].ecosystem = "Ubuntu:22.04:LTS".to_owned();
+    advisory.affected_ranges[0].events = vec![security_monitor_core::RangeEvent {
+        introduced: Some("1:9.2p1-1ubuntu1".to_owned()),
+        fixed: Some("1:9.2p1-3ubuntu1".to_owned()),
+        last_affected: None,
+        limit: None,
+    }];
+    let ubuntu_epoch = evaluate_inventory(
+        std::slice::from_ref(&advisory),
+        &inventory(component(
+            "fixture-package",
+            Some("1:9.2p1-2ubuntu1"),
+            "Ubuntu:22.04:LTS",
+        )),
+    );
+    assert_eq!(ubuntu_epoch.len(), 1);
+    assert_eq!(ubuntu_epoch[0].status, FindingStatus::New);
+    assert_eq!(ubuntu_epoch[0].reason, FindingReason::AffectedVersion);
     assert!(
         evaluate_inventory(
             std::slice::from_ref(&advisory),

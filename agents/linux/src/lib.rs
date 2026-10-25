@@ -17,6 +17,7 @@ use processes::collect_processes;
 use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DeploymentIdentity,
     DeploymentSource, DiagnosticCode, OperatingSystem, PackageRecord, PackageSource, RuntimeRecord,
+    osv_os_package_ecosystem,
 };
 pub(crate) use security_monitor_agent_protocol::{
     normalize_commit, parse_package_output, valid_container_id,
@@ -198,6 +199,8 @@ pub(crate) use packages::collect_manual_binaries_at;
 pub(crate) use packages::manual_product_name;
 #[cfg(test)]
 pub(crate) use packages::package_command_for_os;
+#[cfg(test)]
+pub(crate) use packages::package_ecosystem;
 pub(crate) use packages::{
     collect_manual_binaries, collect_os_packages, kernel_restart_required, newest_installed_kernel,
 };

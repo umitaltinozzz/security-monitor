@@ -1,4 +1,5 @@
 use super::drift::{collection_summary, refresh_linked_projects};
+use super::os_packages::evaluate_os_packages;
 use super::*;
 
 #[tauri::command]
@@ -157,6 +158,11 @@ pub async fn collect_server_inventory(
         .validate()
         .map_err(|_| "collection_failed".to_owned())?;
     persist_server_snapshot(&state.app_data_dir, &asset.id, &collection.inventory)?;
+    let evaluation = evaluate_server_os_packages(
+        state.app_data_dir.join("advisories").join("osv"),
+        collection.inventory.clone(),
+    )
+    .await?;
     refresh_linked_projects(&state, &asset.id).await?;
     let mut updated_asset = asset.clone();
     updated_asset.last_seen_at = Some(collection.inventory.captured_at);
@@ -183,5 +189,15 @@ pub async fn collect_server_inventory(
         asset.id,
         &collection.inventory,
         collection.approval.approved_at(),
+        evaluation,
     ))
+}
+
+pub(super) async fn evaluate_server_os_packages(
+    cache_root: PathBuf,
+    inventory: AgentInventory,
+) -> Result<super::os_packages::OsPackageEvaluation, String> {
+    tokio::task::spawn_blocking(move || evaluate_os_packages(&cache_root, &inventory))
+        .await
+        .map_err(|_| "collection_failed".to_owned())
 }

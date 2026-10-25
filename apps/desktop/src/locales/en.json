@@ -182,6 +182,12 @@
     "kernelStateUnknown": "Kernel restart status could not be verified",
     "deletedSharedLibraries": "deleted shared libraries are still mapped",
     "mapsUnverified": "{count} processes could not be verified",
+    "osPackageEvaluation": {
+      "evaluated": "Debian or Ubuntu OS packages were evaluated using fresh local OSV data.",
+      "unverified": "OS package advisories could not be verified from fresh local OSV data.",
+      "not_evaluated": "OS packages are not evaluated for this distribution."
+    },
+    "osPackageFindings": "OS package findings",
     "needsRestart": "needs a service restart",
     "processNeedsRestart": "a process restart may be needed",
     "health": "Health",

@@ -284,6 +284,40 @@ export function Servers() {
                       )}
                     </p>
                   )}
+                  {summary && (
+                    <div className="os-package-review">
+                      <p
+                        className={
+                          summary.os_package_evaluation_status === "evaluated"
+                            ? "muted"
+                            : "unverified-line"
+                        }
+                      >
+                        {t(`servers.osPackageEvaluation.${summary.os_package_evaluation_status}`)}
+                      </p>
+                      {summary.os_package_findings.length > 0 && (
+                        <div>
+                          <h3>{t("servers.osPackageFindings")}</h3>
+                          <ul className="simple-list">
+                            {summary.os_package_findings.map((finding) => (
+                              <li
+                                key={`${finding.advisory_id}:${finding.package_name}:${finding.installed_version}`}
+                              >
+                                <strong>
+                                  {finding.package_name} {finding.installed_version}
+                                </strong>
+                                <span>
+                                  {finding.advisory_id} · {t(`severity.${finding.severity}`)} ·{" "}
+                                  {t(`status.${finding.status}`)}
+                                  {finding.fix_version ? ` · ${finding.fix_version}` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <ServerProjectLinks asset={asset} />
                   {approvedAsset === asset.id ? (
                     <div className="approval-box">

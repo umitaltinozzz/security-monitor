@@ -128,13 +128,13 @@ impl OsvDatabaseUpdater {
         fs::create_dir_all(&cache_root).map_err(ProviderError::Io)?;
         let _guard = OSV_UPDATE_LOCK.lock().await;
         let mut statuses = Vec::new();
-        let mut seen = Vec::new();
+        let mut seen_ecosystems = HashSet::new();
+        let mut seen_slugs = HashSet::new();
         for ecosystem in ecosystems {
             let canonical = canonical_ecosystem(&ecosystem);
-            if seen.contains(&canonical) {
+            if !seen_ecosystems.insert(canonical.clone()) {
                 continue;
             }
-            seen.push(canonical.clone());
             let Some(slug) = ecosystem_slug(&canonical) else {
                 statuses.push(OsvUpdateStatus {
                     ecosystem: canonical,
@@ -145,6 +145,9 @@ impl OsvDatabaseUpdater {
                 });
                 continue;
             };
+            if !seen_slugs.insert(slug.to_owned()) {
+                continue;
+            }
             statuses.push(self.update_one(&cache_root, &canonical, slug).await?);
         }
         Ok(statuses)
@@ -354,7 +357,14 @@ impl OsvDatabase {
 }
 
 pub fn ecosystem_slug(ecosystem: &str) -> Option<&'static str> {
-    match canonical_ecosystem(ecosystem).as_str() {
+    let canonical = canonical_ecosystem(ecosystem);
+    if canonical == "debian" || canonical.starts_with("debian:") {
+        return Some("Debian");
+    }
+    if canonical == "ubuntu" || canonical.starts_with("ubuntu:") {
+        return Some("Ubuntu");
+    }
+    match canonical.as_str() {
         "npm" => Some("npm"),
         "pypi" => Some("PyPI"),
         "golang" => Some("Go"),

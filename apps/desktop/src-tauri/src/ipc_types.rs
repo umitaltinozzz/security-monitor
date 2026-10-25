@@ -125,7 +125,7 @@ pub struct PairingInstructionsView {
     pub authorized_keys_line: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CollectionSummary {
     pub asset_id: String,
@@ -140,7 +140,29 @@ pub struct CollectionSummary {
     pub services_needing_restart: Vec<String>,
     pub deleted_shared_library_count: usize,
     pub maps_unverified_process_count: usize,
+    pub os_package_evaluation_status: OsPackageEvaluationStatus,
+    pub os_package_findings: Vec<ServerOsPackageFinding>,
     pub approved_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum OsPackageEvaluationStatus {
+    Evaluated,
+    Unverified,
+    NotEvaluated,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ServerOsPackageFinding {
+    pub advisory_id: String,
+    pub package_name: String,
+    pub installed_version: String,
+    pub severity: security_monitor_core::Severity,
+    pub status: FindingStatus,
+    pub fix_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

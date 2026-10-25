@@ -122,7 +122,7 @@ fn evaluate_component(
                     events_include_semver(version, &range.events)
                 }
             }
-            Some("ECOSYSTEM") if is_debian_ecosystem(&range.ecosystem) => {
+            Some("ECOSYSTEM") if is_deb_compatible_ecosystem(&range.ecosystem) => {
                 events_include_debian(version, &range.events)
             }
             Some("ECOSYSTEM") if canonical_ecosystem(&range.ecosystem) == "pypi" => {
@@ -137,7 +137,7 @@ fn evaluate_component(
             {
                 events_include_semver(version, &range.events)
             }
-            None if source == "cve.now" && is_debian_ecosystem(&range.ecosystem) => {
+            None if source == "cve.now" && is_deb_compatible_ecosystem(&range.ecosystem) => {
                 events_include_debian(version, &range.events)
             }
             None if source == "cve.now"
@@ -413,9 +413,12 @@ fn debian_character_order(value: Option<u8>) -> i32 {
     }
 }
 
-fn is_debian_ecosystem(ecosystem: &str) -> bool {
+fn is_deb_compatible_ecosystem(ecosystem: &str) -> bool {
     let ecosystem = canonical_ecosystem(ecosystem);
-    ecosystem == "debian" || ecosystem.starts_with("debian:")
+    ecosystem == "debian"
+        || ecosystem.starts_with("debian:")
+        || ecosystem == "ubuntu"
+        || ecosystem.starts_with("ubuntu:")
 }
 
 fn is_go_pseudo_version(value: &str) -> bool {

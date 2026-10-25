@@ -50,6 +50,32 @@ pub struct OperatingSystem {
     pub architecture: String,
 }
 
+/// Returns the OSV ecosystem identifier for Debian and Ubuntu releases supported by the
+/// Debian-compatible package version comparator.
+pub fn osv_os_package_ecosystem(os: &OperatingSystem) -> Option<String> {
+    let version_id = os.version_id.as_deref()?;
+    let parts = version_id.split('.').collect::<Vec<_>>();
+    if parts.is_empty()
+        || parts.len() > 3
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return None;
+    }
+    match os.id.as_deref()? {
+        id if id.eq_ignore_ascii_case("debian") => Some(format!("Debian:{}", parts[0])),
+        id if id.eq_ignore_ascii_case("ubuntu") && parts.len() >= 2 => {
+            let release = format!("{}.{}", parts[0], parts[1]);
+            let major = parts[0].parse::<u16>().ok()?;
+            let minor = parts[1].parse::<u16>().ok()?;
+            let lts = major.is_multiple_of(2) && minor == 4;
+            Some(format!("Ubuntu:{release}{}", if lts { ":LTS" } else { "" }))
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PackageRecord {
@@ -562,6 +588,45 @@ mod tests {
         assert_eq!(
             inventory.processes[0].maps_status,
             super::MapsStatus::Checked
+        );
+    }
+
+    #[test]
+    fn os_package_ecosystems_are_mapped_only_for_versioned_debian_and_ubuntu() {
+        let operating_system = |id: &str, version_id: &str| super::OperatingSystem {
+            id: Some(id.to_owned()),
+            name: None,
+            version_id: Some(version_id.to_owned()),
+            pretty_name: None,
+            kernel_release: None,
+            installed_kernel_release: None,
+            kernel_restart_required: None,
+            architecture: "x86_64".to_owned(),
+        };
+
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("debian", "12")),
+            Some("Debian:12".to_owned())
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("ubuntu", "22.04.5")),
+            Some("Ubuntu:22.04:LTS".to_owned())
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("ubuntu", "12.04")),
+            Some("Ubuntu:12.04:LTS".to_owned())
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("ubuntu", "22.10")),
+            Some("Ubuntu:22.10".to_owned())
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("rocky", "9.5")),
+            None
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystem(&operating_system("ubuntu", "rolling")),
+            None
         );
     }
 
