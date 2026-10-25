@@ -473,11 +473,7 @@ pub async fn run_safe_tests(
 }
 
 fn agent_cli_is_available(product: AgentCliProduct) -> bool {
-    let executable = match product {
-        AgentCliProduct::ClaudeCode => "claude",
-        AgentCliProduct::Codex => "codex",
-        AgentCliProduct::OpenCode => "opencode",
-    };
+    let executable = agent_cli_executable(product);
     Command::new(executable)
         .arg("--version")
         .stdin(Stdio::null())

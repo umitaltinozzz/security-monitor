@@ -99,14 +99,6 @@ pub(crate) const OPENCODE_POLICY: &str = r#"{
   }
 }"#;
 
-fn agent_executable(product: AgentCliProduct) -> &'static str {
-    match product {
-        AgentCliProduct::ClaudeCode => "claude",
-        AgentCliProduct::Codex => "codex",
-        AgentCliProduct::OpenCode => "opencode",
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -280,7 +272,7 @@ mod worktree;
 
 #[cfg(test)]
 pub(crate) use agent::ScopedOpenCodePolicy;
-pub use agent::run_agent_cli;
+pub use agent::{agent_cli_executable, run_agent_cli};
 pub(crate) use git_safety::contains_symlink;
 pub use git_safety::{GitCommandSafety, validate_worktree_under};
 pub use mcp::{

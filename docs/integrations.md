@@ -37,6 +37,8 @@ The repository includes native plugin packages for Claude Code (`plugins/claude-
 
 Plugin packages do not add a generic shell or remote-execution tool. MCP source reads still require the desktop's separately recorded per-project approval. Shared note behavior, archive handling, and the `recall`, `remember`, and `forget` tools are described in [Shared local memory](shared-memory.md).
 
+On Windows, agent-based remediation starts native `claude.exe`, `codex.exe`, or `opencode.exe` binaries. It does not launch npm `.cmd` shims through a command interpreter; if only a shim is installed, the remediation workflow reports the CLI as unavailable.
+
 ## Vendor references
 
 - [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp) and [hooks](https://code.claude.com/docs/en/hooks)

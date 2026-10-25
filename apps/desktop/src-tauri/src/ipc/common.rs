@@ -30,9 +30,10 @@ pub(super) use security_monitor_correlation::{
 pub(super) use security_monitor_database::Database;
 pub(super) use security_monitor_mcp_server::{WorkspaceTools, supported_tools};
 pub(super) use security_monitor_remediation::{
-    SafeTestCommand, SandboxEngine, available_engine, create_worktree_with_id,
-    list_mcp_remediation_requests as read_mcp_remediation_requests, remove_mcp_remediation_request,
-    run_agent_cli, run_sandbox_test, validate_worktree_under, worktree_diff, worktrees_directory,
+    SafeTestCommand, SandboxEngine, agent_cli_executable, available_engine,
+    create_worktree_with_id, list_mcp_remediation_requests as read_mcp_remediation_requests,
+    remove_mcp_remediation_request, run_agent_cli, run_sandbox_test, validate_worktree_under,
+    worktree_diff, worktrees_directory,
 };
 pub(super) use security_monitor_scan_orchestrator::{
     ScanProfile, ScanReason, ScanRequest, ScanSummary, discover_projects,

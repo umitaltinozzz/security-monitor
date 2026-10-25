@@ -1,5 +1,24 @@
 use super::*;
 
+pub fn agent_cli_executable(product: AgentCliProduct) -> &'static str {
+    #[cfg(windows)]
+    {
+        match product {
+            AgentCliProduct::ClaudeCode => "claude.exe",
+            AgentCliProduct::Codex => "codex.exe",
+            AgentCliProduct::OpenCode => "opencode.exe",
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        match product {
+            AgentCliProduct::ClaudeCode => "claude",
+            AgentCliProduct::Codex => "codex",
+            AgentCliProduct::OpenCode => "opencode",
+        }
+    }
+}
+
 pub async fn run_agent_cli(
     product: AgentCliProduct,
     worktree_path: &Path,
@@ -19,7 +38,7 @@ pub async fn run_agent_cli(
         return Err(RemediationError::InvalidTestCommand);
     }
     reject_agent_project_configuration(&worktree)?;
-    let mut command = Command::new(agent_executable(product));
+    let mut command = Command::new(agent_cli_executable(product));
     configure_agent_environment(&mut command, &worktree);
     let _opencode_policy = if product == AgentCliProduct::OpenCode {
         Some(ScopedOpenCodePolicy::create(&worktree)?)
@@ -174,8 +193,25 @@ impl Drop for ScopedOpenCodePolicy {
 mod tests {
     use tempfile::TempDir;
 
-    use super::{is_agent_config_name, reject_agent_project_configuration};
-    use crate::{AGENT_ENV_ALLOWLIST, RemediationError, UNSAFE_AGENT_CONFIG_NAMES};
+    use super::{agent_cli_executable, is_agent_config_name, reject_agent_project_configuration};
+    use crate::{
+        AGENT_ENV_ALLOWLIST, AgentCliProduct, RemediationError, UNSAFE_AGENT_CONFIG_NAMES,
+    };
+
+    #[test]
+    fn agent_cli_uses_native_windows_executables_without_command_shims() {
+        #[cfg(windows)]
+        let expected = ["claude.exe", "codex.exe", "opencode.exe"];
+        #[cfg(not(windows))]
+        let expected = ["claude", "codex", "opencode"];
+
+        let actual = [
+            agent_cli_executable(AgentCliProduct::ClaudeCode),
+            agent_cli_executable(AgentCliProduct::Codex),
+            agent_cli_executable(AgentCliProduct::OpenCode),
+        ];
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn project_agent_configuration_is_rejected_at_any_depth() {
