@@ -1,0 +1,2 @@
+package-a	1.0.0	amd64
+package-b	2.0.0	amd64	package-c	3.0.0	amd64

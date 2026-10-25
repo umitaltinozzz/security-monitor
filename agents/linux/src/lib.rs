@@ -705,6 +705,9 @@ fn parse_tabbed_package(
         .next()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    if fields.next().is_some() {
+        return None;
+    }
     if name.is_empty()
         || version.is_empty()
         || [name, version]
@@ -1261,6 +1264,18 @@ mod tests {
             PackageSource::Dpkg,
         );
         assert_eq!(newest_installed_kernel(&flavors.records), None);
+    }
+
+    #[test]
+    fn merged_tabbed_package_rows_make_inventory_partial() {
+        let parsed = parse_package_output(
+            include_bytes!("../../../tests/fixtures/agent/dpkg-merged-rows.txt"),
+            "deb",
+            PackageSource::Dpkg,
+        );
+        assert!(parsed.partial);
+        assert_eq!(parsed.records.len(), 1);
+        assert_eq!(parsed.records[0].name, "package-a");
     }
 
     #[tokio::test]
