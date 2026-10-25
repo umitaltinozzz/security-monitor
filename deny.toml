@@ -1,8 +1,10 @@
 [advisories]
 unmaintained = "workspace"
-# Tauri's lockfile retains zip 4.6.1 for Windows, but the Windows build disables
-# the ZIP feature and macOS/Linux only use the plugin's tar/gzip path. No target
-# build includes the affected ZIP extraction dependency; release scripts reject ZIP assets.
+# Cargo's all-target lock graph retains zip 4.6.1 through the updater's cross-platform
+# `zip` feature. The updater declares the `zip` crate only for Windows, where this
+# app disables that feature. Linux/macOS use the updater's tar/gzip AppImage path;
+# native cargo trees for all three targets omit the affected `zip` crate. Keep this
+# ignore only while those target-specific features and updater paths remain unchanged.
 ignore = ["RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369"]
 
 [bans]
