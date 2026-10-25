@@ -18,6 +18,9 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+const EN_TRAY_LOCALE: &str = include_str!("../../src/locales/en.json");
+const TR_TRAY_LOCALE: &str = include_str!("../../src/locales/tr.json");
+
 fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = match app.get_webview_window("main") {
         Some(window) => window,
@@ -64,6 +67,7 @@ fn app_data_dir_for_build(app_data_dir: &Path, debug_build: bool) -> PathBuf {
 }
 
 fn main() {
+    let smoke_test = std::env::args_os().any(|argument| argument == "--smoke-test");
     let builder = tauri::Builder::default();
     let builder = if let Some(public_key) =
         option_env!("SECMON_UPDATE_PUBLIC_KEY").filter(|key| !key.trim().is_empty())
@@ -77,7 +81,7 @@ fn main() {
         builder
     };
     let app = builder
-        .setup(|app| {
+        .setup(move |app| {
             let app_data_dir = app_data_dir_for_build(
                 &app.path().app_data_dir()?,
                 cfg!(debug_assertions),
@@ -92,11 +96,16 @@ fn main() {
             .map_err(std::io::Error::other)?;
             app.manage(state);
 
-            let locale_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../src/locales")
-                .join(format!("{}.json", settings.language.as_str()));
-            let locale_bytes = fs::read(locale_path)?;
-            let locale: serde_json::Value = serde_json::from_slice(&locale_bytes)?;
+            if smoke_test {
+                app.handle().exit(0);
+                return Ok(());
+            }
+
+            let locale_source = match settings.language.as_str() {
+                "tr" => TR_TRAY_LOCALE,
+                _ => EN_TRAY_LOCALE,
+            };
+            let locale: serde_json::Value = serde_json::from_str(locale_source)?;
             let show_label = locale["tray"]["show"]
                 .as_str()
                 .ok_or_else(|| std::io::Error::other("tray locale is unavailable"))?;
@@ -201,7 +210,9 @@ fn main() {
 mod tests {
     use std::path::Path;
 
-    use super::{app_data_dir_for_build, should_keep_tray_process_alive};
+    use super::{
+        EN_TRAY_LOCALE, TR_TRAY_LOCALE, app_data_dir_for_build, should_keep_tray_process_alive,
+    };
 
     #[test]
     fn tray_close_keeps_process_alive_but_explicit_exit_does_not() {
@@ -218,5 +229,16 @@ mod tests {
             Path::new("app-data/development")
         );
         assert_eq!(app_data_dir_for_build(app_data, false), app_data);
+    }
+
+    #[test]
+    fn tray_locales_are_embedded_and_contain_both_menu_labels() {
+        for source in [EN_TRAY_LOCALE, TR_TRAY_LOCALE] {
+            let locale: serde_json::Value =
+                serde_json::from_str(source).expect("embedded tray locale should be valid JSON");
+
+            assert!(locale["tray"]["show"].as_str().is_some());
+            assert!(locale["tray"]["quit"].as_str().is_some());
+        }
     }
 }

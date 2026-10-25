@@ -83,7 +83,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev musl-tools
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev musl-tools xvfb
 
       - name: Add the Linux musl target
         if: runner.os == 'Linux'
@@ -146,6 +146,30 @@ jobs:
         if: github.event_name != 'push'
         run: pnpm -C apps/desktop tauri build --debug --no-bundle
 
+      - name: Smoke test Tauri shell (debug)
+        if: github.event_name != 'push'
+        shell: bash
+        run: |
+          executable=target/debug/security-monitor-desktop
+          if [[ "$RUNNER_OS" == "Windows" ]]; then executable="${executable}.exe"; fi
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a "$executable" --smoke-test
+          else
+            "$executable" --smoke-test
+          fi
+
       - name: Build Tauri shell (release)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: pnpm -C apps/desktop tauri build --no-bundle
+
+      - name: Smoke test Tauri shell (release)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          executable=target/release/security-monitor-desktop
+          if [[ "$RUNNER_OS" == "Windows" ]]; then executable="${executable}.exe"; fi
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a "$executable" --smoke-test
+          else
+            "$executable" --smoke-test
+          fi
