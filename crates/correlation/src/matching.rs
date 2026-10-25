@@ -115,7 +115,7 @@ fn evaluate_component(
                 if (canonical_ecosystem(&range.ecosystem) == "golang"
                     && is_go_pseudo_version(version))
                     || (canonical_ecosystem(&range.ecosystem) == "rubygems"
-                        && is_ruby_platform_version(version))
+                        && (version.contains('-') || version.contains('+')))
                 {
                     None
                 } else {
@@ -435,23 +435,6 @@ fn is_go_pseudo_version(value: &str) -> bool {
         && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
         && timestamp.len() == 14
         && timestamp.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn is_ruby_platform_version(value: &str) -> bool {
-    let value = value.to_ascii_lowercase();
-    [
-        "-java",
-        "-x86_64-linux",
-        "-x86_64-linux-musl",
-        "-x86_64-darwin",
-        "-arm64-darwin",
-        "-aarch64-linux",
-        "-x64-mingw-ucrt",
-        "-x64-mingw32",
-        "-universal-java",
-    ]
-    .iter()
-    .any(|platform| value.ends_with(platform))
 }
 
 fn candidate(
