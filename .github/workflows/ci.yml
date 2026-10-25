@@ -106,6 +106,9 @@ jobs:
       - name: Test Rust
         run: cargo test --workspace
 
+      - name: Check generated TypeScript bindings
+        run: node scripts/check-generated-bindings.mjs
+
       - name: Free Windows test build artifacts
         if: runner.os == 'Windows'
         run: cargo clean --profile test
