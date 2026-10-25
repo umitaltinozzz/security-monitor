@@ -18,6 +18,9 @@ use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DeploymentIdentity,
     DeploymentSource, DiagnosticCode, OperatingSystem, PackageRecord, PackageSource, RuntimeRecord,
 };
+pub(crate) use security_monitor_agent_protocol::{
+    normalize_commit, parse_package_output, valid_container_id,
+};
 use security_monitor_inventory::scan_repository;
 use tokio::task;
 
@@ -194,14 +197,14 @@ pub(crate) use os::{collect_operating_system, os_collection_is_complete};
 pub(crate) use os::{is_well_formed_version_id, parse_os_release};
 #[cfg(any(target_os = "linux", test))]
 pub(crate) use packages::manual_product_name;
+#[cfg(test)]
+pub(crate) use packages::package_command_for_os;
 pub(crate) use packages::{
     collect_manual_binaries, collect_os_packages, kernel_restart_required, newest_installed_kernel,
 };
-#[cfg(test)]
-pub(crate) use packages::{package_command_for_os, parse_package_output};
 pub(crate) use read_bounded::read_bounded_text;
 pub(crate) use runtimes::collect_runtimes;
 pub(crate) use utils::{
-    check, command_diagnostic, nonempty_bounded, normalize_commit, read_hostname,
-    valid_container_id, valid_sha256_digest, validate_repository,
+    check, command_diagnostic, nonempty_bounded, read_hostname, valid_sha256_digest,
+    validate_repository,
 };

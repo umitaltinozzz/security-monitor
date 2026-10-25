@@ -33,10 +33,6 @@ pub(crate) fn read_hostname() -> Option<String> {
         })
 }
 
-pub(crate) fn valid_container_id(id: &str) -> bool {
-    (12..=64).contains(&id.len()) && id.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
 pub(crate) fn valid_sha256_digest(value: &str) -> Option<String> {
     let (algorithm, digest) = value.split_once(':')?;
     if algorithm == "sha256"
@@ -44,14 +40,6 @@ pub(crate) fn valid_sha256_digest(value: &str) -> Option<String> {
         && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         Some(format!("sha256:{}", digest.to_ascii_lowercase()))
-    } else {
-        None
-    }
-}
-
-pub(crate) fn normalize_commit(value: &str) -> Option<String> {
-    if (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Some(value.to_ascii_lowercase())
     } else {
         None
     }

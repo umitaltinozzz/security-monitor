@@ -4,6 +4,12 @@ use chrono::{DateTime, Utc};
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+mod parsers;
+
+pub use parsers::{
+    ParsedPackages, normalize_commit, parse_agentless_package_output, parse_os_release,
+    parse_os_release_with_architecture, parse_package_output, valid_container_id,
+};
 
 pub const PROTOCOL_VERSION: u16 = 2;
 const MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 1;
@@ -443,10 +449,6 @@ fn valid_deployment_identity(identity: &DeploymentIdentity) -> bool {
         && !repository
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
-}
-
-fn valid_container_id(value: &str) -> bool {
-    (12..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn safe_evidence_path(value: &str) -> bool {

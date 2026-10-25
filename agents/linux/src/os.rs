@@ -99,37 +99,10 @@ pub(super) fn collect_operating_system() -> (Option<OperatingSystem>, Vec<Collec
 }
 
 pub(crate) fn parse_os_release(contents: &str) -> Option<OperatingSystem> {
-    let mut values = BTreeMap::new();
-    for line in contents.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if !matches!(key, "ID" | "NAME" | "VERSION_ID" | "PRETTY_NAME") {
-            continue;
-        }
-        let value = value.trim().trim_matches('"').trim_matches('\'');
-        if !value.is_empty()
-            && value.len() <= 512
-            && !value.bytes().any(|byte| byte.is_ascii_control())
-        {
-            values.insert(key, value.to_owned());
-        }
-    }
-    let id = values.get("ID").cloned();
-    let name = values.get("NAME").cloned();
-    if id.is_none() && name.is_none() {
-        return None;
-    }
-    Some(OperatingSystem {
-        id,
-        name,
-        version_id: values.get("VERSION_ID").cloned(),
-        pretty_name: values.get("PRETTY_NAME").cloned(),
-        kernel_release: None,
-        installed_kernel_release: None,
-        kernel_restart_required: None,
-        architecture: std::env::consts::ARCH.to_owned(),
-    })
+    security_monitor_agent_protocol::parse_os_release_with_architecture(
+        contents,
+        std::env::consts::ARCH,
+    )
 }
 
 pub(crate) fn is_well_formed_version_id(value: Option<&str>) -> bool {

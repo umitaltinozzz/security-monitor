@@ -1,4 +1,4 @@
-use security_monitor_agent_protocol::DeploymentIdentity;
+use security_monitor_agent_protocol::{DeploymentIdentity, normalize_commit};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalProjectIdentity {
@@ -70,14 +70,6 @@ fn association_rank(matched_by: AssociationMatch) -> u8 {
         AssociationMatch::RepositoryAndCommit => 0,
         AssociationMatch::Repository => 1,
         AssociationMatch::Commit => 2,
-    }
-}
-
-fn normalize_commit(value: &str) -> Option<String> {
-    if (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Some(value.to_ascii_lowercase())
-    } else {
-        None
     }
 }
 

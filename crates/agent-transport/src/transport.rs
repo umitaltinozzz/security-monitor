@@ -11,8 +11,8 @@ use russh::{
 };
 use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DiagnosticCode,
-    OperatingSystem, PackageRecord, PackageSource, ProcessRecord, RuntimeRecord, ServiceRecord,
-    decode_inventory,
+    PackageSource, ProcessRecord, RuntimeRecord, ServiceRecord, decode_inventory,
+    parse_agentless_package_output as parse_package_output, parse_os_release, valid_container_id,
 };
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, time::timeout};
@@ -847,71 +847,6 @@ fn collection_check(
     }
 }
 
-fn parse_os_release(output: &str) -> Option<OperatingSystem> {
-    let mut id = None;
-    let mut name = None;
-    let mut version_id = None;
-    let mut pretty_name = None;
-    for line in output.lines() {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let value = value.trim().trim_matches('"').trim_matches('\'');
-        match key {
-            "ID" => id = Some(value.to_owned()),
-            "NAME" => name = Some(value.to_owned()),
-            "VERSION_ID" => version_id = Some(value.to_owned()),
-            "PRETTY_NAME" => pretty_name = Some(value.to_owned()),
-            _ => {}
-        }
-    }
-    if id.is_none() && name.is_none() {
-        return None;
-    }
-    Some(OperatingSystem {
-        id,
-        name,
-        version_id,
-        pretty_name,
-        kernel_release: None,
-        installed_kernel_release: None,
-        kernel_restart_required: None,
-        architecture: "unknown".to_owned(),
-    })
-}
-
-fn parse_package_output(
-    output: &str,
-    ecosystem: &str,
-    source: PackageSource,
-) -> Vec<PackageRecord> {
-    output
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split('\t');
-            let name = fields.next()?.trim();
-            let version = fields.next()?.trim();
-            if name.is_empty() || version.is_empty() {
-                return None;
-            }
-            let architecture = fields
-                .next()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned);
-            Some(PackageRecord {
-                name: name.to_owned(),
-                version: Some(version.to_owned()),
-                architecture,
-                ecosystem: ecosystem.to_owned(),
-                purl: None,
-                source,
-                evidence_path: None,
-            })
-        })
-        .collect()
-}
-
 fn add_runtime(runtimes: &mut Vec<RuntimeRecord>, name: &str, output: &str, path: &str) -> bool {
     let Some(version) = output
         .lines()
@@ -962,10 +897,6 @@ fn parse_docker_ps(output: &str, containers: &mut Vec<ContainerRecord>) -> bool 
         });
     }
     valid
-}
-
-fn valid_container_id(id: &str) -> bool {
-    (12..=64).contains(&id.len()) && id.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 #[cfg(test)]

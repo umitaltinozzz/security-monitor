@@ -331,11 +331,6 @@ fn is_safe_unit_name(value: &str) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn valid_container_id(value: &str) -> bool {
-    (12..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-#[cfg(target_os = "linux")]
 fn runtime_name(value: &str) -> Option<&'static str> {
     match value {
         "node" => Some("node"),

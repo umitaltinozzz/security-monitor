@@ -8,7 +8,7 @@ use std::{
 use std::os::unix::fs::OpenOptionsExt;
 
 use chrono::{DateTime, Utc};
-use security_monitor_agent_protocol::{DeploymentIdentity, DeploymentSource};
+use security_monitor_agent_protocol::{DeploymentIdentity, DeploymentSource, normalize_commit};
 use serde::Deserialize;
 use zeroize::Zeroizing;
 
@@ -261,13 +261,6 @@ fn read_bounded_file(path: &Path, limit: u64) -> Option<Zeroizing<Vec<u8>>> {
         .read_to_end(&mut data)
         .ok()?;
     (data.len() as u64 <= limit).then_some(data)
-}
-
-fn normalize_commit(value: &str) -> Option<String> {
-    if !(7..=64).contains(&value.len()) || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(value.to_ascii_lowercase())
 }
 
 fn validate_repository(value: &str) -> Option<String> {
