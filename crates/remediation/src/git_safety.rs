@@ -26,10 +26,10 @@ impl GitCommandSafety {
     pub fn create() -> Result<Self, RemediationError> {
         let directory =
             std::env::temp_dir().join(format!("secmon-git-safe-{}", Uuid::new_v4().simple()));
-        fs::create_dir(&directory).map_err(|_| RemediationError::FilesystemFailed)?;
+        create_private_directory(&directory).map_err(|_| RemediationError::FilesystemFailed)?;
         let hooks_directory = directory.join("hooks");
         let empty_file = directory.join("empty");
-        if fs::create_dir(&hooks_directory).is_err()
+        if create_private_directory(&hooks_directory).is_err()
             || OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -81,6 +81,19 @@ impl GitCommandSafety {
     }
 }
 
+#[cfg(unix)]
+fn create_private_directory(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+
+    let mut builder = fs::DirBuilder::new();
+    builder.mode(0o700).create(path)
+}
+
+#[cfg(not(unix))]
+fn create_private_directory(path: &Path) -> std::io::Result<()> {
+    fs::create_dir(path)
+}
+
 impl Drop for GitCommandSafety {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.directory);
@@ -126,4 +139,20 @@ pub(super) fn contains_symlink(root: &Path) -> Result<bool, RemediationError> {
         }
     }
     Ok(false)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::GitCommandSafety;
+
+    #[test]
+    fn git_safety_directories_are_private() {
+        let safety = GitCommandSafety::create().unwrap();
+        for directory in [&safety.directory, &safety.hooks_directory] {
+            let mode = std::fs::metadata(directory).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700);
+        }
+    }
 }
