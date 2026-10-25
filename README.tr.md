@@ -19,7 +19,7 @@
 <p align="center"><a href="README.md">English</a></p>
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Demo: proje ekleyip yerel hızlı tarama, bir bulgunun neden önemli olduğu ve host key doğrulandıktan sonra production sunucusu eşleştirme" width="900">
+  <img src="docs/assets/demo.gif" alt="Demo: proje ekleyip yerel hızlı tarama, host key doğrulandıktan sonra production sunucusunu eşleyip projeye bağlama ve bulgunun repoda düzelip production'da hâlâ açık görünmesi" width="900">
   <br><sub>Demo, masaüstü arayüzünden örnek veriyle kaydedildi (lodash 4.17.20, GHSA-35jh-r3h4-6jhm); gerçek bir tarama veya sunucu değildir.</sub>
 </p>
 

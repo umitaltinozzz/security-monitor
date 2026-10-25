@@ -19,7 +19,7 @@
 <p align="center"><a href="README.tr.md">Türkçe</a></p>
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="Demo: adding a project and running a local quick scan, reading why a finding matters, and pairing a production server after verifying its host key" width="900">
+  <img src="docs/assets/demo.gif" alt="Demo: adding a project and running a local quick scan, pairing a production server after verifying its host key, linking it to the project, and seeing the finding fixed in the repository but still affected in production" width="900">
   <br><sub>Demo recorded from the desktop UI with sample data (lodash 4.17.20, GHSA-35jh-r3h4-6jhm); no real scan or server.</sub>
 </p>
 
