@@ -281,6 +281,15 @@ export function RemediationSection({
                     )}
                     {item.approval_state === "approved" && (
                       <>
+                        <div className="button-row end">
+                          <button
+                            className="button quiet"
+                            disabled={busyId !== null}
+                            onClick={() => void reject(item)}
+                          >
+                            {t("findings.remediationWorkflow.discardPatch")}
+                          </button>
+                        </div>
                         {mcpRequests.some((request) => request.remediation_id === item.id) && (
                           <p className="unverified-line">
                             {t("findings.remediationWorkflow.mcpTestRequest")}

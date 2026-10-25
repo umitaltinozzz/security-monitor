@@ -1,13 +1,85 @@
 use super::*;
 
+const REMEDIATION_LIFETIME: chrono::Duration = chrono::Duration::days(7);
+
 #[tauri::command]
 pub async fn list_remediations(state: State<'_, AppState>) -> Result<Vec<Remediation>, String> {
-    state
-        .database
-        .repository::<Remediation>()
+    let repository = state.database.repository::<Remediation>();
+    let mut remediations = repository
         .list()
         .await
-        .map_err(|error| opaque(error, "storage_unavailable"))
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
+    let now = Utc::now();
+    for remediation in &mut remediations {
+        if !matches!(
+            remediation.approval_state,
+            ApprovalState::Pending | ApprovalState::Approved
+        ) || now.signed_duration_since(remediation.updated_at) < REMEDIATION_LIFETIME
+        {
+            continue;
+        }
+        if remediation.approval_state == ApprovalState::Approved {
+            remove_remediation_worktree(&state, remediation).await?;
+        }
+        remediation.approval_state = ApprovalState::Cancelled;
+        remediation.updated_at = now;
+        if !repository
+            .update(remediation)
+            .await
+            .map_err(|error| opaque(error, "storage_unavailable"))?
+        {
+            return Err("storage_unavailable".to_owned());
+        }
+        write_audit_event(
+            &state.database,
+            "remediation_expired",
+            "remediation",
+            Some(remediation.id.clone()),
+            now,
+            AuditResult::Succeeded,
+        )
+        .await?;
+    }
+    Ok(remediations)
+}
+
+async fn remove_remediation_worktree(
+    state: &AppState,
+    remediation: &Remediation,
+) -> Result<(), String> {
+    let finding = state
+        .database
+        .repository::<Finding>()
+        .get(&remediation.finding_id)
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?
+        .ok_or_else(|| "finding_not_found".to_owned())?;
+    let instance = state
+        .database
+        .repository::<ComponentInstance>()
+        .get(&finding.component_instance_id)
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?
+        .ok_or_else(|| "project_not_found".to_owned())?;
+    let project_id = instance
+        .project_id
+        .as_deref()
+        .ok_or_else(|| "project_not_found".to_owned())?;
+    let project = state
+        .database
+        .repository::<Project>()
+        .get(project_id)
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?
+        .ok_or_else(|| "project_not_found".to_owned())?;
+    remove_worktree(
+        Path::new(&project.root_path),
+        &state.app_data_dir,
+        Path::new(&remediation.worktree_path),
+        &remediation.branch,
+    )
+    .await
+    .map_err(remediation_error_key)
 }
 
 #[tauri::command]
@@ -171,8 +243,14 @@ pub async fn approve_remediation(
         .await
         .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "remediation_not_found".to_owned())?;
-    if remediation.approval_state != ApprovalState::Pending {
+    if !matches!(
+        remediation.approval_state,
+        ApprovalState::Pending | ApprovalState::Approved
+    ) {
         return Err("invalid_input".to_owned());
+    }
+    if remediation.approval_state == ApprovalState::Approved {
+        remove_remediation_worktree(&state, &remediation).await?;
     }
     if !source_transfer_approved {
         write_audit_event(
@@ -351,8 +429,14 @@ pub async fn reject_remediation(
         .await
         .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "remediation_not_found".to_owned())?;
-    if remediation.approval_state != ApprovalState::Pending {
+    if !matches!(
+        remediation.approval_state,
+        ApprovalState::Pending | ApprovalState::Approved
+    ) {
         return Err("invalid_input".to_owned());
+    }
+    if remediation.approval_state == ApprovalState::Approved {
+        remove_remediation_worktree(&state, &remediation).await?;
     }
     remediation.approval_state = ApprovalState::Rejected;
     remediation.updated_at = Utc::now();

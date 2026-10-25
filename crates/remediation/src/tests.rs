@@ -126,6 +126,25 @@ async fn patch_worktree_is_isolated_from_the_original_branch_and_files() {
     let second_untracked_diff = worktree_diff(&prepared.worktree_path).await.unwrap();
     assert_ne!(first_untracked_diff.sha256, second_untracked_diff.sha256);
     fs::write(
+        prepared.worktree_path.join(".gitignore"),
+        "target/\nnode_modules/\n__pycache__/\n",
+    )
+    .unwrap();
+    let baseline = worktree_diff(&prepared.worktree_path).await.unwrap();
+    for ignored in [
+        "target/build.log",
+        "node_modules/cache",
+        "__pycache__/cache",
+    ] {
+        let path = prepared.worktree_path.join(ignored);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "generated data").unwrap();
+    }
+    assert_eq!(
+        baseline.sha256,
+        worktree_diff(&prepared.worktree_path).await.unwrap().sha256
+    );
+    fs::write(
         prepared.worktree_path.join(".gitattributes"),
         "*.bin filter=untrusted\n",
     )
@@ -147,9 +166,46 @@ async fn patch_worktree_is_isolated_from_the_original_branch_and_files() {
         fs::read_to_string(repository.join("src/lib.rs")).unwrap(),
         original_source
     );
-    remove_worktree(&repository, &prepared.worktree_path)
-        .await
-        .unwrap();
+    remove_worktree(
+        &repository,
+        temp.path(),
+        &prepared.worktree_path,
+        &prepared.branch,
+    )
+    .await
+    .unwrap();
+    assert!(
+        git(&repository, &["branch", "--list", &prepared.branch])
+            .await
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn removing_a_missing_worktree_also_removes_its_managed_branch() {
+    let (temp, repository) = fixture_repository();
+    let prepared = create_worktree(&repository, temp.path()).await.unwrap();
+    fs::remove_dir_all(&prepared.worktree_path).unwrap();
+
+    remove_worktree(
+        &repository,
+        temp.path(),
+        &prepared.worktree_path,
+        &prepared.branch,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        git(&repository, &["branch", "--list", &prepared.branch])
+            .await
+            .is_empty()
+    );
+    assert!(
+        !git(&repository, &["worktree", "list", "--porcelain"])
+            .await
+            .contains(prepared.worktree_path.to_str().unwrap())
+    );
 }
 
 #[tokio::test]
@@ -227,6 +283,19 @@ fn test_command_builder_disables_network_and_limits_the_container() {
             .iter()
             .any(|arg| arg.starts_with("type=bind,src=") && arg.ends_with(",dst=/workspace"))
     );
+    let user = values
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--user="))
+        .expect("sandbox user is configured");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let metadata = fs::metadata(temp.path()).unwrap();
+        assert_eq!(user, format!("{}:{}", metadata.uid(), metadata.gid()));
+    }
+    #[cfg(windows)]
+    assert_eq!(user, "1000:1000");
     assert!(!values.iter().any(|arg| arg.contains("--network=host")));
 }
 
@@ -353,9 +422,14 @@ async fn sandbox_runs_fixture_code_without_network_or_host_writes() {
         .args(["image", "rm", "--force"])
         .arg(image_tag)
         .status();
-    remove_worktree(&repository, &prepared.worktree_path)
-        .await
-        .unwrap();
+    remove_worktree(
+        &repository,
+        temp.path(),
+        &prepared.worktree_path,
+        &prepared.branch,
+    )
+    .await
+    .unwrap();
 }
 
 #[test]

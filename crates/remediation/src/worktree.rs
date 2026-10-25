@@ -86,7 +86,7 @@ pub async fn create_worktree_with_id(
     if !canonical_worktree.starts_with(&canonical_directory)
         || contains_symlink(&canonical_worktree)?
     {
-        let _ = remove_worktree(&root, &canonical_worktree).await;
+        let _ = remove_worktree(&root, app_data_dir, &canonical_worktree, &branch).await;
         return Err(RemediationError::WorktreePathInvalid);
     }
     Ok(PreparedWorktree {
@@ -99,25 +99,84 @@ pub async fn create_worktree_with_id(
 
 pub async fn remove_worktree(
     repository_root: &Path,
+    app_data_dir: &Path,
     worktree_path: &Path,
+    branch: &str,
 ) -> Result<(), RemediationError> {
     let root =
         fs::canonicalize(repository_root).map_err(|_| RemediationError::InvalidRepository)?;
-    let worktree =
-        fs::canonicalize(worktree_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
-    run_git_command(
-        &[
-            "-C",
-            path_arg(&root)?,
-            "worktree",
-            "remove",
-            "--force",
-            path_arg(&worktree)?,
-        ],
-        Duration::from_secs(60),
+    let worktrees = canonical_worktrees_directory(app_data_dir)?;
+    let id = worktree_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(RemediationError::WorktreePathInvalid)?;
+    Uuid::parse_str(id).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if branch != format!("{WORKTREE_BRANCH_PREFIX}{id}") {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let parent = worktree_path
+        .parent()
+        .ok_or(RemediationError::WorktreePathInvalid)?
+        .canonicalize()
+        .map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if parent != worktrees {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    match fs::symlink_metadata(worktree_path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(RemediationError::WorktreePathInvalid);
+        }
+        Ok(_) => {
+            let worktree = fs::canonicalize(worktree_path)
+                .map_err(|_| RemediationError::WorktreePathInvalid)?;
+            if worktree.parent() != Some(worktrees.as_path()) {
+                return Err(RemediationError::WorktreePathInvalid);
+            }
+            run_git_command(
+                &[
+                    "-C",
+                    path_arg(&root)?,
+                    "worktree",
+                    "remove",
+                    "--force",
+                    path_arg(&worktree)?,
+                ],
+                Duration::from_secs(60),
+                MAX_TEST_OUTPUT_BYTES,
+            )
+            .await?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            run_git_command(
+                &[
+                    "-C",
+                    path_arg(&root)?,
+                    "worktree",
+                    "prune",
+                    "--expire",
+                    "now",
+                ],
+                Duration::from_secs(15),
+                MAX_TEST_OUTPUT_BYTES,
+            )
+            .await?;
+        }
+        Err(_) => return Err(RemediationError::FilesystemFailed),
+    }
+    let branch_listing = run_git_command(
+        &["-C", path_arg(&root)?, "branch", "--list", branch],
+        Duration::from_secs(15),
         MAX_TEST_OUTPUT_BYTES,
     )
     .await?;
+    if !String::from_utf8_lossy(&branch_listing.0).trim().is_empty() {
+        run_git_command(
+            &["-C", path_arg(&root)?, "branch", "-D", "--", branch],
+            Duration::from_secs(15),
+            MAX_TEST_OUTPUT_BYTES,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -161,7 +220,14 @@ pub async fn worktree_diff(worktree_path: &Path) -> Result<WorktreeDiff, Remedia
         return Err(RemediationError::WorktreePathInvalid);
     }
     let untracked = run_git_command(
-        &["-C", path_arg(&worktree)?, "ls-files", "--others", "-z"],
+        &[
+            "-C",
+            path_arg(&worktree)?,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
         Duration::from_secs(30),
         MAX_AGENT_OUTPUT_BYTES,
     )

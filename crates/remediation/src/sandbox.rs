@@ -23,6 +23,7 @@ pub fn build_test_args(
     let mut args = vec![
         OsString::from("run"),
         OsString::from("--rm"),
+        OsString::from(format!("--user={}", sandbox_user(&worktree)?)),
         OsString::from("--pull=never"),
         OsString::from("--network=none"),
         OsString::from("--read-only"),
@@ -45,6 +46,23 @@ pub fn build_test_args(
     args.extend(command.args.iter().map(OsString::from));
     let _ = engine;
     Ok(args)
+}
+
+fn sandbox_user(worktree: &Path) -> Result<String, RemediationError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let metadata = fs::metadata(worktree).map_err(|_| RemediationError::FilesystemFailed)?;
+        return Ok(format!("{}:{}", metadata.uid(), metadata.gid()));
+    }
+    #[cfg(windows)]
+    {
+        let _ = worktree;
+        // Docker Desktop mounts Windows directories into its Linux VM; use an unprivileged
+        // Linux container identity because Windows metadata has no UID/GID pair.
+        Ok("1000:1000".to_owned())
+    }
 }
 
 pub fn sandbox_executable(engine: SandboxEngine) -> &'static str {
