@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-request-remediation"
+description = "Enables the request_remediation command without any pre-configured scope."
+commands.allow = ["request_remediation"]
+
+[[permission]]
+identifier = "deny-request-remediation"
+description = "Denies the request_remediation command without any pre-configured scope."
+commands.deny = ["request_remediation"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-detect-scanners"
+description = "Enables the detect_scanners command without any pre-configured scope."
+commands.allow = ["detect_scanners"]
+
+[[permission]]
+identifier = "deny-detect-scanners"
+description = "Denies the detect_scanners command without any pre-configured scope."
+commands.deny = ["detect_scanners"]

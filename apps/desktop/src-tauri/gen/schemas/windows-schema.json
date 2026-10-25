@@ -177,6 +177,642 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the add_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-project",
+          "markdownDescription": "Enables the add_project command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the approve_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-approve-remediation",
+          "markdownDescription": "Enables the approve_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cancel_project_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cancel-project-scan",
+          "markdownDescription": "Enables the cancel_project_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the check_for_updates command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-check-for-updates",
+          "markdownDescription": "Enables the check_for_updates command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the collect_server_inventory command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-collect-server-inventory",
+          "markdownDescription": "Enables the collect_server_inventory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the create_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-memory",
+          "markdownDescription": "Enables the create_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_all_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-all-memories",
+          "markdownDescription": "Enables the delete_all_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-memory",
+          "markdownDescription": "Enables the delete_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the detect_scanners command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-scanners",
+          "markdownDescription": "Enables the detect_scanners command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the discover_local_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-discover-local-projects",
+          "markdownDescription": "Enables the discover_local_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dismiss_mcp_remediation_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dismiss-mcp-remediation-request",
+          "markdownDescription": "Enables the dismiss_mcp_remediation_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the estimate_ai_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-estimate-ai-request",
+          "markdownDescription": "Enables the estimate_ai_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the export_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-export-memories",
+          "markdownDescription": "Enables the export_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_ai_configuration command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-ai-configuration",
+          "markdownDescription": "Enables the get_ai_configuration command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-app-settings",
+          "markdownDescription": "Enables the get_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_scan_result command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-scan-result",
+          "markdownDescription": "Enables the get_scan_result command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_server_inventory_summary command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-server-inventory-summary",
+          "markdownDescription": "Enables the get_server_inventory_summary command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-import-memories",
+          "markdownDescription": "Enables the import_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the inspect_server_host_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-inspect-server-host-key",
+          "markdownDescription": "Enables the inspect_server_host_key command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the install_scanner command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-install-scanner",
+          "markdownDescription": "Enables the install_scanner command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the install_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-install-update",
+          "markdownDescription": "Enables the install_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the link_project_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-link-project-server",
+          "markdownDescription": "Enables the link_project_server command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_advisories command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-advisories",
+          "markdownDescription": "Enables the list_advisories command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_audit_events command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-audit-events",
+          "markdownDescription": "Enables the list_audit_events command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_component_instances command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-component-instances",
+          "markdownDescription": "Enables the list_component_instances command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_components command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-components",
+          "markdownDescription": "Enables the list_components command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_finding_evidence command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-finding-evidence",
+          "markdownDescription": "Enables the list_finding_evidence command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_findings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-findings",
+          "markdownDescription": "Enables the list_findings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_mcp_remediation_requests command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-mcp-remediation-requests",
+          "markdownDescription": "Enables the list_mcp_remediation_requests command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-memories",
+          "markdownDescription": "Enables the list_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_news_signals command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-news-signals",
+          "markdownDescription": "Enables the list_news_signals command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_project_server_links command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-project-server-links",
+          "markdownDescription": "Enables the list_project_server_links command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-projects",
+          "markdownDescription": "Enables the list_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_remediations command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-remediations",
+          "markdownDescription": "Enables the list_remediations command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_scan_runs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-scan-runs",
+          "markdownDescription": "Enables the list_scan_runs command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_server_assets command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-server-assets",
+          "markdownDescription": "Enables the list_server_assets command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_ssh_config_hosts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-ssh-config-hosts",
+          "markdownDescription": "Enables the list_ssh_config_hosts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pair_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pair-server",
+          "markdownDescription": "Enables the pair_server command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the refresh_news_signals command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-refresh-news-signals",
+          "markdownDescription": "Enables the refresh_news_signals command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the reject_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-reject-remediation",
+          "markdownDescription": "Enables the reject_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remediation_sandbox_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-remediation-sandbox-status",
+          "markdownDescription": "Enables the remediation_sandbox_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the request_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-request-remediation",
+          "markdownDescription": "Enables the request_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_ai_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-ai-request",
+          "markdownDescription": "Enables the run_ai_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_safe_tests command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-safe-tests",
+          "markdownDescription": "Enables the run_safe_tests command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_ai_provider command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-ai-provider",
+          "markdownDescription": "Enables the save_ai_provider command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_ai_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-ai-settings",
+          "markdownDescription": "Enables the save_ai_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-app-settings",
+          "markdownDescription": "Enables the save_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_finding_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-finding-status",
+          "markdownDescription": "Enables the set_finding_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_project_ai_providers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-project-ai-providers",
+          "markdownDescription": "Enables the set_project_ai_providers command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_project_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-project-scan",
+          "markdownDescription": "Enables the start_project_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the unlink_project_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unlink-project-server",
+          "markdownDescription": "Enables the unlink_project_server command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_advisory_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-advisory-data",
+          "markdownDescription": "Enables the update_advisory_data command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the update_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-memory",
+          "markdownDescription": "Enables the update_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_project command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-project",
+          "markdownDescription": "Denies the add_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the approve_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-approve-remediation",
+          "markdownDescription": "Denies the approve_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cancel_project_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cancel-project-scan",
+          "markdownDescription": "Denies the cancel_project_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the check_for_updates command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-check-for-updates",
+          "markdownDescription": "Denies the check_for_updates command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the collect_server_inventory command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-collect-server-inventory",
+          "markdownDescription": "Denies the collect_server_inventory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-memory",
+          "markdownDescription": "Denies the create_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_all_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-all-memories",
+          "markdownDescription": "Denies the delete_all_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-memory",
+          "markdownDescription": "Denies the delete_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the detect_scanners command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-scanners",
+          "markdownDescription": "Denies the detect_scanners command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the discover_local_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-discover-local-projects",
+          "markdownDescription": "Denies the discover_local_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dismiss_mcp_remediation_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dismiss-mcp-remediation-request",
+          "markdownDescription": "Denies the dismiss_mcp_remediation_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the estimate_ai_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-estimate-ai-request",
+          "markdownDescription": "Denies the estimate_ai_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the export_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-export-memories",
+          "markdownDescription": "Denies the export_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_ai_configuration command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-ai-configuration",
+          "markdownDescription": "Denies the get_ai_configuration command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-app-settings",
+          "markdownDescription": "Denies the get_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_scan_result command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-scan-result",
+          "markdownDescription": "Denies the get_scan_result command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_server_inventory_summary command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-server-inventory-summary",
+          "markdownDescription": "Denies the get_server_inventory_summary command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-import-memories",
+          "markdownDescription": "Denies the import_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the inspect_server_host_key command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-inspect-server-host-key",
+          "markdownDescription": "Denies the inspect_server_host_key command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the install_scanner command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-install-scanner",
+          "markdownDescription": "Denies the install_scanner command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the install_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-install-update",
+          "markdownDescription": "Denies the install_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the link_project_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-link-project-server",
+          "markdownDescription": "Denies the link_project_server command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_advisories command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-advisories",
+          "markdownDescription": "Denies the list_advisories command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_audit_events command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-audit-events",
+          "markdownDescription": "Denies the list_audit_events command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_component_instances command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-component-instances",
+          "markdownDescription": "Denies the list_component_instances command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_components command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-components",
+          "markdownDescription": "Denies the list_components command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_finding_evidence command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-finding-evidence",
+          "markdownDescription": "Denies the list_finding_evidence command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_findings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-findings",
+          "markdownDescription": "Denies the list_findings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_mcp_remediation_requests command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-mcp-remediation-requests",
+          "markdownDescription": "Denies the list_mcp_remediation_requests command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_memories command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-memories",
+          "markdownDescription": "Denies the list_memories command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_news_signals command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-news-signals",
+          "markdownDescription": "Denies the list_news_signals command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_project_server_links command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-project-server-links",
+          "markdownDescription": "Denies the list_project_server_links command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_projects command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-projects",
+          "markdownDescription": "Denies the list_projects command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_remediations command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-remediations",
+          "markdownDescription": "Denies the list_remediations command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_scan_runs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-scan-runs",
+          "markdownDescription": "Denies the list_scan_runs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_server_assets command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-server-assets",
+          "markdownDescription": "Denies the list_server_assets command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_ssh_config_hosts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-ssh-config-hosts",
+          "markdownDescription": "Denies the list_ssh_config_hosts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pair_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pair-server",
+          "markdownDescription": "Denies the pair_server command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the refresh_news_signals command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-refresh-news-signals",
+          "markdownDescription": "Denies the refresh_news_signals command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the reject_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-reject-remediation",
+          "markdownDescription": "Denies the reject_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remediation_sandbox_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-remediation-sandbox-status",
+          "markdownDescription": "Denies the remediation_sandbox_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the request_remediation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-request-remediation",
+          "markdownDescription": "Denies the request_remediation command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_ai_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-ai-request",
+          "markdownDescription": "Denies the run_ai_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_safe_tests command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-safe-tests",
+          "markdownDescription": "Denies the run_safe_tests command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_ai_provider command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-ai-provider",
+          "markdownDescription": "Denies the save_ai_provider command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_ai_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-ai-settings",
+          "markdownDescription": "Denies the save_ai_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_app_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-app-settings",
+          "markdownDescription": "Denies the save_app_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_finding_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-finding-status",
+          "markdownDescription": "Denies the set_finding_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_project_ai_providers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-project-ai-providers",
+          "markdownDescription": "Denies the set_project_ai_providers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_project_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-project-scan",
+          "markdownDescription": "Denies the start_project_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unlink_project_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unlink-project-server",
+          "markdownDescription": "Denies the unlink_project_server command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_advisory_data command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-advisory-data",
+          "markdownDescription": "Denies the update_advisory_data command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_memory command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-memory",
+          "markdownDescription": "Denies the update_memory command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

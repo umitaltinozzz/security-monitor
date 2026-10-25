@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-ssh-config-hosts"
+description = "Enables the list_ssh_config_hosts command without any pre-configured scope."
+commands.allow = ["list_ssh_config_hosts"]
+
+[[permission]]
+identifier = "deny-list-ssh-config-hosts"
+description = "Denies the list_ssh_config_hosts command without any pre-configured scope."
+commands.deny = ["list_ssh_config_hosts"]

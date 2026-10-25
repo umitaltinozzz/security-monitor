@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pair-server"
+description = "Enables the pair_server command without any pre-configured scope."
+commands.allow = ["pair_server"]
+
+[[permission]]
+identifier = "deny-pair-server"
+description = "Denies the pair_server command without any pre-configured scope."
+commands.deny = ["pair_server"]

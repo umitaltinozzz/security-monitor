@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-components"
+description = "Enables the list_components command without any pre-configured scope."
+commands.allow = ["list_components"]
+
+[[permission]]
+identifier = "deny-list-components"
+description = "Denies the list_components command without any pre-configured scope."
+commands.deny = ["list_components"]

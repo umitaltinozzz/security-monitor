@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-news-signals"
+description = "Enables the list_news_signals command without any pre-configured scope."
+commands.allow = ["list_news_signals"]
+
+[[permission]]
+identifier = "deny-list-news-signals"
+description = "Denies the list_news_signals command without any pre-configured scope."
+commands.deny = ["list_news_signals"]

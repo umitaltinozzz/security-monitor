@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-project-scan"
+description = "Enables the start_project_scan command without any pre-configured scope."
+commands.allow = ["start_project_scan"]
+
+[[permission]]
+identifier = "deny-start-project-scan"
+description = "Denies the start_project_scan command without any pre-configured scope."
+commands.deny = ["start_project_scan"]

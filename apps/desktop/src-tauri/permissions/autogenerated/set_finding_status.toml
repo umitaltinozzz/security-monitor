@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-finding-status"
+description = "Enables the set_finding_status command without any pre-configured scope."
+commands.allow = ["set_finding_status"]
+
+[[permission]]
+identifier = "deny-set-finding-status"
+description = "Denies the set_finding_status command without any pre-configured scope."
+commands.deny = ["set_finding_status"]

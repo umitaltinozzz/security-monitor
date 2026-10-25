@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-memory"
+description = "Enables the update_memory command without any pre-configured scope."
+commands.allow = ["update_memory"]
+
+[[permission]]
+identifier = "deny-update-memory"
+description = "Denies the update_memory command without any pre-configured scope."
+commands.deny = ["update_memory"]

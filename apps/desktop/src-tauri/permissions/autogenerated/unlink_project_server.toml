@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-unlink-project-server"
+description = "Enables the unlink_project_server command without any pre-configured scope."
+commands.allow = ["unlink_project_server"]
+
+[[permission]]
+identifier = "deny-unlink-project-server"
+description = "Denies the unlink_project_server command without any pre-configured scope."
+commands.deny = ["unlink_project_server"]

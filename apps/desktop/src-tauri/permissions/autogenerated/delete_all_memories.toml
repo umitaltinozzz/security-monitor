@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-delete-all-memories"
+description = "Enables the delete_all_memories command without any pre-configured scope."
+commands.allow = ["delete_all_memories"]
+
+[[permission]]
+identifier = "deny-delete-all-memories"
+description = "Denies the delete_all_memories command without any pre-configured scope."
+commands.deny = ["delete_all_memories"]

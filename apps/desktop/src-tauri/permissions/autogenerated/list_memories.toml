@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-memories"
+description = "Enables the list_memories command without any pre-configured scope."
+commands.allow = ["list_memories"]
+
+[[permission]]
+identifier = "deny-list-memories"
+description = "Denies the list_memories command without any pre-configured scope."
+commands.deny = ["list_memories"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-discover-local-projects"
+description = "Enables the discover_local_projects command without any pre-configured scope."
+commands.allow = ["discover_local_projects"]
+
+[[permission]]
+identifier = "deny-discover-local-projects"
+description = "Denies the discover_local_projects command without any pre-configured scope."
+commands.deny = ["discover_local_projects"]

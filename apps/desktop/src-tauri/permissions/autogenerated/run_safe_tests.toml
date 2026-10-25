@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-run-safe-tests"
+description = "Enables the run_safe_tests command without any pre-configured scope."
+commands.allow = ["run_safe_tests"]
+
+[[permission]]
+identifier = "deny-run-safe-tests"
+description = "Denies the run_safe_tests command without any pre-configured scope."
+commands.deny = ["run_safe_tests"]

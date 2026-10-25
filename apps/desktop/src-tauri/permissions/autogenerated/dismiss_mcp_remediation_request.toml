@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dismiss-mcp-remediation-request"
+description = "Enables the dismiss_mcp_remediation_request command without any pre-configured scope."
+commands.allow = ["dismiss_mcp_remediation_request"]
+
+[[permission]]
+identifier = "deny-dismiss-mcp-remediation-request"
+description = "Denies the dismiss_mcp_remediation_request command without any pre-configured scope."
+commands.deny = ["dismiss_mcp_remediation_request"]

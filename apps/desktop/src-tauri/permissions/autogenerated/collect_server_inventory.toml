@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-collect-server-inventory"
+description = "Enables the collect_server_inventory command without any pre-configured scope."
+commands.allow = ["collect_server_inventory"]
+
+[[permission]]
+identifier = "deny-collect-server-inventory"
+description = "Denies the collect_server_inventory command without any pre-configured scope."
+commands.deny = ["collect_server_inventory"]

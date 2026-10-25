@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-finding-evidence"
+description = "Enables the list_finding_evidence command without any pre-configured scope."
+commands.allow = ["list_finding_evidence"]
+
+[[permission]]
+identifier = "deny-list-finding-evidence"
+description = "Denies the list_finding_evidence command without any pre-configured scope."
+commands.deny = ["list_finding_evidence"]
