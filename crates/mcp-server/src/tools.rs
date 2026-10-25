@@ -379,7 +379,7 @@ impl WorkspaceTools {
         }
         let redacted = redact_text_with_host_aliases(&contents, &self.host_aliases);
         Ok(
-            json!({"path":format!("<project>/{}",resolved.to_string_lossy().replace('\\',"/")),
+            json!({"path":format!("<project>/{}",relative.to_string_lossy().replace('\\',"/")),
             "contents":redacted.text,"redacted_values":redacted.redacted_values,"untrusted_data":true}),
         )
     }

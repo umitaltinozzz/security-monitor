@@ -134,6 +134,7 @@ async fn reviewed_ai_source_reads_are_capability_limited_and_redacted() {
     let tools = WorkspaceTools::new(database.clone(), Some("project-1".into()))
         .with_host_aliases([("prod-db.internal".into(), "payments-db".into())]);
     let approved = tools.execute(&read_call("config.json")).await.unwrap();
+    assert_eq!(approved["path"], "<project>/config.json");
     assert!(
         !approved["contents"]
             .as_str()
