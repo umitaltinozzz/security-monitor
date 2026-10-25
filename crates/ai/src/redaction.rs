@@ -64,6 +64,36 @@ pub fn redact_relative_path(project_root: &str, path: &str) -> Option<String> {
     ))
 }
 
+fn redact_quoted_windows_paths(input: &str) -> (String, usize) {
+    static PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            (
+                r#"(?i)\"(?:[a-z]:[\\/]|\\\\|//)[^\"\r\n]+\""#,
+                "\"[REDACTED_PATH]\"",
+            ),
+            (
+                r#"(?i)'(?:[a-z]:[\\/]|\\\\|//)[^'\r\n]+'"#,
+                "'[REDACTED_PATH]'",
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(pattern, replacement)| {
+            Regex::new(pattern)
+                .ok()
+                .map(|compiled| (compiled, replacement))
+        })
+        .collect()
+    });
+    let mut text = input.to_owned();
+    let mut redactions = 0;
+    for (pattern, replacement) in patterns {
+        redactions += pattern.find_iter(&text).count();
+        text = pattern.replace_all(&text, *replacement).into_owned();
+    }
+    (text, redactions)
+}
+
 pub fn redact_text(input: &str) -> RedactionResult {
     redact_text_with_host_aliases(input, &std::collections::BTreeMap::new())
 }
@@ -82,16 +112,15 @@ pub fn redact_text_with_host_aliases(
             r"(?i)\b(?:xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{30,}|sk_(?:live|test)_[A-Za-z0-9]{16,})\b",
             r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}",
             r"(?i)\b[a-z][a-z0-9+.-]*://[^/@\s:]*:[^/@\s]+@[^/\s?#]+(?:/[^\s?#]*)?(?:\?[^\s#]*)?",
-            r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/\s"'<>|:?*]+[\\/])*[^\\/\s"'<>|:?*]*)"#,
-            r#"(^|[\s"'(=])((?:\\\\|//)[^\\/\s"'<>|:?*]+[\\/][^\\/\s"'<>|:?*]+(?:[\\/][^\\/\s"'<>|:?*]+)*)"#,
+            r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/ \t\r\n<>|:?*"]+)"#,
+            r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n]+[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/ \t\r\n<>|:?*"]+)"#,
             r#"(?i)(^|[\s"'(=])(/(?:home|users|root|tmp|var|etc|opt|workspace|workspaces|mnt|private|volumes|srv|run|app|data)/[^\s"'<>|]*)"#,
         ]
         .into_iter()
         .filter_map(|pattern| Regex::new(pattern).ok())
         .collect()
     });
-    let mut text = input.to_owned();
-    let mut redacted_values = 0;
+    let (mut text, mut redacted_values) = redact_quoted_windows_paths(input);
     for pattern in patterns {
         let count = pattern.find_iter(&text).count();
         if count > 0 {
@@ -707,6 +736,22 @@ mod tests {
             assert!(!result.text.contains(private), "{private}");
         }
         assert!(result.redacted_values >= 4);
+    }
+
+    #[test]
+    fn redacts_windows_paths_with_spaces_in_unquoted_quoted_and_unc_forms() {
+        let result = redact_text(
+            "src C:\\Users\\Umit Altinoz\\Desktop\\project\\file.rs quoted \"C:\\Users\\Umit Altinoz\\Desktop\\private file.rs\" UNC //fileserver/Team Share/Project/main.rs",
+        );
+        for private in [
+            "C:\\Users\\Umit Altinoz",
+            "Altinoz\\Desktop\\project\\file.rs",
+            "private file.rs",
+            "Team Share/Project/main.rs",
+        ] {
+            assert!(!result.text.contains(private), "{private}");
+        }
+        assert!(result.redacted_values >= 3);
     }
 
     #[test]
