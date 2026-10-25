@@ -256,6 +256,13 @@ pub struct Repository<T> {
     marker: PhantomData<fn() -> T>,
 }
 
+pub struct RepositoryPage<T> {
+    pub items: Vec<T>,
+    pub total_count: u64,
+    pub offset: u32,
+    pub limit: u32,
+}
+
 impl<T: Entity> Repository<T> {
     pub async fn create(&self, entity: &T) -> Result<(), DatabaseError> {
         entity.validate()?;
@@ -303,6 +310,38 @@ impl<T: Entity> Repository<T> {
         rows.into_iter()
             .map(|row| decode_record(row.try_get::<String, _>(0)?))
             .collect()
+    }
+
+    pub async fn list_page(
+        &self,
+        offset: u32,
+        limit: u32,
+    ) -> Result<RepositoryPage<T>, DatabaseError> {
+        let limit = limit.clamp(1, 250);
+        let count_sql = format!("SELECT COUNT(*) FROM {}", quote_identifier(T::TABLE));
+        let total_count = sqlx::query_scalar::<_, i64>(&count_sql)
+            .fetch_one(&self.pool)
+            .await? as u64;
+        let sql = format!(
+            "SELECT record_json FROM {} ORDER BY {} LIMIT ?1 OFFSET ?2",
+            quote_identifier(T::TABLE),
+            quote_identifier(T::KEY_COLUMN)
+        );
+        let rows = sqlx::query(&sql)
+            .bind(i64::from(limit))
+            .bind(i64::from(offset))
+            .fetch_all(&self.pool)
+            .await?;
+        let items = rows
+            .into_iter()
+            .map(|row| decode_record(row.try_get::<String, _>(0)?))
+            .collect::<Result<Vec<T>, DatabaseError>>()?;
+        Ok(RepositoryPage {
+            items,
+            total_count,
+            offset,
+            limit,
+        })
     }
 
     pub async fn update(&self, entity: &T) -> Result<bool, DatabaseError> {

@@ -81,6 +81,40 @@ async fn migration_installs_all_tables_into_an_empty_database() {
 }
 
 #[tokio::test]
+async fn repository_pages_are_ordered_bounded_and_report_total_count() {
+    let database = Database::in_memory().await.unwrap();
+    let repository = database.repository::<Project>();
+    for id in ["project-c", "project-a", "project-b"] {
+        let mut project = records().project;
+        project.id = id.to_owned();
+        project.root_path = format!("C:/workspace/{id}");
+        repository.create(&project).await.unwrap();
+    }
+
+    let first = repository.list_page(0, 2).await.unwrap();
+    assert_eq!(first.total_count, 3);
+    assert_eq!(first.offset, 0);
+    assert_eq!(first.limit, 2);
+    assert_eq!(
+        first
+            .items
+            .iter()
+            .map(|project| project.id.as_str())
+            .collect::<Vec<_>>(),
+        ["project-a", "project-b"]
+    );
+
+    let last = repository.list_page(2, 2).await.unwrap();
+    assert_eq!(last.total_count, 3);
+    assert_eq!(last.items.len(), 1);
+    assert_eq!(last.items[0].id, "project-c");
+
+    let bounded = repository.list_page(0, u32::MAX).await.unwrap();
+    assert_eq!(bounded.limit, 250);
+    assert_eq!(bounded.items.len(), 3);
+}
+
+#[tokio::test]
 async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("existing.sqlite3");
