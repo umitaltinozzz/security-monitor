@@ -114,8 +114,8 @@ pub fn redact_text_with_host_aliases(
             r"(?i)\b[a-z][a-z0-9+.-]*://[^/@\s:]*:[^/@\s]+@[^/\s?#]+(?:/[^\s?#]*)?(?:\?[^\s#]*)?",
             r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/<>|:?*"\r\n]*\.[a-z0-9][a-z0-9._-]{0,15})(?=$|[\s,;:)\]}])"#,
             r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n]+[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/<>|:?*"\r\n]*\.[a-z0-9][a-z0-9._-]{0,15})(?=$|[\s,;:)\]}])"#,
-            r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n,;)\]}]+[\\/])*[^\\/<>|:?*"\r\n,;)\]}]* [^\\/<>|:?*"\r\n,;)\]}]+)(?=$|[,;\r\n)\]}])"#,
-            r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n,;)\]}]+[\\/](?:[^\\/<>|:?*"\r\n,;)\]}]+[\\/])*[^\\/<>|:?*"\r\n,;)\]}]* [^\\/<>|:?*"\r\n,;)\]}]+)(?=$|[,;\r\n)\]}])"#,
+            r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n,;)\]}]+[\\/])*[^\\/<>|:?*"\r\n,;)\]}]* [^\\/<>|:?*"\r\n,;)\]}]+)(?=$|[,;:\r\n)\]}])"#,
+            r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n,;)\]}]+[\\/](?:[^\\/<>|:?*"\r\n,;)\]}]+[\\/])*[^\\/<>|:?*"\r\n,;)\]}]* [^\\/<>|:?*"\r\n,;)\]}]+)(?=$|[,;:\r\n)\]}])"#,
             r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/ \t\r\n<>|:?*"]+)"#,
             r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n]+[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/ \t\r\n<>|:?*"]+)"#,
             r#"(?i)(^|[\s"'(=])(/(?:home|users|root|tmp|var|etc|opt|workspace|workspaces|mnt|private|volumes|srv|run|app|data)/[^\s"'<>|]*)"#,
@@ -745,7 +745,7 @@ mod tests {
     #[test]
     fn redacts_windows_paths_with_spaces_in_unquoted_quoted_and_unc_forms() {
         let result = redact_text(
-            "src C:\\Users\\Umit Altinoz\\Desktop\\project\\file.rs quoted \"C:\\Users\\Umit Altinoz\\Desktop\\private file.rs\" final C:\\Users\\Alice\\Desktop\\my secret file.txt, then continue extensionless C:\\Users\\Alice\\Desktop\\my secret; keep this UNC //fileserver/Team Share/Project/main.rs and //fileserver/share/Team Secret; keep that",
+            "src C:\\Users\\Umit Altinoz\\Desktop\\project\\file.rs quoted \"C:\\Users\\Umit Altinoz\\Desktop\\private file.rs\" final C:\\Users\\Alice\\Desktop\\my secret file.txt, then continue extensionless C:\\Users\\Alice\\Desktop\\my secret; keep this and C:\\Users\\Alice\\Desktop\\my folder: denied UNC //fileserver/Team Share/Project/main.rs and //fileserver/share/Team Secret; keep that and //fileserver/share/Team Folder: denied",
         );
         for private in [
             "C:\\Users\\Umit Altinoz",
@@ -753,8 +753,10 @@ mod tests {
             "private file.rs",
             "my secret file.txt",
             "my secret;",
+            "my folder",
             "Team Share/Project/main.rs",
             "share/Team Secret",
+            "share/Team Folder",
         ] {
             assert!(!result.text.contains(private), "{private}");
         }
@@ -762,6 +764,7 @@ mod tests {
         assert!(result.text.contains(", then continue"));
         assert!(result.text.contains("; keep this"));
         assert!(result.text.contains("; keep that"));
+        assert!(result.text.contains(": denied"));
     }
 
     #[test]
