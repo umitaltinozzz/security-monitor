@@ -593,6 +593,22 @@ async fn credential_bearing_project_remotes_are_rejected_before_storage() {
 }
 
 #[tokio::test]
+async fn project_root_paths_are_unique_in_the_database() {
+    let database = Database::in_memory().await.unwrap();
+    let repository = database.repository::<Project>();
+    let mut first = records().project;
+    first.root_path = "C:/workspace/project".to_owned();
+    repository.create(&first).await.unwrap();
+
+    let mut duplicate = first.clone();
+    duplicate.id = "project-duplicate".to_owned();
+    duplicate.name = "duplicate".to_owned();
+
+    assert!(repository.create(&duplicate).await.is_err());
+    assert_eq!(repository.list().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn ai_provider_credential_material_is_rejected_before_storage() {
     let database = Database::in_memory().await.unwrap();
     let mut provider = records().ai_provider;
