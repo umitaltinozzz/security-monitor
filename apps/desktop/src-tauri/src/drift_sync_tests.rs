@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::{collections::HashSet, path::Path, process::Command};
 
 use chrono::{DateTime, Duration, Utc};
 use security_monitor_agent_protocol::AgentInventory;
@@ -11,8 +11,8 @@ use security_monitor_drift::WorkingTreeStatus;
 use security_monitor_inventory::Inventory;
 
 use super::{
-    GitReference, apply_drift, normalize_remote, read_git_reference, select_deployment,
-    working_tree_clean,
+    GitReference, apply_drift, dependency_tree_status, normalize_remote, read_git_reference,
+    select_deployment,
 };
 
 const ADVISORY: &str = include_str!("../../../../tests/fixtures/drift/advisory.json");
@@ -341,11 +341,34 @@ fn remotes_normalize_across_ssh_and_https_forms() {
 }
 
 #[test]
-fn untracked_dependency_files_make_the_tree_dirty_but_other_files_do_not() {
-    assert!(working_tree_clean(""));
-    assert!(working_tree_clean("?? dist/bundle.js"));
-    assert!(!working_tree_clean("?? package-lock.json"));
-    assert!(!working_tree_clean(" M src/index.ts"));
+fn dependency_files_must_match_the_committed_blob_and_be_tracked() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let root = directory.path();
+    std::fs::write(root.join("package-lock.json"), "{\r\n}\r\n").expect("lockfile written");
+    let tracked = HashSet::from(["package-lock.json".to_owned(), "src/index.ts".to_owned()]);
+    let committed = |_: &str| Some(b"{\n}\n".to_vec());
+
+    assert_eq!(
+        dependency_tree_status(root, &tracked, &["package-lock.json".to_owned()], committed),
+        WorkingTreeStatus::Clean
+    );
+    assert_eq!(
+        dependency_tree_status(
+            root,
+            &tracked,
+            &["web/package-lock.json".to_owned()],
+            committed
+        ),
+        WorkingTreeStatus::HasUncommittedChanges
+    );
+    assert_eq!(
+        dependency_tree_status(root, &tracked, &[], |_: &str| Some(b"{}".to_vec())),
+        WorkingTreeStatus::HasUncommittedChanges
+    );
+    assert_eq!(
+        dependency_tree_status(root, &tracked, &[], |_: &str| None),
+        WorkingTreeStatus::Unknown
+    );
 }
 
 fn run_git(root: &Path, args: &[&str]) {
@@ -371,18 +394,33 @@ fn reference_is_verified_only_on_a_clean_reference_branch_tip() {
     std::fs::write(root.join("package-lock.json"), "{}\n").expect("lockfile written");
     run_git(root, &["add", "package-lock.json"]);
     run_git(root, &["commit", "--quiet", "-m", "initial"]);
+    let lockfile = ["package-lock.json".to_owned()];
+    // A repository-local fsmonitor must never run while the reference is read.
+    let marker = root.join("fsmonitor-ran");
+    run_git(
+        root,
+        &[
+            "config",
+            "core.fsmonitor",
+            &format!("echo ran > \"{}\"", marker.display()),
+        ],
+    );
 
-    let clean = read_git_reference(root, Some("main")).expect("git reference read");
+    let clean = read_git_reference(root, Some("main"), &lockfile).expect("git reference read");
     assert!(clean.head_verified);
     assert_eq!(clean.working_tree, WorkingTreeStatus::Clean);
     assert_eq!(clean.commit.len(), 40);
 
     std::fs::write(root.join("package-lock.json"), "{\"changed\":true}\n")
         .expect("lockfile changed");
-    let dirty = read_git_reference(root, Some("main")).expect("git reference read");
+    let dirty = read_git_reference(root, Some("main"), &lockfile).expect("git reference read");
     assert!(!dirty.head_verified);
     assert_eq!(dirty.working_tree, WorkingTreeStatus::HasUncommittedChanges);
 
-    assert!(read_git_reference(root, Some("--upload-pack=x")).is_none());
-    assert!(read_git_reference(root, Some("missing-branch")).is_some_and(|r| !r.head_verified));
+    assert!(read_git_reference(root, Some("--upload-pack=x"), &lockfile).is_none());
+    assert!(
+        read_git_reference(root, Some("missing-branch"), &lockfile)
+            .is_some_and(|reference| !reference.head_verified)
+    );
+    assert!(!marker.exists(), "repository fsmonitor must not execute");
 }

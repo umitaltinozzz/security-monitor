@@ -808,14 +808,30 @@ async fn run_command_with_git_safety(
     Ok((output.stdout, output.output_truncated))
 }
 
-struct GitCommandSafety {
+/// Neutralizes configuration a repository could use to run programs when Git touches it:
+/// hooks, fsmonitor, system/global config and attribute files, and inherited Git environment.
+/// Repository-local filters still exist, so callers must avoid commands that apply them
+/// (for example `status` or `diff`) on untrusted repositories.
+pub struct GitCommandSafety {
     directory: PathBuf,
     hooks_directory: PathBuf,
     empty_file: PathBuf,
 }
 
+const GIT_ENVIRONMENT_REMOVED: [&str; 9] = [
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX",
+    "GIT_EXTERNAL_DIFF",
+];
+
 impl GitCommandSafety {
-    fn create() -> Result<Self, RemediationError> {
+    pub fn create() -> Result<Self, RemediationError> {
         let directory =
             std::env::temp_dir().join(format!("secmon-git-safe-{}", Uuid::new_v4().simple()));
         fs::create_dir(&directory).map_err(|_| RemediationError::FilesystemFailed)?;
@@ -838,28 +854,34 @@ impl GitCommandSafety {
         })
     }
 
+    fn environment(&self) -> [(&'static str, &std::ffi::OsStr); 11] {
+        [
+            ("GIT_CONFIG_NOSYSTEM", "1".as_ref()),
+            ("GIT_CONFIG_GLOBAL", self.empty_file.as_os_str()),
+            ("GIT_ATTR_NOSYSTEM", "1".as_ref()),
+            ("GIT_CONFIG_COUNT", "3".as_ref()),
+            ("GIT_CONFIG_KEY_0", "core.hooksPath".as_ref()),
+            ("GIT_CONFIG_VALUE_0", self.hooks_directory.as_os_str()),
+            ("GIT_CONFIG_KEY_1", "core.fsmonitor".as_ref()),
+            ("GIT_CONFIG_VALUE_1", "false".as_ref()),
+            ("GIT_CONFIG_KEY_2", "core.attributesFile".as_ref()),
+            ("GIT_CONFIG_VALUE_2", self.empty_file.as_os_str()),
+            ("GIT_TERMINAL_PROMPT", "0".as_ref()),
+        ]
+    }
+
     fn configure(&self, command: &mut Command) {
-        command
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", &self.empty_file)
-            .env("GIT_ATTR_NOSYSTEM", "1")
-            .env("GIT_CONFIG_COUNT", "3")
-            .env("GIT_CONFIG_KEY_0", "core.hooksPath")
-            .env("GIT_CONFIG_VALUE_0", &self.hooks_directory)
-            .env("GIT_CONFIG_KEY_1", "core.fsmonitor")
-            .env("GIT_CONFIG_VALUE_1", "false")
-            .env("GIT_CONFIG_KEY_2", "core.attributesFile")
-            .env("GIT_CONFIG_VALUE_2", &self.empty_file)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .env_remove("GIT_CONFIG_PARAMETERS")
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_COMMON_DIR")
-            .env_remove("GIT_INDEX_FILE")
-            .env_remove("GIT_OBJECT_DIRECTORY")
-            .env_remove("GIT_ALTERNATE_OBJECT_DIRECTORIES")
-            .env_remove("GIT_PREFIX")
-            .env_remove("GIT_EXTERNAL_DIFF");
+        command.envs(self.environment());
+        for name in GIT_ENVIRONMENT_REMOVED {
+            command.env_remove(name);
+        }
+    }
+
+    pub fn configure_std(&self, command: &mut std::process::Command) {
+        command.envs(self.environment());
+        for name in GIT_ENVIRONMENT_REMOVED {
+            command.env_remove(name);
+        }
     }
 }
 

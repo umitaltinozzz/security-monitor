@@ -3,7 +3,7 @@
 //! changes; production state is read only from servers the user linked to the project.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -23,6 +23,7 @@ use security_monitor_drift::{
     assess_drift,
 };
 use security_monitor_inventory::{Inventory, is_dependency_file, scan_repository};
+use security_monitor_remediation::GitCommandSafety;
 
 /// Server inventory older than this no longer counts as current production evidence.
 const PRODUCTION_SNAPSHOT_MAX_AGE_HOURS: i64 = 24;
@@ -61,8 +62,26 @@ pub async fn refresh_project_drift(
     let reference_branch = project.reference_branch.clone();
     let scan_root = root.clone();
     let (git, inventory) = tokio::task::spawn_blocking(move || {
-        let git = read_git_reference(&scan_root, reference_branch.as_deref());
-        (git, scan_repository(&scan_root).ok())
+        let inventory = scan_repository(&scan_root).ok();
+        let dependency_paths = inventory
+            .as_ref()
+            .map(|inventory| {
+                inventory
+                    .components
+                    .iter()
+                    .flat_map(|component| component.evidence_paths.iter().cloned())
+                    .chain(
+                        inventory
+                            .detected_files
+                            .iter()
+                            .filter(|file| is_dependency_file(Path::new(&file.path)))
+                            .map(|file| file.path.clone()),
+                    )
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let git = read_git_reference(&scan_root, reference_branch.as_deref(), &dependency_paths);
+        (git, inventory)
     })
     .await
     .map_err(|_| "scan_failed".to_owned())?;
@@ -384,37 +403,51 @@ fn normalize_remote(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_owned())
 }
 
-/// Reads the reference branch state with fixed Git argument vectors; no shell is involved.
-pub fn read_git_reference(root: &Path, configured_branch: Option<&str>) -> Option<GitReference> {
-    let head = git(root, &["rev-parse", "--verify", "HEAD^{commit}"])?;
+/// Reads the reference branch state with fixed Git argument vectors and without shell use.
+/// Repository content is untrusted: hooks, fsmonitor and global config are neutralized, and only
+/// commands that never run repository-defined filters (`rev-parse`, `ls-files`, `cat-file`) are
+/// used. Dependency files are compared byte-for-byte (ignoring CR) with the committed blob.
+pub fn read_git_reference(
+    root: &Path,
+    configured_branch: Option<&str>,
+    dependency_paths: &[String],
+) -> Option<GitReference> {
+    let safety = GitCommandSafety::create().ok()?;
+    let git = |args: &[&str]| run_git(&safety, root, args);
+    let head = text(git(&["rev-parse", "--verify", "HEAD^{commit}"])?)?;
     let branch = match configured_branch {
         Some(branch) => branch.to_owned(),
-        None => git(
-            root,
-            &[
-                "symbolic-ref",
-                "--quiet",
-                "--short",
-                "refs/remotes/origin/HEAD",
-            ],
-        )
+        None => git(&[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ])
+        .and_then(text)
         .and_then(|value| value.strip_prefix("origin/").map(str::to_owned))
-        .or_else(|| git(root, &["symbolic-ref", "--quiet", "--short", "HEAD"]))?,
+        .or_else(|| git(&["symbolic-ref", "--quiet", "--short", "HEAD"]).and_then(text))?,
     };
     if !safe_branch_name(&branch) {
         return None;
     }
-    let tip = git(
-        root,
-        &[
-            "rev-parse",
-            "--verify",
-            &format!("refs/heads/{branch}^{{commit}}"),
-        ],
-    );
-    let working_tree = match git(root, &["status", "--porcelain=v1", "--untracked-files=all"]) {
-        Some(status) if working_tree_clean(&status) => WorkingTreeStatus::Clean,
-        Some(_) => WorkingTreeStatus::HasUncommittedChanges,
+    let tip = git(&[
+        "rev-parse",
+        "--verify",
+        &format!("refs/heads/{branch}^{{commit}}"),
+    ])
+    .and_then(text);
+    let working_tree = match git(&["ls-files", "-z"]) {
+        Some(listing) => {
+            let tracked = listing
+                .split(|byte| *byte == 0)
+                .filter(|entry| !entry.is_empty())
+                .filter_map(|entry| std::str::from_utf8(entry).ok())
+                .map(str::to_owned)
+                .collect::<HashSet<_>>();
+            dependency_tree_status(root, &tracked, dependency_paths, |path| {
+                git(&["cat-file", "blob", &format!("HEAD:{path}")])
+            })
+        }
         None => WorkingTreeStatus::Unknown,
     };
     let head_verified =
@@ -427,15 +460,40 @@ pub fn read_git_reference(root: &Path, configured_branch: Option<&str>) -> Optio
     })
 }
 
-/// Tracked changes always count; untracked files count only when they are dependency files,
-/// because build output that is not ignored must not hide a verified lockfile.
-fn working_tree_clean(porcelain: &str) -> bool {
-    porcelain.lines().all(|line| {
-        let Some(path) = line.strip_prefix("?? ") else {
-            return line.trim().is_empty();
+/// Tracked dependency files must match the committed blob; a dependency file found by the
+/// inventory but not tracked counts as an uncommitted change.
+fn dependency_tree_status(
+    root: &Path,
+    tracked: &HashSet<String>,
+    dependency_paths: &[String],
+    committed_blob: impl Fn(&str) -> Option<Vec<u8>>,
+) -> WorkingTreeStatus {
+    if dependency_paths.iter().any(|path| !tracked.contains(path)) {
+        return WorkingTreeStatus::HasUncommittedChanges;
+    }
+    for path in tracked
+        .iter()
+        .filter(|path| is_dependency_file(Path::new(path.as_str())))
+    {
+        let Some(committed) = committed_blob(path) else {
+            return WorkingTreeStatus::Unknown;
         };
-        !is_dependency_file(Path::new(path.trim_matches('"')))
-    })
+        let Ok(current) = std::fs::read(root.join(path)) else {
+            return WorkingTreeStatus::HasUncommittedChanges;
+        };
+        if without_carriage_returns(&current) != without_carriage_returns(&committed) {
+            return WorkingTreeStatus::HasUncommittedChanges;
+        }
+    }
+    WorkingTreeStatus::Clean
+}
+
+fn without_carriage_returns(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .iter()
+        .copied()
+        .filter(|byte| *byte != b'\r')
+        .collect()
 }
 
 fn safe_branch_name(value: &str) -> bool {
@@ -447,14 +505,20 @@ fn safe_branch_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'/' | b'-'))
 }
 
-fn git(root: &Path, args: &[&str]) -> Option<String> {
+fn text(bytes: Vec<u8>) -> Option<String> {
+    String::from_utf8(bytes)
+        .ok()
+        .map(|value| value.trim_end().to_owned())
+}
+
+fn run_git(safety: &GitCommandSafety, root: &Path, args: &[&str]) -> Option<Vec<u8>> {
     let mut command = Command::new("git");
     command
         .arg("-C")
         .arg(root)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0");
+        .arg("--no-optional-locks")
+        .args(args);
+    safety.configure_std(&mut command);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -462,11 +526,7 @@ fn git(root: &Path, args: &[&str]) -> Option<String> {
         command.creation_flags(CREATE_NO_WINDOW);
     }
     let output = command.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
-    Some(text.trim_end().to_owned())
+    output.status.success().then_some(output.stdout)
 }
 
 #[cfg(test)]
