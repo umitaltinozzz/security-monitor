@@ -517,7 +517,60 @@ async fn pre_commit_hook_checks_the_staged_lockfile_snapshot() {
 }
 
 #[test]
-fn warn_hook_never_blocks_when_the_check_itself_cannot_run() {
+fn block_hook_allows_manifest_only_changes_without_a_verified_threshold_breach() {
+    let environment = HookTestEnvironment::new();
+    let root = tempfile::tempdir().unwrap();
+    let repository = root.path().join("working");
+    std::fs::create_dir(&repository).unwrap();
+    assert_git_success(&repository, &args(&["init", "--quiet"]), &environment);
+    assert_git_success(
+        &repository,
+        &args(&["config", "user.name", "Fixture User"]),
+        &environment,
+    );
+    assert_git_success(
+        &repository,
+        &args(&["config", "user.email", "fixture@example.invalid"]),
+        &environment,
+    );
+    std::fs::write(repository.join("README.txt"), "fixture\n").unwrap();
+    assert_git_success(
+        &repository,
+        &args(&["add", "--", "README.txt"]),
+        &environment,
+    );
+    assert_git_success(
+        &repository,
+        &args(&["commit", "--quiet", "-m", "initial"]),
+        &environment,
+    );
+
+    install_hook(&repository, "--pre-commit", "block", &environment);
+    std::fs::write(
+        repository.join("package.json"),
+        br#"{"name":"manifest-only","dependencies":{"fixture-package":"^1.0.0"}}"#,
+    )
+    .unwrap();
+    assert_git_success(
+        &repository,
+        &args(&["add", "--", "package.json"]),
+        &environment,
+    );
+    let commit = git_command(
+        &repository,
+        &args(&["commit", "--quiet", "-m", "change dependency manifest"]),
+        &environment,
+    );
+    assert!(
+        commit.status.success(),
+        "manifest-only change was blocked: {}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
+    assert!(String::from_utf8_lossy(&commit.stderr).contains("incomplete"));
+}
+
+#[test]
+fn hook_modes_continue_when_the_check_itself_cannot_run() {
     // A plain directory has no Git history, so the pre-push check cannot read pushed commits.
     let directory = tempfile::tempdir().unwrap();
     let environment = HookTestEnvironment::new();
@@ -552,7 +605,8 @@ fn warn_hook_never_blocks_when_the_check_itself_cannot_run() {
         String::from_utf8_lossy(&warn.stderr)
     );
     let block = run("block");
-    assert!(!block.status.success());
+    assert!(block.status.success());
+    assert!(String::from_utf8_lossy(&block.stderr).contains("no threshold was confirmed"));
 }
 
 #[test]

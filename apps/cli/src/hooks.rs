@@ -8,7 +8,9 @@ use std::{
 };
 
 use chrono::{Duration, Utc};
-use security_monitor_advisory_providers::{OsvDatabase, ecosystem_slug, evaluate_inventory};
+use security_monitor_advisory_providers::{
+    FindingReason, OsvDatabase, ecosystem_slug, evaluate_inventory,
+};
 use security_monitor_core::{Advisory, Severity};
 use security_monitor_database::Database;
 use security_monitor_inventory::{Inventory, is_dependency_file, scan_repository};
@@ -19,7 +21,8 @@ const MAX_GIT_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CHANGED_FILES: usize = 1024;
 const MAX_CHANGED_FILE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CHANGED_BYTES: usize = 128 * 1024 * 1024;
-const OSV_FRESHNESS: Duration = Duration::hours(1);
+const OSV_FRESHNESS: Duration = Duration::hours(24);
+pub(super) const THRESHOLD_BREACH_EXIT: i32 = 2;
 
 struct SnapshotChanges {
     revision: String,
@@ -119,7 +122,7 @@ pub async fn scan_changed_inputs(
             println!(
                 "hook: {changed_input_count} changed dependency input(s); {finding_count} finding(s)"
             );
-            return Ok(2);
+            return Ok(THRESHOLD_BREACH_EXIT);
         }
     }
 
@@ -344,9 +347,13 @@ async fn offline_findings(
     let threshold_exceeded = findings.iter().any(|finding| {
         severities
             .get(finding.advisory_id.as_str())
-            .is_some_and(|rank| *rank >= threshold && *rank > 0)
+            .is_some_and(|rank| finding_exceeds_threshold(finding.reason, *rank, threshold))
     });
     (findings.len(), needs_review, threshold_exceeded)
+}
+
+fn finding_exceeds_threshold(reason: FindingReason, severity_rank: u8, threshold: u8) -> bool {
+    reason == FindingReason::AffectedVersion && severity_rank >= threshold && severity_rank > 0
 }
 
 fn advisory_severity_rank(advisory: &Advisory) -> u8 {
@@ -443,8 +450,14 @@ fn git_output(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_scannable_input, parse_changed_paths, safe_relative_path};
+    use chrono::Duration;
+    use security_monitor_advisory_providers::FindingReason;
     use std::path::Path;
+
+    use super::{
+        OSV_FRESHNESS, finding_exceeds_threshold, is_scannable_input, parse_changed_paths,
+        safe_relative_path,
+    };
 
     #[test]
     fn changed_file_parser_only_accepts_safe_dependency_inputs() {
@@ -457,5 +470,31 @@ mod tests {
         assert!(!safe_relative_path(Path::new("../package-lock.json")));
         assert!(is_scannable_input(Path::new("requirements.txt")));
         assert!(!is_scannable_input(Path::new("package.json")));
+    }
+
+    #[test]
+    fn block_threshold_requires_a_verified_affected_version() {
+        assert!(finding_exceeds_threshold(
+            FindingReason::AffectedVersion,
+            3,
+            3
+        ));
+        for reason in [
+            FindingReason::VersionDataPending,
+            FindingReason::SourceDisagreement,
+            FindingReason::VersionRangeUnverified,
+        ] {
+            assert!(!finding_exceeds_threshold(reason, 4, 3));
+        }
+        assert!(!finding_exceeds_threshold(
+            FindingReason::AffectedVersion,
+            2,
+            3
+        ));
+    }
+
+    #[test]
+    fn osv_cache_freshness_window_is_24_hours() {
+        assert_eq!(OSV_FRESHNESS, Duration::hours(24));
     }
 }

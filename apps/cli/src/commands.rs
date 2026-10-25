@@ -566,7 +566,12 @@ pub async fn run_hook(
                 eprintln!("warning: security check could not run ({error}); continuing");
                 return Ok(0);
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                eprintln!(
+                    "warning: security check could not run ({error}); no threshold was confirmed"
+                );
+                return Ok(0);
+            }
         }
     } else if !pre_push && !pre_commit {
         return Ok(0);
@@ -592,7 +597,12 @@ pub async fn run_hook(
                 eprintln!("warning: security check could not run ({error}); continuing");
                 return Ok(0);
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                eprintln!(
+                    "warning: security check could not run ({error}); no threshold was confirmed"
+                );
+                return Ok(0);
+            }
         };
     }
     if code == 0 {
@@ -603,11 +613,19 @@ pub async fn run_hook(
             eprintln!("warning: scan threshold or verification check requires review; continuing");
             Ok(0)
         }
-        HookMode::Block => {
-            eprintln!("blocked: scan threshold or verification check requires review");
+        HookMode::Block if should_block_hook(mode, code) => {
+            eprintln!("blocked: a verified finding meets the configured severity threshold");
             Ok(code)
         }
+        HookMode::Block => {
+            eprintln!("warning: scan verification is incomplete; no threshold was confirmed");
+            Ok(0)
+        }
     }
+}
+
+fn should_block_hook(mode: HookMode, result_code: i32) -> bool {
+    matches!(mode, HookMode::Block) && result_code == super::hooks::THRESHOLD_BREACH_EXIT
 }
 
 async fn hook_scan(
@@ -906,5 +924,18 @@ fn fail_on_text(fail_on: FailOn) -> &'static str {
         FailOn::High => "high",
         FailOn::Medium => "medium",
         FailOn::Low => "low",
+    }
+}
+
+#[cfg(test)]
+mod hook_mode_tests {
+    use super::{HookMode, should_block_hook};
+
+    #[test]
+    fn block_mode_stops_only_on_a_threshold_breach() {
+        assert!(should_block_hook(HookMode::Block, 2));
+        assert!(!should_block_hook(HookMode::Block, 3));
+        assert!(!should_block_hook(HookMode::Warn, 2));
+        assert!(!should_block_hook(HookMode::Block, 0));
     }
 }
