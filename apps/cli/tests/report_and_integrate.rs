@@ -514,3 +514,42 @@ async fn pre_commit_hook_checks_the_staged_lockfile_snapshot() {
     assert!(commit_output.contains("blocked"));
     assert!(commit_output.contains("1 finding(s)"));
 }
+
+#[test]
+fn warn_hook_never_blocks_when_the_check_itself_cannot_run() {
+    // A plain directory has no Git history, so the pre-push check cannot read pushed commits.
+    let directory = tempfile::tempdir().unwrap();
+    let environment = HookTestEnvironment::new();
+    let pushed = "refs/heads/main 1111111111111111111111111111111111111111 \
+                  refs/heads/main 0000000000000000000000000000000000000000\n";
+    let run = |mode: &str| {
+        let mut command = secmon();
+        command
+            .args([
+                "hook",
+                "run",
+                "--pre-push",
+                "--mode",
+                mode,
+                "--fail-on",
+                "high",
+            ])
+            .current_dir(directory.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        environment.configure(&mut command);
+        let mut child = command.spawn().unwrap();
+        std::io::Write::write_all(&mut child.stdin.take().unwrap(), pushed.as_bytes()).unwrap();
+        child.wait_with_output().unwrap()
+    };
+
+    let warn = run("warn");
+    assert!(
+        warn.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warn.stderr)
+    );
+    let block = run("block");
+    assert!(!block.status.success());
+}

@@ -551,21 +551,14 @@ pub async fn run_hook(
         return Err("choose_one_hook");
     }
     let fail_on = FailOn::parse(fail_on).ok_or("invalid_fail_on")?;
-    let root = std::env::current_dir().map_err(|_| "project_path_invalid")?;
-    let code = if pre_push || pre_commit {
-        let (database_path, app_data) = database_locations(database_path);
-        fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
-        super::hooks::scan_changed_inputs(&root, &database_path, &app_data, pre_push, fail_on)
-            .await?
-    } else {
-        run_scan(
-            root,
-            database_path,
-            "table",
-            Some(fail_on_text(fail_on)),
-            true,
-        )
-        .await?
+    let code = match hook_scan(database_path, fail_on, pre_push, pre_commit).await {
+        Ok(code) => code,
+        // Warn mode never stops a commit or push, not even when the check itself fails.
+        Err(error) if matches!(mode, HookMode::Warn) => {
+            eprintln!("warning: security check could not run ({error}); continuing");
+            return Ok(0);
+        }
+        Err(error) => return Err(error),
     };
     if code == 0 {
         return Ok(0);
@@ -579,6 +572,29 @@ pub async fn run_hook(
             eprintln!("blocked: scan threshold or verification check requires review");
             Ok(code)
         }
+    }
+}
+
+async fn hook_scan(
+    database_path: Option<PathBuf>,
+    fail_on: FailOn,
+    pre_push: bool,
+    pre_commit: bool,
+) -> Result<i32, &'static str> {
+    let root = std::env::current_dir().map_err(|_| "project_path_invalid")?;
+    if pre_push || pre_commit {
+        let (database_path, app_data) = database_locations(database_path);
+        fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
+        super::hooks::scan_changed_inputs(&root, &database_path, &app_data, pre_push, fail_on).await
+    } else {
+        run_scan(
+            root,
+            database_path,
+            "table",
+            Some(fail_on_text(fail_on)),
+            true,
+        )
+        .await
     }
 }
 
