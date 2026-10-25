@@ -20,6 +20,7 @@
     "allow-cancel-project-scan",
     "allow-get-scan-result",
     "allow-list-findings",
+    "allow-list-findings-page",
     "allow-list-memories",
     "allow-create-memory",
     "allow-update-memory",

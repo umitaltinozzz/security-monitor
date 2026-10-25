@@ -7,7 +7,7 @@ use security_monitor_core::{
 use serde::Deserialize;
 use sqlx::Row;
 
-use crate::{Database, DatabaseError, Entity, Repository};
+use crate::{Database, DatabaseError, Entity, FindingPageFilter, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
@@ -112,6 +112,74 @@ async fn repository_pages_are_ordered_bounded_and_report_total_count() {
     let bounded = repository.list_page(0, u32::MAX).await.unwrap();
     assert_eq!(bounded.limit, 250);
     assert_eq!(bounded.items.len(), 3);
+}
+
+#[tokio::test]
+async fn finding_pages_apply_status_severity_project_and_text_filters_before_paging() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    let mut instance = fixture.component_instance;
+    instance.asset_id = None;
+    instance.service_id = None;
+    instance.deployment_id = None;
+    database
+        .repository::<Project>()
+        .create(&fixture.project)
+        .await
+        .unwrap();
+    database
+        .repository::<Component>()
+        .create(&fixture.component)
+        .await
+        .unwrap();
+    database
+        .repository::<ComponentInstance>()
+        .create(&instance)
+        .await
+        .unwrap();
+    database
+        .repository::<Advisory>()
+        .create(&fixture.advisory)
+        .await
+        .unwrap();
+    database
+        .repository::<Finding>()
+        .create(&fixture.finding)
+        .await
+        .unwrap();
+
+    let page = database
+        .repository::<Finding>()
+        .list_filtered_page(
+            0,
+            1,
+            &FindingPageFilter {
+                status: Some("needs_review"),
+                severity: Some("high"),
+                project_id: Some("project-1"),
+                search: "Fixture advisory",
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.total_count, 1);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].id, "finding-1");
+
+    let no_match = database
+        .repository::<Finding>()
+        .list_filtered_page(
+            0,
+            1,
+            &FindingPageFilter {
+                search: "missing advisory",
+                ..FindingPageFilter::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(no_match.total_count, 0);
+    assert!(no_match.items.is_empty());
 }
 
 #[tokio::test]

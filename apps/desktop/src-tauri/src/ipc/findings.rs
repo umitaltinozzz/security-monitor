@@ -11,6 +11,59 @@ pub async fn list_findings(state: State<'_, AppState>) -> Result<Vec<Finding>, S
 }
 
 #[tauri::command]
+pub async fn list_findings_page(
+    state: State<'_, AppState>,
+    offset: u32,
+    limit: u32,
+    status: Option<FindingStatus>,
+    severity: Option<Severity>,
+    project_id: Option<String>,
+    query: String,
+) -> Result<FindingPageView, String> {
+    let status = status
+        .map(|value| serde_json::to_value(value).map_err(|error| opaque(error, "invalid_input")))
+        .transpose()?
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "invalid_input".to_owned())
+        })
+        .transpose()?;
+    let severity = severity
+        .map(|value| serde_json::to_value(value).map_err(|error| opaque(error, "invalid_input")))
+        .transpose()?
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "invalid_input".to_owned())
+        })
+        .transpose()?;
+    let page = state
+        .database
+        .repository::<Finding>()
+        .list_filtered_page(
+            offset,
+            limit,
+            &security_monitor_database::FindingPageFilter {
+                status: status.as_deref(),
+                severity: severity.as_deref(),
+                project_id: project_id.as_deref(),
+                search: &query,
+            },
+        )
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
+    Ok(FindingPageView {
+        findings: page.items,
+        total_count: page.total_count,
+        offset: page.offset,
+        limit: page.limit,
+    })
+}
+
+#[tauri::command]
 pub async fn list_advisories(state: State<'_, AppState>) -> Result<Vec<Advisory>, String> {
     state
         .database

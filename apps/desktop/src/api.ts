@@ -15,8 +15,11 @@ import type { CollectionSummary } from "./generated/CollectionSummary";
 import type { Component } from "./generated/Component";
 import type { ComponentInstance } from "./generated/ComponentInstance";
 import type { Finding } from "./generated/Finding";
+import type { FindingPageView } from "./generated/FindingPageView";
+import type { FindingStatus } from "./generated/FindingStatus";
 import type { FindingEvidence } from "./generated/FindingEvidence";
 import type { FindingStatusChange } from "./generated/FindingStatusChange";
+import type { Severity } from "./generated/Severity";
 import type { NewsSignal } from "./generated/NewsSignal";
 import type { ProjectServerLink } from "./generated/ProjectServerLink";
 import type { NewsSyncReport } from "./generated/NewsSyncReport";
@@ -53,6 +56,23 @@ export type WorkspaceData = {
   audit: AuditEvent[];
 };
 
+export const workspaceSections = [
+  "settings",
+  "projects",
+  "assets",
+  "links",
+  "findings",
+  "advisories",
+  "newsSignals",
+  "components",
+  "instances",
+  "evidence",
+  "runs",
+  "audit",
+] as const satisfies readonly (keyof WorkspaceData)[];
+
+export type WorkspaceSection = (typeof workspaceSections)[number];
+
 export const api = {
   settings: () => invoke<AppSettings>("get_app_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { settings }),
@@ -87,6 +107,22 @@ export const api = {
   cancelScan: (scanId: string) => invoke<boolean>("cancel_project_scan", { scanId }),
   scanResult: (scanId: string) => invoke<ScanResult | null>("get_scan_result", { scanId }),
   findings: () => invoke<Finding[]>("list_findings"),
+  findingsPage: (input: {
+    offset: number;
+    limit: number;
+    status: FindingStatus | null;
+    severity: Severity | null;
+    projectId: string | null;
+    query: string;
+  }) =>
+    invoke<FindingPageView>("list_findings_page", {
+      offset: input.offset,
+      limit: input.limit,
+      status: input.status,
+      severity: input.severity,
+      projectId: input.projectId,
+      query: input.query,
+    }),
   advisories: () => invoke<Advisory[]>("list_advisories"),
   newsSignals: () => invoke<NewsSignal[]>("list_news_signals"),
   refreshNewsSignals: () => invoke<NewsSyncReport>("refresh_news_signals"),
@@ -160,46 +196,33 @@ export const api = {
   unlinkProjectServer: (linkId: string) => invoke<boolean>("unlink_project_server", { linkId }),
 };
 
-export async function loadWorkspace(): Promise<WorkspaceData> {
-  const [
-    settings,
-    projects,
-    assets,
-    links,
-    findings,
-    advisories,
-    newsSignals,
-    components,
-    instances,
-    evidence,
-    runs,
-    audit,
-  ] = await Promise.all([
-    api.settings(),
-    api.projects(),
-    api.assets(),
-    api.projectServerLinks(),
-    api.findings(),
-    api.advisories(),
-    api.newsSignals(),
-    api.components(),
-    api.instances(),
-    api.evidence(),
-    api.runs(),
-    api.audit(),
-  ]);
-  return {
-    settings,
-    projects,
-    assets,
-    links,
-    findings,
-    advisories,
-    newsSignals,
-    components,
-    instances,
-    evidence,
-    runs,
-    audit,
-  };
+const workspaceLoaders: {
+  [Section in WorkspaceSection]: () => Promise<WorkspaceData[Section]>;
+} = {
+  settings: api.settings,
+  projects: api.projects,
+  assets: api.assets,
+  links: api.projectServerLinks,
+  findings: api.findings,
+  advisories: api.advisories,
+  newsSignals: api.newsSignals,
+  components: api.components,
+  instances: api.instances,
+  evidence: api.evidence,
+  runs: api.runs,
+  audit: api.audit,
+};
+
+export async function loadWorkspace(
+  previous: WorkspaceData | null = null,
+  sections: readonly WorkspaceSection[] = workspaceSections,
+): Promise<WorkspaceData> {
+  const workspace = previous ? { ...previous } : ({} as WorkspaceData);
+  const selected = previous ? sections : workspaceSections;
+  await Promise.all(
+    selected.map(async <Section extends WorkspaceSection>(section: Section) => {
+      workspace[section] = await workspaceLoaders[section]();
+    }),
+  );
+  return workspace;
 }

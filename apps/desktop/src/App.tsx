@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppSettings } from "./generated/AppSettings";
 import type { Finding } from "./generated/Finding";
 import type { Project } from "./generated/Project";
-import { api, loadWorkspace } from "./api";
+import {
+  api,
+  loadWorkspace,
+  workspaceSections,
+  type WorkspaceData,
+  type WorkspaceSection,
+} from "./api";
 import { CommandPalette, ContextComposer } from "./components";
 import { Findings } from "./pages/Findings";
 import { History } from "./pages/History";
@@ -24,7 +30,9 @@ import { pollScanUntilDone } from "./scanPolling";
 import "./app.css";
 
 export function App() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof loadWorkspace>> | null>(null);
+  const [data, setData] = useState<WorkspaceData | null>(null);
+  const workspaceRef = useRef<WorkspaceData | null>(null);
+  const pendingSections = useRef(new Set<WorkspaceSection>());
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<Notice>(null);
   const [page, setPage] = useState<Page>("review");
@@ -43,7 +51,13 @@ export function App() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const workspace = await loadWorkspace();
+      const previous = workspaceRef.current;
+      const sections = pendingSections.current.size
+        ? [...pendingSections.current]
+        : workspaceSections;
+      pendingSections.current.clear();
+      const workspace = await loadWorkspace(previous, sections);
+      workspaceRef.current = workspace;
       setData(workspace);
       setLanguage(workspace.settings.language);
     } catch (error) {
@@ -53,9 +67,22 @@ export function App() {
     }
   }, [t]);
 
-  const requestRefresh = useCallback(() => {
-    setRefreshToken((current) => current + 1);
-  }, []);
+  const requestRefresh = useCallback(
+    (sections: readonly WorkspaceSection[] = workspaceSections) => {
+      sections.forEach((section) => pendingSections.current.add(section));
+      setRefreshToken((current) => current + 1);
+    },
+    [],
+  );
+
+  const updateWorkspace = useCallback(
+    (update: (current: WorkspaceData | null) => WorkspaceData | null) => {
+      const next = update(workspaceRef.current);
+      workspaceRef.current = next;
+      setData(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     void refresh();
@@ -67,7 +94,7 @@ export function App() {
     const refreshNews = async () => {
       try {
         await api.refreshNewsSignals();
-        if (active) requestRefresh();
+        if (active) requestRefresh(["newsSignals"]);
       } catch {
         // Existing local signals remain visible; a failed poll never implies a clean state.
       }
@@ -103,7 +130,7 @@ export function App() {
   async function saveSettings(settings: AppSettings) {
     try {
       await api.saveSettings(settings);
-      setData((current) => (current ? { ...current, settings } : current));
+      updateWorkspace((current) => (current ? { ...current, settings } : current));
       setLanguage(settings.language);
       setNotice({ message: t("settings.saved"), kind: "success" });
     } catch (error) {
@@ -114,7 +141,7 @@ export function App() {
   async function addProject(path: string): Promise<Project | null> {
     try {
       const project = await api.addProject(path);
-      setData((current) =>
+      updateWorkspace((current) =>
         current ? { ...current, projects: [...current.projects, project] } : current,
       );
       setNotice({ message: t("projects.addSuccess"), kind: "success" });
@@ -147,7 +174,16 @@ export function App() {
           return next;
         });
         setNotice({ message: t("projects.scanTimedOut"), kind: "error" });
-        requestRefresh();
+        requestRefresh([
+          "projects",
+          "findings",
+          "advisories",
+          "components",
+          "instances",
+          "evidence",
+          "runs",
+          "audit",
+        ]);
         return;
       }
 
@@ -159,7 +195,16 @@ export function App() {
           delete next[project.id];
           return next;
         });
-        requestRefresh();
+        requestRefresh([
+          "projects",
+          "findings",
+          "advisories",
+          "components",
+          "instances",
+          "evidence",
+          "runs",
+          "audit",
+        ]);
         setNotice({
           message: t(
             result.outcome === "succeeded" && result.inventory_complete
@@ -199,16 +244,19 @@ export function App() {
     }
   }
 
-  const updateFinding = useCallback((finding: Finding) => {
-    setData((current) =>
-      current
-        ? {
-            ...current,
-            findings: current.findings.map((item) => (item.id === finding.id ? finding : item)),
-          }
-        : current,
-    );
-  }, []);
+  const updateFinding = useCallback(
+    (finding: Finding) => {
+      updateWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              findings: current.findings.map((item) => (item.id === finding.id ? finding : item)),
+            }
+          : current,
+      );
+    },
+    [updateWorkspace],
+  );
 
   if (loading && !data) {
     return (
@@ -225,7 +273,7 @@ export function App() {
       <main className="center-state">
         <h1>{t("common.error")}</h1>
         <p>{notice?.message ?? t("common.errorDescription")}</p>
-        <button className="button primary" onClick={requestRefresh}>
+        <button className="button primary" onClick={() => requestRefresh()}>
           {t("actions.retry")}
         </button>
       </main>

@@ -62,7 +62,7 @@ export function Projects() {
     );
     setSelectedCandidates([]);
     setBusy(false);
-    if (added > 0) refresh();
+    if (added > 0) refresh(["projects"]);
   }
   return (
     <>

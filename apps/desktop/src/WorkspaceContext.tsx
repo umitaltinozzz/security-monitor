@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 import type { AppSettings } from "./generated/AppSettings";
 import type { Finding } from "./generated/Finding";
 import type { Project } from "./generated/Project";
-import type { WorkspaceData } from "./api";
+import type { WorkspaceData, WorkspaceSection } from "./api";
 
 export type Language = "en" | "tr";
 export type Page = "review" | "findings" | "projects" | "servers" | "history" | "settings";
@@ -16,7 +16,7 @@ export type WorkspaceContextValue = {
   t: T;
   notice: Notice;
   setNotice: NoticeSetter;
-  refresh: () => void;
+  refresh: (sections?: readonly WorkspaceSection[]) => void;
   saveSettings: (settings: AppSettings) => Promise<void>;
   addProject: (path: string) => Promise<Project | null>;
   startScan: (project: Project, profile: "quick" | "full") => Promise<void>;

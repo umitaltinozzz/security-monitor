@@ -263,6 +263,14 @@ pub struct RepositoryPage<T> {
     pub limit: u32,
 }
 
+#[derive(Default)]
+pub struct FindingPageFilter<'a> {
+    pub status: Option<&'a str>,
+    pub severity: Option<&'a str>,
+    pub project_id: Option<&'a str>,
+    pub search: &'a str,
+}
+
 impl<T: Entity> Repository<T> {
     pub async fn create(&self, entity: &T) -> Result<(), DatabaseError> {
         entity.validate()?;
@@ -379,6 +387,67 @@ impl<T: Entity> Repository<T> {
         Ok(result.rows_affected() == 1)
     }
 }
+
+impl Repository<Finding> {
+    pub async fn list_filtered_page(
+        &self,
+        offset: u32,
+        limit: u32,
+        filter: &FindingPageFilter<'_>,
+    ) -> Result<RepositoryPage<Finding>, DatabaseError> {
+        let limit = limit.clamp(1, 100);
+        let status = filter.status.unwrap_or_default();
+        let severity = filter.severity.unwrap_or_default();
+        let project_id = filter.project_id.unwrap_or_default();
+        let search = filter.search.trim().chars().take(200).collect::<String>();
+        let count_sql = format!("SELECT COUNT(*) {FINDING_FILTER_FROM_WHERE}");
+        let total_count = sqlx::query_scalar::<_, i64>(&count_sql)
+            .bind(status)
+            .bind(severity)
+            .bind(project_id)
+            .bind(search.as_str())
+            .fetch_one(&self.pool)
+            .await? as u64;
+        let sql = format!(
+            "SELECT f.record_json {FINDING_FILTER_FROM_WHERE} \
+             ORDER BY json_extract(f.record_json, '$.priority_score') DESC, \
+             json_extract(f.record_json, '$.updated_at') DESC, f.id LIMIT ?5 OFFSET ?6"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(status)
+            .bind(severity)
+            .bind(project_id)
+            .bind(search.as_str())
+            .bind(i64::from(limit))
+            .bind(i64::from(offset))
+            .fetch_all(&self.pool)
+            .await?;
+        let items = rows
+            .into_iter()
+            .map(|row| decode_record(row.try_get::<String, _>(0)?))
+            .collect::<Result<Vec<Finding>, DatabaseError>>()?;
+        Ok(RepositoryPage {
+            items,
+            total_count,
+            offset,
+            limit,
+        })
+    }
+}
+
+const FINDING_FILTER_FROM_WHERE: &str = "FROM findings f \
+    LEFT JOIN component_instances i ON i.id = json_extract(f.record_json, '$.component_instance_id') \
+    LEFT JOIN components c ON c.id = i.component_id \
+    LEFT JOIN advisories a ON a.canonical_id = json_extract(f.record_json, '$.advisory_id') \
+    LEFT JOIN projects p ON p.id = i.project_id \
+    WHERE (?1 = '' OR json_extract(f.record_json, '$.status') = ?1) \
+      AND (?2 = '' OR json_extract(f.record_json, '$.severity') = ?2) \
+      AND (?3 = '' OR i.project_id = ?3) \
+      AND (?4 = '' OR instr(lower( \
+        coalesce(a.canonical_id, json_extract(f.record_json, '$.advisory_id')) || ' ' || \
+        coalesce(a.title, '') || ' ' || coalesce(c.name, '') || ' ' || \
+        coalesce(c.version, '') || ' ' || coalesce(p.name, '') \
+      ), lower(?4)) > 0)";
 
 impl Repository<NotificationDeliveryState> {
     /// Reserves a delivery atomically. Existing snoozes, in-flight deliveries, and events inside

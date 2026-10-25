@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use security_monitor_ai::AiSettings;
 use security_monitor_core::{
-    AgentCliProduct, AiProviderKind, AiTier, Asset, Environment, FindingDispositionReason,
+    AgentCliProduct, AiProviderKind, AiTier, Asset, Environment, Finding, FindingDispositionReason,
     FindingStatus, ProviderCapabilities, ScanOutcome,
 };
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,16 @@ pub struct ScanResult {
     pub finding_count: usize,
     pub scanner_finding_count: usize,
     pub diagnostics: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FindingPageView {
+    pub findings: Vec<Finding>,
+    #[ts(type = "number")]
+    pub total_count: u64,
+    pub offset: u32,
+    pub limit: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Finding } from "../generated/Finding";
+import type { FindingPageView } from "../generated/FindingPageView";
+import type { FindingStatus } from "../generated/FindingStatus";
+import type { Severity } from "../generated/Severity";
 import type { WorkspaceData } from "../api";
 import { api } from "../api";
 import {
@@ -14,6 +17,9 @@ import { MemoryNotes } from "../MemoryNotes";
 import { RemediationSection } from "../RemediationSection";
 import { useWorkspace, type Language, type NoticeSetter, type T } from "../WorkspaceContext";
 import { date, safeError } from "../utils";
+
+const FINDING_PAGE_SIZE = 25;
+
 export function Findings() {
   const {
     data,
@@ -29,6 +35,10 @@ export function Findings() {
   const [severity, setSeverity] = useState("all");
   const [status, setStatus] = useState("all");
   const [project, setProject] = useState("all");
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageResult, setPageResult] = useState<FindingPageView | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageReload, setPageReload] = useState(0);
   const [selected, setSelected] = useState<Finding | null>(null);
   const [editingStatus, setEditingStatus] = useState(false);
   const advisories = useMemo(
@@ -48,25 +58,39 @@ export function Findings() {
     [data.projects],
   );
   useEffect(() => {
+    let active = true;
+    setPageLoading(true);
+    void api
+      .findingsPage({
+        offset: pageIndex * FINDING_PAGE_SIZE,
+        limit: FINDING_PAGE_SIZE,
+        status: status === "all" ? null : (status as FindingStatus),
+        severity: severity === "all" ? null : (severity as Severity),
+        projectId: project === "all" ? null : project,
+        query,
+      })
+      .then((page) => {
+        if (active) setPageResult(page);
+      })
+      .catch((error) => {
+        if (active) setNotice({ kind: "error", message: safeError(error, t) });
+      })
+      .finally(() => {
+        if (active) setPageLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [pageIndex, pageReload, project, query, severity, setNotice, status, t]);
+
+  useEffect(() => {
     if (!initialFindingId) return;
     const finding = data.findings.find((item) => item.id === initialFindingId);
     if (finding) setSelected(finding);
     onFocused();
   }, [data.findings, initialFindingId, onFocused]);
-  const filtered = data.findings.filter((finding) => {
-    const advisory = advisories.get(finding.advisory_id);
-    const instance = instances.get(finding.component_instance_id);
-    const component = instance ? components.get(instance.component_id) : undefined;
-    const projectName = instance?.project_id ? (projects.get(instance.project_id)?.name ?? "") : "";
-    const text =
-      `${advisory?.canonical_id ?? finding.advisory_id} ${advisory?.title ?? ""} ${component?.name ?? ""} ${component?.version ?? ""} ${projectName}`.toLowerCase();
-    return (
-      text.includes(query.toLowerCase()) &&
-      (severity === "all" || finding.severity === severity) &&
-      (status === "all" || finding.status === status) &&
-      (project === "all" || instance?.project_id === project)
-    );
-  });
+  const filtered = pageResult?.findings ?? [];
+  const totalPages = Math.max(1, Math.ceil((pageResult?.total_count ?? 0) / FINDING_PAGE_SIZE));
   return (
     <>
       <PageHeading title={t("findings.title")} description={t("findings.description")} />
@@ -75,13 +99,22 @@ export function Findings() {
           <span>{t("common.search")}</span>
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPageIndex(0);
+            }}
             placeholder={t("common.searchPlaceholder")}
           />
         </label>
         <label className="field">
           <span>{t("common.severity")}</span>
-          <select value={severity} onChange={(event) => setSeverity(event.target.value)}>
+          <select
+            value={severity}
+            onChange={(event) => {
+              setSeverity(event.target.value);
+              setPageIndex(0);
+            }}
+          >
             <option value="all">{t("common.all")}</option>
             {["critical", "high", "medium", "low", "unknown"].map((value) => (
               <option key={value} value={value}>
@@ -92,7 +125,13 @@ export function Findings() {
         </label>
         <label className="field">
           <span>{t("common.status")}</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value);
+              setPageIndex(0);
+            }}
+          >
             <option value="all">{t("common.all")}</option>
             {[
               "new",
@@ -114,7 +153,13 @@ export function Findings() {
         </label>
         <label className="field">
           <span>{t("common.project")}</span>
-          <select value={project} onChange={(event) => setProject(event.target.value)}>
+          <select
+            value={project}
+            onChange={(event) => {
+              setProject(event.target.value);
+              setPageIndex(0);
+            }}
+          >
             <option value="all">{t("common.all")}</option>
             {data.projects.map((item) => (
               <option value={item.id} key={item.id}>
@@ -124,10 +169,12 @@ export function Findings() {
           </select>
         </label>
       </section>
-      {filtered.length === 0 ? (
+      {pageLoading && !pageResult ? (
+        <p role="status">{t("common.loading")}</p>
+      ) : filtered.length === 0 ? (
         <Empty t={t} noResults={data.findings.length > 0} />
       ) : (
-        <section className="panel table-panel">
+        <section className="panel table-panel" aria-busy={pageLoading}>
           <div className="table-wrap">
             <table>
               <thead>
@@ -200,6 +247,28 @@ export function Findings() {
           </div>
         </section>
       )}
+      <nav className="button-row finding-pagination" aria-label={t("findings.pagination")}>
+        <button
+          className="button quiet"
+          disabled={pageIndex === 0 || pageLoading}
+          onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+        >
+          {t("findings.previousPage")}
+        </button>
+        <span aria-live="polite">
+          {t("findings.pageStatus")
+            .replace("{current}", String(Math.min(pageIndex + 1, totalPages)))
+            .replace("{total}", String(totalPages))
+            .replace("{count}", String(pageResult?.total_count ?? 0))}
+        </span>
+        <button
+          className="button quiet"
+          disabled={pageIndex + 1 >= totalPages || pageLoading}
+          onClick={() => setPageIndex((current) => current + 1)}
+        >
+          {t("findings.nextPage")}
+        </button>
+      </nav>
       {selected &&
         (editingStatus ? (
           <StatusDialog
@@ -211,10 +280,11 @@ export function Findings() {
               try {
                 const updated = await api.setFindingStatus(change);
                 updateFinding(updated);
+                setPageReload((current) => current + 1);
                 setSelected(null);
                 setEditingStatus(false);
                 setNotice({ kind: "success", message: t("findings.statusSaved") });
-                refresh();
+                refresh(["audit"]);
               } catch (error) {
                 setNotice({ kind: "error", message: safeError(error, t) });
               }

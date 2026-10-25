@@ -8,6 +8,20 @@ vi.mock("./api", () => ({
     saveSettings: vi.fn(async () => undefined),
   },
   loadWorkspace: apiMocks.loadWorkspace,
+  workspaceSections: [
+    "settings",
+    "projects",
+    "assets",
+    "links",
+    "findings",
+    "advisories",
+    "newsSignals",
+    "components",
+    "instances",
+    "evidence",
+    "runs",
+    "audit",
+  ],
 }));
 
 import { App } from "./App";

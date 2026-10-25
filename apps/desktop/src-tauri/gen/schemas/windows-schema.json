@@ -345,6 +345,12 @@
           "markdownDescription": "Enables the list_findings command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_findings_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-findings-page",
+          "markdownDescription": "Enables the list_findings_page command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_mcp_remediation_requests command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-mcp-remediation-requests",
@@ -661,6 +667,12 @@
           "type": "string",
           "const": "deny-list-findings",
           "markdownDescription": "Denies the list_findings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_findings_page command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-findings-page",
+          "markdownDescription": "Denies the list_findings_page command without any pre-configured scope."
         },
         {
           "description": "Denies the list_mcp_remediation_requests command without any pre-configured scope.",

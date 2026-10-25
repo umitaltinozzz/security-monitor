@@ -17,12 +17,12 @@ export function AiSettingsPanel({
   data,
   t,
   setNotice,
-  refresh,
+  refreshProjects,
 }: {
   data: WorkspaceData;
   t: T;
   setNotice: (notice: Notice) => void;
-  refresh: () => void;
+  refreshProjects: () => void;
 }) {
   const [configuration, setConfiguration] = useState<AiConfigurationView | null>(null);
   const [providerName, setProviderName] = useState("");
@@ -166,7 +166,6 @@ export function AiSettingsPanel({
         kind: "success",
         message: t("ai.memoryImported").replace("{count}", String(imported)),
       });
-      refresh();
     } catch {
       setNotice({ kind: "error", message: t("ai.memoryImportFailed") });
     }
@@ -180,7 +179,6 @@ export function AiSettingsPanel({
         kind: "success",
         message: t("ai.memoryDeletedAll").replace("{count}", String(count)),
       });
-      refresh();
     } catch {
       setNotice({ kind: "error", message: t("error.storage_unavailable") });
     }
@@ -192,7 +190,7 @@ export function AiSettingsPanel({
       : project.allowed_ai_providers.filter((id) => id !== providerId);
     try {
       await api.setProjectAiProviders(project.id, ids);
-      refresh();
+      refreshProjects();
       setNotice({ kind: "success", message: t("ai.projectPermissionsSaved") });
     } catch {
       setNotice({ kind: "error", message: t("error.storage_unavailable") });

@@ -59,7 +59,7 @@ export function Servers() {
         fingerprint: result.fingerprint,
         authorized_keys_line: result.authorized_keys_line,
       });
-      refresh();
+      refresh(["assets", "links", "audit"]);
     } catch (error) {
       setNotice({ kind: "error", message: safeError(error, t) });
     }
@@ -72,7 +72,7 @@ export function Servers() {
         message: t(result.complete ? "servers.collectionComplete" : "servers.collectionPartial"),
       });
       setApprovedAsset(null);
-      refresh();
+      refresh(["assets", "findings", "audit"]);
     } catch (error) {
       setNotice({ kind: "error", message: safeError(error, t) });
     }

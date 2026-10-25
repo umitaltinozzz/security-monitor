@@ -21,7 +21,8 @@ pub(super) use security_monitor_core::{
     ApprovalState, Asset, AssetType, AuditEvent, AuditResult, AuditScope, Component,
     ComponentInstance, Finding, FindingDispositionReason, FindingEvidence, FindingStatus, Memory,
     MemoryArchive, MemoryArchiveEntry, MemoryKind, MemoryScope, NewsSignal, Project,
-    ProjectServerLink, Remediation, RemediationTest, ScanOutcome, ScanRun, is_source_code_like,
+    ProjectServerLink, Remediation, RemediationTest, ScanOutcome, ScanRun, Severity,
+    is_source_code_like,
 };
 pub(super) use security_monitor_correlation::{
     DispositionScope, StatusActor, StatusEvidence, StatusTransition, UserDisposition,

@@ -153,6 +153,7 @@ fn main() {
             ipc::scan::cancel_project_scan,
             ipc::scan::get_scan_result,
             ipc::findings::list_findings,
+            ipc::findings::list_findings_page,
             ipc::memory::list_memories,
             ipc::memory::create_memory,
             ipc::memory::update_memory,

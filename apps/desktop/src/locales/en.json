@@ -224,6 +224,10 @@
   "findings": {
     "title": "Vulnerabilities",
     "description": "Filter local findings by severity, status, and affected project.",
+    "pagination": "Finding pages",
+    "pageStatus": "Page {current} of {total} ({count} findings)",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
     "advisory": "Advisory",
     "package": "Package",
     "version": "Installed version",

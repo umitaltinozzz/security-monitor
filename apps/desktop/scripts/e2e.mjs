@@ -216,6 +216,40 @@ try {
             return true;
           case "list_findings":
             return state.findings;
+          case "list_findings_page": {
+            const { offset, limit, status, severity, projectId, query } = args;
+            const filtered = state.findings.filter((finding) => {
+              const instance = state.instances.find(
+                (item) => item.id === finding.component_instance_id,
+              );
+              const component = state.components.find((item) => item.id === instance?.component_id);
+              const advisory = state.advisories.find(
+                (item) => item.canonical_id === finding.advisory_id,
+              );
+              const project = state.projects.find((item) => item.id === instance?.project_id);
+              const searchText = [
+                advisory?.canonical_id ?? finding.advisory_id,
+                advisory?.title ?? "",
+                component?.name ?? "",
+                component?.version ?? "",
+                project?.name ?? "",
+              ]
+                .join(" ")
+                .toLowerCase();
+              return (
+                (!status || finding.status === status) &&
+                (!severity || finding.severity === severity) &&
+                (!projectId || instance?.project_id === projectId) &&
+                searchText.includes(query.toLowerCase())
+              );
+            });
+            return {
+              findings: filtered.slice(offset, offset + limit),
+              total_count: filtered.length,
+              offset,
+              limit,
+            };
+          }
           case "list_advisories":
             return state.advisories;
           case "list_news_signals":

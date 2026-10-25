@@ -308,7 +308,12 @@ export function Settings() {
           })}
         </ul>
       </section>
-      <AiSettingsPanel data={data} t={t} setNotice={setNotice} refresh={refresh} />
+      <AiSettingsPanel
+        data={data}
+        t={t}
+        setNotice={setNotice}
+        refreshProjects={() => refresh(["projects"])}
+      />
       <section className="panel settings-panel">
         <h2>{t("settings.backup")}</h2>
         <p>{t("settings.backupHelp")}</p>

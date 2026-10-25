@@ -19,7 +19,7 @@ export function ServerProjectLinks({ asset }: { asset: WorkspaceData["assets"][n
       setNotice({ kind: "success", message: t("servers.linkCreated") });
       setProjectId("");
       setConfirmed(false);
-      refresh();
+      refresh(["links"]);
     } catch (error) {
       setNotice({ kind: "error", message: safeError(error, t) });
     }
@@ -28,7 +28,7 @@ export function ServerProjectLinks({ asset }: { asset: WorkspaceData["assets"][n
     try {
       await api.unlinkProjectServer(linkId);
       setNotice({ kind: "success", message: t("servers.linkRemoved") });
-      refresh();
+      refresh(["links"]);
     } catch (error) {
       setNotice({ kind: "error", message: safeError(error, t) });
     }

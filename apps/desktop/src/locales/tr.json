@@ -224,6 +224,10 @@
   "findings": {
     "title": "Güvenlik açıkları",
     "description": "Yerel bulguları önem, durum ve etkilenen projeye göre filtreleyin.",
+    "pagination": "Bulgu sayfaları",
+    "pageStatus": "Sayfa {current}/{total} ({count} bulgu)",
+    "previousPage": "Önceki sayfa",
+    "nextPage": "Sonraki sayfa",
     "advisory": "Güvenlik duyurusu",
     "package": "Paket",
     "version": "Kurulu sürüm",
