@@ -142,10 +142,14 @@ pub fn parse_ssh_config(
     let mut in_match_block = false;
     for line in logical_lines(contents) {
         let uncommented = strip_comment(&line);
-        let tokens = split_tokens(&uncommented);
-        if tokens.is_empty() {
-            continue;
-        }
+        let tokens = match normalize_directive(&uncommented) {
+            Ok(Some(tokens)) => tokens,
+            Ok(None) => continue,
+            Err(()) => {
+                warnings.push(SshConfigWarning::InvalidDirective);
+                continue;
+            }
+        };
         let keyword = tokens[0].to_ascii_lowercase();
         if keyword == "host" {
             if tokens.len() < 2 {
@@ -339,6 +343,63 @@ fn split_tokens(line: &str) -> Vec<String> {
     tokens
 }
 
+fn normalize_directive(line: &str) -> Result<Option<Vec<String>>, ()> {
+    let mut tokens = split_tokens(line).into_iter();
+    let Some(first) = tokens.next() else {
+        return Ok(None);
+    };
+    let (keyword, inline_value) = match first.split_once('=') {
+        Some((keyword, value)) if !keyword.is_empty() => (keyword, Some(value)),
+        Some(_) => return Err(()),
+        None => (first.as_str(), None),
+    };
+    let mut arguments = tokens.collect::<Vec<_>>();
+    let mut normalized = vec![keyword.to_owned()];
+    match inline_value {
+        Some(value) if !value.is_empty() => normalized.push(value.to_owned()),
+        Some(_) => {
+            if arguments.first().is_some_and(|value| value == "=") {
+                arguments.remove(0);
+            } else if arguments
+                .first()
+                .is_some_and(|value| value.starts_with('='))
+            {
+                arguments[0].remove(0);
+            }
+            if !arguments.is_empty() {
+                normalized.push(arguments.remove(0));
+            }
+        }
+        None if arguments.first().is_some_and(|value| value == "=") => {
+            arguments.remove(0);
+            if !arguments.is_empty() {
+                normalized.push(arguments.remove(0));
+            }
+        }
+        None if arguments
+            .first()
+            .is_some_and(|value| value.starts_with('=')) =>
+        {
+            let value = arguments[0]
+                .strip_prefix('=')
+                .unwrap_or_default()
+                .to_owned();
+            arguments.remove(0);
+            if value.is_empty() {
+                if !arguments.is_empty() {
+                    normalized.push(arguments.remove(0));
+                }
+            } else {
+                normalized.push(value);
+            }
+        }
+        None if !arguments.is_empty() => normalized.push(arguments.remove(0)),
+        None => {}
+    }
+    normalized.extend(arguments);
+    Ok(Some(normalized))
+}
+
 fn stanza_matches(stanza: &Stanza, alias: &str) -> bool {
     let mut positive_match = false;
     for pattern in &stanza.patterns {
@@ -433,6 +494,23 @@ Host *.internal
         assert_eq!(hosts[0].proxy_jump.as_deref(), Some("bastion"));
         assert!(warnings.contains(&SshConfigWarning::UnsupportedDirective));
         assert!(warnings.contains(&SshConfigWarning::WildcardHostNotListed));
+    }
+
+    #[test]
+    fn ssh_config_accepts_keyword_equals_value_syntax() {
+        let config = "Host eq-prod\n  HostName=web.example.test\n  User=deploy\n  Port=2222\n  ProxyJump=bastion\nHost=spaced\n  HostName = spaced.example.test\n  User = ops\n  Port = 2201\n";
+        let (hosts, warnings) = parse_ssh_config(config, "fallback").expect("valid config");
+        assert!(warnings.is_empty());
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].alias, "eq-prod");
+        assert_eq!(hosts[0].hostname, "web.example.test");
+        assert_eq!(hosts[0].username, "deploy");
+        assert_eq!(hosts[0].port, 2222);
+        assert_eq!(hosts[0].proxy_jump.as_deref(), Some("bastion"));
+        assert_eq!(hosts[1].alias, "spaced");
+        assert_eq!(hosts[1].hostname, "spaced.example.test");
+        assert_eq!(hosts[1].username, "ops");
+        assert_eq!(hosts[1].port, 2201);
     }
 
     #[test]
