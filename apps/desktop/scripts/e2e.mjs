@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
@@ -36,7 +37,21 @@ const build = spawnSync(process.execPath, [viteEntrypoint, "build"], {
   windowsHide: true,
 });
 assert.equal(build.status, 0, "Vite production build must pass before browser checks run.");
-const server = spawn(process.execPath, [viteEntrypoint, "preview", "--host", "127.0.0.1", "--port", "4173", "--strictPort"], {
+const previewPort = await new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once("error", reject);
+  probe.listen(0, "127.0.0.1", () => {
+    const address = probe.address();
+    if (!address || typeof address === "string") {
+      probe.close();
+      reject(new Error("Could not allocate a local preview port."));
+      return;
+    }
+    probe.close((error) => error ? reject(error) : resolve(address.port));
+  });
+});
+const previewUrl = `http://127.0.0.1:${previewPort}`;
+const server = spawn(process.execPath, [viteEntrypoint, "preview", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"], {
   cwd: projectRoot,
   stdio: "ignore",
   windowsHide: true,
@@ -49,8 +64,10 @@ try {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (server.exitCode !== null) throw new Error(`Vite preview exited with code ${server.exitCode}.`);
     try {
-      const response = await fetch("http://127.0.0.1:4173");
-      ready = response.ok;
+      const response = await fetch(previewUrl);
+      const available = response.ok;
+      await response.arrayBuffer();
+      ready = available;
       if (ready) break;
     } catch {
       await delay(250);
@@ -186,7 +203,7 @@ try {
     window.__securityMonitorE2eState = state;
   }, fixture);
 
-  await page.goto("http://127.0.0.1:4173");
+  await page.goto(previewUrl);
   assert.equal(await page.title(), "Security Monitor");
   for (let step = 0; step < 6; step += 1) {
     await page.getByRole("button", { name: "Skip for now" }).click();
