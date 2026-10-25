@@ -73,28 +73,75 @@ fn shell_segments(command: &str) -> Vec<Vec<String>> {
     let mut segment = Vec::new();
     let mut token = String::new();
     let mut quote = None;
+    let mut substitution_quote = None;
+    let mut substitution_depth = 0usize;
     let mut escaped = false;
 
-    for character in command.chars() {
+    let mut characters = command.chars().peekable();
+    while let Some(character) = characters.next() {
         if escaped {
             token.push(character);
             escaped = false;
             continue;
         }
-        if character == '\\' && quote != Some('\'') {
-            escaped = true;
+
+        if substitution_depth > 0 {
+            if character == '\\' && substitution_quote != Some('\'') {
+                token.push(character);
+                escaped = true;
+            } else if let Some(active_quote) = substitution_quote {
+                if character == active_quote {
+                    substitution_quote = None;
+                }
+                token.push(character);
+            } else if matches!(character, '\'' | '"') {
+                substitution_quote = Some(character);
+                token.push(character);
+            } else if character == '(' {
+                substitution_depth = substitution_depth.saturating_add(1);
+                token.push(character);
+            } else if character == ')' {
+                substitution_depth = substitution_depth.saturating_sub(1);
+                token.push(character);
+            } else {
+                token.push(character);
+            }
             continue;
         }
+
+        if character == '$'
+            && quote != Some('\'')
+            && characters.peek().is_some_and(|next| *next == '(')
+        {
+            token.push(character);
+            if let Some(open) = characters.next() {
+                token.push(open);
+                substitution_depth = 1;
+            }
+            continue;
+        }
+
         if let Some(active_quote) = quote {
             if character == active_quote {
+                if active_quote == '`' {
+                    token.push(character);
+                }
                 quote = None;
             } else {
                 token.push(character);
             }
             continue;
         }
+
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
         if matches!(character, '\'' | '"') {
             quote = Some(character);
+        } else if character == '`' {
+            quote = Some(character);
+            token.push(character);
         } else if character.is_whitespace() {
             push_token(&mut segment, &mut token);
             if character == '\n' || character == '\r' {
@@ -188,11 +235,30 @@ fn git_operation_in_segment(tokens: &[String]) -> Option<GitOperation> {
         }
     }
     let executable = tokens.get(index)?;
-    let executable = executable.rsplit(['/', '\\']).next().unwrap_or(executable);
-    if !matches!(executable.to_ascii_lowercase().as_str(), "git" | "git.exe") {
+    if is_dynamic_command_name(executable) {
+        return git_operation_after_executable(tokens, index);
+    }
+    let executable_name = executable.rsplit(['/', '\\']).next().unwrap_or(executable);
+    if !matches!(
+        executable_name.to_ascii_lowercase().as_str(),
+        "git" | "git.exe"
+    ) {
         return None;
     }
-    index += 1;
+    git_operation_after_executable(tokens, index)
+}
+
+fn is_dynamic_command_name(executable: &str) -> bool {
+    executable
+        .chars()
+        .any(|character| matches!(character, '$' | '`' | '*' | '?' | '['))
+}
+
+fn git_operation_after_executable(
+    tokens: &[String],
+    executable_index: usize,
+) -> Option<GitOperation> {
+    let mut index = executable_index + 1;
     while let Some(option) = tokens.get(index) {
         if matches!(
             option.as_str(),
@@ -268,11 +334,38 @@ mod tests {
                 pre_push: false,
             })
         );
+        assert_eq!(
+            actions_from_event(&event("GIT=git; \"$GIT\" push origin main")),
+            Ok(GitHookActions {
+                pre_commit: false,
+                pre_push: true,
+            })
+        );
+        assert_eq!(
+            actions_from_event(&event("$(printf git) commit -m ready")),
+            Ok(GitHookActions {
+                pre_commit: true,
+                pre_push: false,
+            })
+        );
+        assert_eq!(
+            actions_from_event(&event("`printf git` push origin main")),
+            Ok(GitHookActions {
+                pre_commit: false,
+                pre_push: true,
+            })
+        );
     }
 
     #[test]
     fn ignores_other_commands_and_quoted_mentions() {
-        for command in ["git status", "echo 'git commit'", "printf \"git push\\n\""] {
+        for command in [
+            "git status",
+            "echo 'git commit'",
+            "printf \"git push\\n\"",
+            "GIT=git; \"$GIT\" status",
+            "echo \"$GIT push\"",
+        ] {
             assert_eq!(
                 actions_from_event(&event(command)),
                 Ok(GitHookActions::default())
