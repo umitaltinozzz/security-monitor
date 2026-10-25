@@ -461,3 +461,91 @@ fn candidate(
         evidence_sources,
     }
 }
+
+#[cfg(test)]
+mod debian_version_tests {
+    use std::cmp::Ordering;
+
+    use proptest::{prelude::*, test_runner::RngSeed};
+    use serde::Deserialize;
+
+    use super::parse_debian_version;
+
+    #[derive(Deserialize)]
+    struct ComparisonFixture {
+        left: String,
+        right: String,
+        ordering: String,
+    }
+
+    fn generated_debian_version() -> impl Strategy<Value = String> {
+        (
+            0_u16..5,
+            0_u16..100,
+            0_u16..30,
+            0_u16..8,
+            prop_oneof![Just(""), Just("~rc1"), Just("~beta2"), Just("+deb1")],
+        )
+            .prop_map(|(epoch, major, patch, revision, suffix)| {
+                format!("{epoch}:{major}.{patch}{suffix}-{revision}")
+            })
+    }
+
+    #[test]
+    fn comparator_matches_recorded_dpkg_compare_versions_results() {
+        let fixtures: Vec<ComparisonFixture> = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/correlation/debian-version-order.json"
+        ))
+        .expect("dpkg comparison fixtures are valid JSON");
+        for fixture in fixtures {
+            let left = parse_debian_version(&fixture.left).expect("left Debian version parses");
+            let right = parse_debian_version(&fixture.right).expect("right Debian version parses");
+            let expected = match fixture.ordering.as_str() {
+                "less" => Ordering::Less,
+                "equal" => Ordering::Equal,
+                "greater" => Ordering::Greater,
+                _ => panic!("unknown comparison fixture result"),
+            };
+            assert_eq!(
+                left.cmp(&right),
+                expected,
+                "{} vs {}",
+                fixture.left,
+                fixture.right
+            );
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 256,
+            rng_seed: RngSeed::Fixed(0x5ec0_2026),
+            ..ProptestConfig::default()
+        })]
+
+        #[test]
+        fn generated_versions_obey_reflexivity_and_antisymmetry(
+            left in generated_debian_version(),
+            right in generated_debian_version(),
+        ) {
+            let left = parse_debian_version(&left).expect("generated left version parses");
+            let right = parse_debian_version(&right).expect("generated right version parses");
+            prop_assert_eq!(left.cmp(&left), Ordering::Equal);
+            prop_assert_eq!(left.cmp(&right), right.cmp(&left).reverse());
+        }
+
+        #[test]
+        fn generated_versions_obey_transitivity(
+            first in generated_debian_version(),
+            second in generated_debian_version(),
+            third in generated_debian_version(),
+        ) {
+            let first = parse_debian_version(&first).expect("generated first version parses");
+            let second = parse_debian_version(&second).expect("generated second version parses");
+            let third = parse_debian_version(&third).expect("generated third version parses");
+            if first <= second && second <= third {
+                prop_assert!(first <= third);
+            }
+        }
+    }
+}
