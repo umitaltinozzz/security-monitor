@@ -1,4 +1,7 @@
-use std::io::{self, Read};
+use std::{
+    collections::BTreeMap,
+    io::{self, Read},
+};
 
 use serde::Deserialize;
 
@@ -56,10 +59,12 @@ fn actions_from_event(bytes: &[u8]) -> Result<GitHookActions, &'static str> {
 
 fn git_actions(command: &str) -> GitHookActions {
     let mut actions = GitHookActions::default();
-    for operation in shell_segments(command)
-        .iter()
-        .filter_map(|tokens| git_operation_in_segment(tokens))
-    {
+    let mut variables = BTreeMap::new();
+    for tokens in shell_segments(command) {
+        record_literal_assignments(&tokens, &mut variables);
+        let Some(operation) = git_operation_in_segment(&tokens, &variables) else {
+            continue;
+        };
         match operation {
             GitOperation::Commit => actions.pre_commit = true,
             GitOperation::Push => actions.pre_push = true,
@@ -174,7 +179,36 @@ fn push_segment(segments: &mut Vec<Vec<String>>, segment: &mut Vec<String>) {
     }
 }
 
-fn git_operation_in_segment(tokens: &[String]) -> Option<GitOperation> {
+fn record_literal_assignments(tokens: &[String], variables: &mut BTreeMap<String, String>) {
+    if tokens.is_empty() {
+        return;
+    }
+    let assignments = tokens
+        .iter()
+        .map(|token| token.split_once('='))
+        .collect::<Option<Vec<_>>>();
+    let Some(assignments) = assignments else {
+        return;
+    };
+    for (name, value) in assignments {
+        if valid_shell_variable_name(name) && !is_dynamic_command_name(value) {
+            variables.insert(name.to_owned(), value.to_owned());
+        }
+    }
+}
+
+fn valid_shell_variable_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+fn git_operation_in_segment(
+    tokens: &[String],
+    variables: &BTreeMap<String, String>,
+) -> Option<GitOperation> {
     let mut index = 0;
     while tokens.get(index).is_some_and(|token| {
         token == "if" || token == "then" || token == "else" || token == "do" || token == "!"
@@ -235,17 +269,42 @@ fn git_operation_in_segment(tokens: &[String]) -> Option<GitOperation> {
         }
     }
     let executable = tokens.get(index)?;
+    if let Some(value) = simple_variable_value(executable, variables) {
+        return if is_git_executable(value) || is_dynamic_command_name(value) {
+            git_operation_after_executable(tokens, index)
+        } else {
+            None
+        };
+    }
     if is_dynamic_command_name(executable) {
         return git_operation_after_executable(tokens, index);
     }
-    let executable_name = executable.rsplit(['/', '\\']).next().unwrap_or(executable);
-    if !matches!(
-        executable_name.to_ascii_lowercase().as_str(),
-        "git" | "git.exe"
-    ) {
+    if !is_git_executable(executable) {
         return None;
     }
     git_operation_after_executable(tokens, index)
+}
+
+fn simple_variable_value<'a>(
+    executable: &str,
+    variables: &'a BTreeMap<String, String>,
+) -> Option<&'a str> {
+    let name = executable
+        .strip_prefix("${")
+        .and_then(|name| name.strip_suffix('}'))
+        .or_else(|| executable.strip_prefix('$'))?;
+    if !valid_shell_variable_name(name) {
+        return None;
+    }
+    variables.get(name).map(String::as_str)
+}
+
+fn is_git_executable(executable: &str) -> bool {
+    let executable_name = executable.rsplit(['/', '\\']).next().unwrap_or(executable);
+    matches!(
+        executable_name.to_ascii_lowercase().as_str(),
+        "git" | "git.exe"
+    )
 }
 
 fn is_dynamic_command_name(executable: &str) -> bool {
@@ -365,6 +424,7 @@ mod tests {
             "printf \"git push\\n\"",
             "GIT=git; \"$GIT\" status",
             "echo \"$GIT push\"",
+            "OTHER=echo; \"$OTHER\" commit -m ready",
         ] {
             assert_eq!(
                 actions_from_event(&event(command)),
