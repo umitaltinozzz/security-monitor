@@ -263,6 +263,12 @@ fn record_literal_assignments(tokens: &[String], variables: &mut BTreeMap<String
             }
             return;
         }
+        "read" => {
+            for name in read_variable_names(tokens) {
+                variables.remove(name);
+            }
+            return;
+        }
         _ => {}
     }
     let assignments = tokens
@@ -276,6 +282,37 @@ fn record_literal_assignments(tokens: &[String], variables: &mut BTreeMap<String
         if valid_shell_variable_name(name) {
             record_variable_assignment_parts(name, value, variables);
         }
+    }
+}
+
+fn read_variable_names(tokens: &[String]) -> Vec<&str> {
+    let mut index = 1;
+    while let Some(option) = tokens.get(index) {
+        if option == "--" {
+            index += 1;
+            break;
+        }
+        if !option.starts_with('-') || option == "-" {
+            break;
+        }
+        index += 1;
+        if matches!(
+            option.as_str(),
+            "-a" | "-d" | "-i" | "-n" | "-N" | "-p" | "-t" | "-u"
+        ) {
+            index = index.saturating_add(1);
+        }
+    }
+    let names: Vec<_> = tokens
+        .iter()
+        .skip(index)
+        .map(String::as_str)
+        .filter(|name| valid_shell_variable_name(name))
+        .collect();
+    if names.is_empty() {
+        vec!["REPLY"]
+    } else {
+        names
     }
 }
 
@@ -584,6 +621,19 @@ mod tests {
                 "{command}"
             );
         }
+    }
+
+    #[test]
+    fn read_builtin_invalidates_tracked_command_aliases() {
+        assert_eq!(
+            actions_from_event(&event(
+                "GIT=echo; read -r GIT <<<git; \"$GIT\" push origin main"
+            )),
+            Ok(GitHookActions {
+                pre_commit: false,
+                pre_push: true,
+            })
+        );
     }
 
     #[test]
