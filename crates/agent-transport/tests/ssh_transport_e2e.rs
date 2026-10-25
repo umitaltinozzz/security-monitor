@@ -116,7 +116,7 @@ impl server::Handler for FixtureServer {
 }
 
 #[tokio::test]
-async fn pinned_ssh_transport_rejects_nonzero_command_exit_status() {
+async fn pinned_ssh_transport_rejects_host_key_mismatch_and_nonzero_exit_status() {
     let store = MemoryStore::default();
     let pairing = create_pairing_instructions(&store, "loopback-e2e").expect("client key");
     let fields = pairing
@@ -164,6 +164,20 @@ async fn pinned_ssh_transport_rejects_nonzero_command_exit_status() {
         .fingerprint;
     let identity = SshIdentity::PrivateKeyRef(pairing.private_key_ref);
     let approval = InventoryCollectionApproval::after_explicit_user_confirmation(Utc::now());
+    let mut wrong_fingerprint = fingerprint.as_bytes().to_vec();
+    let first_encoded_byte = b"SHA256:".len();
+    wrong_fingerprint[first_encoded_byte] = if wrong_fingerprint[first_encoded_byte] == b'A' {
+        b'B'
+    } else {
+        b'A'
+    };
+    let wrong_fingerprint = String::from_utf8(wrong_fingerprint).expect("ASCII fingerprint");
+    assert!(matches!(
+        collect_agent(&target, &wrong_fingerprint, &identity, &store, approval).await,
+        Err(CollectionError::HostKeyChanged)
+    ));
+    assert!(commands.lock().expect("command lock").is_empty());
+
     let collection = collect_agent(&target, &fingerprint, &identity, &store, approval)
         .await
         .expect("agent inventory should be collected over SSH");
