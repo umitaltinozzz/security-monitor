@@ -6,8 +6,10 @@ use serde_json::Value;
 use url::Url;
 
 use crate::{
-    AdvisoryCache, CachedAdvisories, ProviderError, http::PublicDataHttp,
+    AdvisoryCache, CachedAdvisories, ProviderError,
+    http::PublicDataHttp,
     normalize::cve_now_advisory,
+    retry::{MAX_RETRY_DELAY_SECONDS, retry_after_seconds},
 };
 use security_monitor_core::Advisory;
 
@@ -316,18 +318,11 @@ fn retry_delay_seconds(error: &ProviderError, consecutive_failures: u32) -> u64 
         retry_after: Some(value),
         ..
     } = error
+        && let Some(seconds) = retry_after_seconds(value, std::time::SystemTime::now())
     {
-        if let Ok(seconds) = value.parse::<u64>() {
-            return seconds;
-        }
-        if let Ok(deadline) = httpdate::parse_http_date(value) {
-            return deadline
-                .duration_since(std::time::SystemTime::now())
-                .map(|duration| duration.as_secs())
-                .unwrap_or_default();
-        }
+        return seconds;
     }
     60_u64
         .saturating_mul(2_u64.saturating_pow(consecutive_failures.saturating_sub(1).min(10)))
-        .min(24 * 60 * 60)
+        .min(MAX_RETRY_DELAY_SECONDS)
 }

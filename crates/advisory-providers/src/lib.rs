@@ -9,6 +9,7 @@ mod merge;
 mod news;
 mod normalize;
 mod osv;
+mod retry;
 mod service;
 
 pub use cache::{AdvisoryCache, CachedAdvisories};

@@ -17,6 +17,7 @@ use crate::{
     cache::atomic_write,
     http::PublicDataHttp,
     normalize::{canonical_ecosystem, normalize_package_name, parse_time, severity_from_label},
+    retry::{MAX_RETRY_DELAY_SECONDS, retry_after_seconds},
 };
 
 const OSV_DUMP_BASE: &str = "https://osv-vulnerabilities.storage.googleapis.com";
@@ -677,18 +678,11 @@ fn retry_delay_seconds(error: &ProviderError, consecutive_failures: u32) -> u64 
         retry_after: Some(value),
         ..
     } = error
+        && let Some(seconds) = retry_after_seconds(value, std::time::SystemTime::now())
     {
-        if let Ok(seconds) = value.parse::<u64>() {
-            return seconds;
-        }
-        if let Ok(deadline) = httpdate::parse_http_date(value) {
-            return deadline
-                .duration_since(std::time::SystemTime::now())
-                .map(|duration| duration.as_secs())
-                .unwrap_or_default();
-        }
+        return seconds;
     }
     60_u64
         .saturating_mul(2_u64.saturating_pow(consecutive_failures.saturating_sub(1).min(10)))
-        .min(24 * 60 * 60)
+        .min(MAX_RETRY_DELAY_SECONDS)
 }
