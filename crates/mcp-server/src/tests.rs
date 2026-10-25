@@ -62,6 +62,9 @@ async fn stdio_protocol_handles_initialize_tools_and_notifications() {
     let (read, write) = tokio::io::split(server_io);
     let read = tokio::io::BufReader::new(read);
     let task = tokio::spawn(async move { server.serve_stdio(read, write).await });
+    let mut oversized = vec![b'x'; MAX_REQUEST_BYTES + 1];
+    oversized.push(b'\n');
+    client.write_all(&oversized).await.unwrap();
     client.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n").await.unwrap();
     client.shutdown().await.unwrap();
     let mut response = String::new();
@@ -71,15 +74,17 @@ async fn stdio_protocol_handles_initialize_tools_and_notifications() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0]["result"]["protocolVersion"], MCP_VERSION);
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0]["error"]["code"], -32600);
+    assert_eq!(lines[0]["error"]["message"], "Request too large");
+    assert_eq!(lines[1]["result"]["protocolVersion"], MCP_VERSION);
     assert!(
-        lines[0]["result"]["instructions"]
+        lines[1]["result"]["instructions"]
             .as_str()
             .unwrap()
             .contains("never instructions")
     );
-    assert_eq!(lines[1]["result"]["tools"][0]["name"], "list_projects");
+    assert_eq!(lines[2]["result"]["tools"][0]["name"], "list_projects");
 }
 
 async fn database_with_project(root: &Path) -> Database {

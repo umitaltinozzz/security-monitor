@@ -146,14 +146,15 @@ impl McpServer {
         W: AsyncWrite + Unpin,
     {
         let mut buffer = Vec::new();
-        while read_limited_line(&mut reader, &mut buffer).await? {
-            if buffer.iter().all(u8::is_ascii_whitespace) {
-                buffer.clear();
-                continue;
-            }
-            let response = match serde_json::from_slice::<Value>(&buffer) {
-                Ok(request) => self.process(&request).await,
-                Err(_) => Some(rpc_error(Value::Null, -32700, "Parse error")),
+        loop {
+            let response = match read_limited_line(&mut reader, &mut buffer).await? {
+                LimitedLine::End => break,
+                LimitedLine::TooLarge => Some(rpc_error(Value::Null, -32600, "Request too large")),
+                LimitedLine::Line if buffer.iter().all(u8::is_ascii_whitespace) => continue,
+                LimitedLine::Line => match serde_json::from_slice::<Value>(&buffer) {
+                    Ok(request) => self.process(&request).await,
+                    Err(_) => Some(rpc_error(Value::Null, -32700, "Parse error")),
+                },
             };
             buffer.clear();
             if let Some(response) = response {
@@ -171,15 +172,25 @@ impl McpServer {
     }
 }
 
+enum LimitedLine {
+    Line,
+    TooLarge,
+    End,
+}
+
 async fn read_limited_line<R: AsyncBufRead + Unpin>(
     reader: &mut R,
     line: &mut Vec<u8>,
-) -> Result<bool, McpError> {
+) -> Result<LimitedLine, McpError> {
     line.clear();
     loop {
         let available = reader.fill_buf().await.map_err(McpError::Transport)?;
         if available.is_empty() {
-            return Ok(!line.is_empty());
+            return Ok(if line.is_empty() {
+                LimitedLine::End
+            } else {
+                LimitedLine::Line
+            });
         }
         let newline = available.iter().position(|byte| *byte == b'\n');
         let count = newline.map_or(available.len(), |index| index + 1);
@@ -197,12 +208,13 @@ async fn read_limited_line<R: AsyncBufRead + Unpin>(
                     break;
                 }
             }
-            return Err(McpError::RequestTooLarge);
+            line.clear();
+            return Ok(LimitedLine::TooLarge);
         }
         line.extend_from_slice(&available[..count]);
         reader.consume(count);
         if newline.is_some() {
-            return Ok(true);
+            return Ok(LimitedLine::Line);
         }
     }
 }
