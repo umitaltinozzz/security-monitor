@@ -290,3 +290,8 @@ td:first-child { color: var(--text); } .cell-subtitle { display: block; max-widt
 .ai-approval-details dt { color: var(--muted); }.ai-approval-details dd { margin: 0; overflow-wrap: anywhere; }
 .ai-response { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); white-space: pre-wrap; }.ai-response p { margin-bottom: 0; }
 @media (max-width: 720px) { .ai-provider-form, .ai-tier-row, .ai-project-row, .ai-approval-details { grid-template-columns: 1fr; }.remediation-request-row, .remediation-head { align-items: stretch; flex-direction: column; } }
+.server-links { display: grid; gap: 10px; margin: 16px 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.server-links h3 { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--muted); }
+.server-links .simple-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.link-form { display: grid; gap: 10px; }
+.link-note { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }

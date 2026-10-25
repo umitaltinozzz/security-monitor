@@ -184,6 +184,17 @@ pub struct Deployment {
     pub observed_at: DateTime<Utc>,
 }
 
+/// A user-confirmed statement that a server runs deployments of a project. Production drift is
+/// assessed only for confirmed links, so an unlinked server never changes a project's findings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProjectServerLink {
+    pub id: String,
+    pub project_id: String,
+    pub asset_id: String,
+    pub confirmed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Component {

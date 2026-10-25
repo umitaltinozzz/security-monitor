@@ -27,8 +27,8 @@ use security_monitor_core::{
     Advisory, AgentCliProduct, AiDataTransferApproval, AiProvider, AiProviderKind, AiRun, AiTier,
     ApprovalState, Asset, AssetType, AuditEvent, AuditResult, AuditScope, Component,
     ComponentInstance, Finding, FindingDispositionReason, FindingEvidence, FindingStatus, Memory,
-    MemoryArchive, MemoryArchiveEntry, MemoryKind, MemoryScope, NewsSignal, Project, Remediation,
-    RemediationTest, ScanOutcome, ScanRun, is_source_code_like,
+    MemoryArchive, MemoryArchiveEntry, MemoryKind, MemoryScope, NewsSignal, Project,
+    ProjectServerLink, Remediation, RemediationTest, ScanOutcome, ScanRun, is_source_code_like,
 };
 use security_monitor_correlation::{
     DispositionScope, StatusActor, StatusEvidence, StatusTransition, UserDisposition,
@@ -1009,7 +1009,7 @@ pub async fn start_project_scan(
     let queue = state.scans.read().await.queue.clone();
     let handle = queue
         .enqueue(ScanRequest {
-            project_id,
+            project_id: project_id.clone(),
             root,
             profile,
             reason: ScanReason::Manual,
@@ -1019,9 +1019,24 @@ pub async fn start_project_scan(
     let scan_id = handle.id.clone();
     let returned_id = scan_id.clone();
     let result_store = Arc::clone(&state.scan_results);
+    let database = state.database.clone();
+    let app_data_dir = state.app_data_dir.clone();
     tauri::async_runtime::spawn(async move {
         let result = match handle.wait().await {
-            Ok(summary) => ScanResult::from_summary(summary),
+            Ok(summary) => {
+                // Drift failures leave statuses unknown; they never fail the scan itself.
+                if let Err(error) = crate::drift_sync::refresh_project_drift(
+                    &database,
+                    &app_data_dir,
+                    &project_id,
+                    Utc::now(),
+                )
+                .await
+                {
+                    tracing::warn!(%error, "drift assessment after scan failed");
+                }
+                ScanResult::from_summary(summary)
+            }
             Err(_) => ScanResult {
                 scan_id: scan_id.clone(),
                 outcome: ScanOutcome::Failed,
@@ -2291,6 +2306,7 @@ pub async fn collect_server_inventory(
         .validate()
         .map_err(|_| "collection_failed".to_owned())?;
     persist_server_snapshot(&state.app_data_dir, &asset.id, &collection.inventory)?;
+    refresh_linked_projects(&state, &asset.id).await?;
     let mut updated_asset = asset.clone();
     updated_asset.last_seen_at = Some(collection.inventory.captured_at);
     if collection.inventory.complete {
@@ -2317,6 +2333,149 @@ pub async fn collect_server_inventory(
         &collection.inventory,
         collection.approval.approved_at(),
     ))
+}
+
+#[tauri::command]
+pub async fn list_project_server_links(
+    state: State<'_, AppState>,
+) -> Result<Vec<ProjectServerLink>, String> {
+    state
+        .database
+        .repository::<ProjectServerLink>()
+        .list()
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())
+}
+
+/// Links a server to a project only after the user confirms it runs that project's deployments;
+/// production drift is never inferred from an unconfirmed association.
+#[tauri::command]
+pub async fn link_project_server(
+    state: State<'_, AppState>,
+    project_id: String,
+    asset_id: String,
+    confirmed: bool,
+) -> Result<ProjectServerLink, String> {
+    if !confirmed {
+        return Err("permission_denied".to_owned());
+    }
+    let projects = state.database.repository::<Project>();
+    if projects
+        .get(&project_id)
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?
+        .is_none()
+    {
+        return Err("project_not_found".to_owned());
+    }
+    if state
+        .database
+        .repository::<Asset>()
+        .get(&asset_id)
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?
+        .is_none()
+    {
+        return Err("server_not_found".to_owned());
+    }
+    let links = state.database.repository::<ProjectServerLink>();
+    if let Some(existing) = links
+        .list()
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?
+        .into_iter()
+        .find(|link| link.project_id == project_id && link.asset_id == asset_id)
+    {
+        return Ok(existing);
+    }
+    let now = Utc::now();
+    let link = ProjectServerLink {
+        id: Uuid::new_v4().to_string(),
+        project_id: project_id.clone(),
+        asset_id,
+        confirmed_at: now,
+    };
+    links
+        .create(&link)
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?;
+    write_audit_event(
+        &state.database,
+        "project_server_link_confirmed",
+        "project",
+        Some(project_id.clone()),
+        now,
+        AuditResult::Succeeded,
+    )
+    .await?;
+    crate::drift_sync::refresh_project_drift(
+        &state.database,
+        &state.app_data_dir,
+        &project_id,
+        now,
+    )
+    .await?;
+    Ok(link)
+}
+
+#[tauri::command]
+pub async fn unlink_project_server(
+    state: State<'_, AppState>,
+    link_id: String,
+) -> Result<bool, String> {
+    let links = state.database.repository::<ProjectServerLink>();
+    let Some(link) = links
+        .get(&link_id)
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?
+    else {
+        return Ok(false);
+    };
+    links
+        .delete(&link.id)
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?;
+    let now = Utc::now();
+    write_audit_event(
+        &state.database,
+        "project_server_link_removed",
+        "project",
+        Some(link.project_id.clone()),
+        now,
+        AuditResult::Succeeded,
+    )
+    .await?;
+    crate::drift_sync::refresh_project_drift(
+        &state.database,
+        &state.app_data_dir,
+        &link.project_id,
+        now,
+    )
+    .await?;
+    Ok(true)
+}
+
+async fn refresh_linked_projects(state: &AppState, asset_id: &str) -> Result<(), String> {
+    let project_ids = state
+        .database
+        .repository::<ProjectServerLink>()
+        .list()
+        .await
+        .map_err(|_| "storage_unavailable".to_owned())?
+        .into_iter()
+        .filter(|link| link.asset_id == asset_id)
+        .map(|link| link.project_id)
+        .collect::<Vec<_>>();
+    for project_id in project_ids {
+        crate::drift_sync::refresh_project_drift(
+            &state.database,
+            &state.app_data_dir,
+            &project_id,
+            Utc::now(),
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2714,7 +2873,7 @@ fn persist_server_snapshot(
     })
 }
 
-fn load_server_snapshot(
+pub(crate) fn load_server_snapshot(
     app_data_dir: &Path,
     asset_id: &str,
 ) -> Result<Option<AgentInventory>, String> {
@@ -2738,7 +2897,7 @@ fn load_server_snapshot(
     }
 }
 
-async fn write_audit_event(
+pub(crate) async fn write_audit_event(
     database: &Database,
     action: &str,
     resource_type: &str,

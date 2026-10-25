@@ -21,3 +21,14 @@ The crate is a pure comparison layer. It does not fetch Git refs, connect to ser
 When evidence supports a system status change, the assessment includes a `StatusTransition` proposal. The proposal uses the correlation state machine's evidence types for `fixed_in_repo`, `fixed_in_production`, affected-version verification, and incomplete current data. It is not applied automatically; callers retain the existing database and audit-history controls. User-only statuses such as `accepted_risk`, `false_positive`, and `not_reachable` are never proposed by this crate.
 
 Deterministic fixtures cover a fixed reference branch with affected production, both inventories fixed, an unknown deploy ID, missing Git evidence, incomplete association, and uncommitted working-tree changes. They are under `tests/fixtures/drift/`.
+
+## How the desktop app uses it
+
+The desktop app reassesses drift for a project after a manual scan, after an approved server collection, and whenever a project-server link is added or removed.
+
+- **Reference branch.** The configured reference branch is used; without one, the app uses the remote default branch (`origin/HEAD`) or the current branch. The tip counts as verified only when `HEAD` is that branch tip and the working tree has no tracked changes and no untracked dependency files. Git runs with fixed argument vectors; no shell is involved.
+- **Linking a server.** Under **Servers**, a server card lists the projects that run there. A project is linked only after the user confirms that the server runs its deployments. Production status is never inferred for unlinked servers and stays "could not verify".
+- **Deployment identity.** The deployment is taken from the latest approved collection. If the server reports several deploy IDs, only one whose repository matches the project's Git remote is used; ambiguous or missing deploy IDs leave production unverified.
+- **Freshness.** A collection older than 24 hours no longer counts as current; a finding previously marked fixed in production returns to review.
+- **Several servers.** A finding is fixed in production only when every linked server shows the fix; one affected server keeps it affected.
+- **User decisions.** Not reachable, accepted risk, false positive, and mitigated findings keep their status. Drift updates only their repository and production fields.

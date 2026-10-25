@@ -11,7 +11,7 @@ use crate::{Database, DatabaseError, Entity, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
-    let migrations: [&[u8]; 9] = [
+    let migrations: [&[u8]; 10] = [
         include_bytes!("../migrations/0001_initial.sql"),
         include_bytes!("../migrations/0002_advisory_metadata.sql"),
         include_bytes!("../migrations/0003_finding_disposition.sql"),
@@ -21,6 +21,7 @@ fn migration_sources_use_platform_independent_lf_line_endings() {
         include_bytes!("../migrations/0007_remediation_provider.sql"),
         include_bytes!("../migrations/0008_news_signals.sql"),
         include_bytes!("../migrations/0009_memories.sql"),
+        include_bytes!("../migrations/0010_project_server_links.sql"),
     ];
 
     assert!(
@@ -61,21 +62,22 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 9);
+    assert_eq!(database.schema_version().await.unwrap(), 10);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
           'component_instances', 'advisories', 'findings', 'finding_evidence', \
           'scan_runs', 'remediations', 'ai_providers', 'ai_runs', \
          'notification_channels', 'audit_events', 'project_scan_checkpoints', \
-          'notification_delivery_states', 'ai_transfer_approvals', 'memories')",
+          'notification_delivery_states', 'ai_transfer_approvals', 'memories', \
+          'project_server_links')",
     )
     .fetch_one(&database.pool)
     .await
     .unwrap()
     .try_get("count")
     .unwrap();
-    assert_eq!(count, 19);
+    assert_eq!(count, 20);
 }
 
 #[tokio::test]
@@ -92,7 +94,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 9);
+    assert_eq!(readonly.schema_version().await.unwrap(), 10);
     assert_eq!(
         readonly
             .repository::<Project>()

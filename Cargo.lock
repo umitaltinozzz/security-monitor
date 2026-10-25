@@ -5379,6 +5379,8 @@ dependencies = [
  "security-monitor-core",
  "security-monitor-correlation",
  "security-monitor-database",
+ "security-monitor-drift",
+ "security-monitor-inventory",
  "security-monitor-mcp-server",
  "security-monitor-remediation",
  "security-monitor-scan-orchestrator",

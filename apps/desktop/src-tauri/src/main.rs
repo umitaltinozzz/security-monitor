@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
+mod drift_sync;
 mod ipc;
 mod ipc_types;
 
@@ -181,6 +182,9 @@ fn main() {
             ipc::pair_server,
             ipc::collect_server_inventory,
             ipc::get_server_inventory_summary,
+            ipc::list_project_server_links,
+            ipc::link_project_server,
+            ipc::unlink_project_server,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build Security Monitor");

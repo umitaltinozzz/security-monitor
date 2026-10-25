@@ -3,8 +3,8 @@ use std::{marker::PhantomData, path::Path, time::Duration};
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
     ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
-    NotificationChannel, NotificationDeliveryState, Project, ProjectScanCheckpoint, Remediation,
-    ScanRun, Service, is_source_code_like,
+    NotificationChannel, NotificationDeliveryState, Project, ProjectScanCheckpoint,
+    ProjectServerLink, Remediation, ScanRun, Service, is_source_code_like,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -1119,6 +1119,18 @@ entity!(
         ("action", "$.action"),
         ("scope_json", "$.scope"),
         ("result", "$.result"),
+    ]
+);
+entity!(
+    ProjectServerLink,
+    id,
+    "project_server_links",
+    "id",
+    [
+        ("id", "$.id"),
+        ("project_id", "$.project_id"),
+        ("asset_id", "$.asset_id"),
+        ("confirmed_at", "$.confirmed_at"),
     ]
 );
 entity!(

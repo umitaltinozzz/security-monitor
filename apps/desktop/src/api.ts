@@ -18,6 +18,7 @@ import type { Finding } from "./generated/Finding";
 import type { FindingEvidence } from "./generated/FindingEvidence";
 import type { FindingStatusChange } from "./generated/FindingStatusChange";
 import type { NewsSignal } from "./generated/NewsSignal";
+import type { ProjectServerLink } from "./generated/ProjectServerLink";
 import type { NewsSyncReport } from "./generated/NewsSyncReport";
 import type { PairingInstructionsView } from "./generated/PairingInstructionsView";
 import type { Project } from "./generated/Project";
@@ -41,6 +42,7 @@ export type WorkspaceData = {
   settings: AppSettings;
   projects: Project[];
   assets: Asset[];
+  links: ProjectServerLink[];
   findings: Finding[];
   advisories: Advisory[];
   newsSignals: NewsSignal[];
@@ -137,14 +139,19 @@ export const api = {
     invoke<CollectionSummary>("collect_server_inventory", { assetId, transferApproved }),
   serverInventory: (assetId: string) =>
     invoke<CollectionSummary | null>("get_server_inventory_summary", { assetId }),
+  projectServerLinks: () => invoke<ProjectServerLink[]>("list_project_server_links"),
+  linkProjectServer: (projectId: string, assetId: string, confirmed: boolean) =>
+    invoke<ProjectServerLink>("link_project_server", { projectId, assetId, confirmed }),
+  unlinkProjectServer: (linkId: string) => invoke<boolean>("unlink_project_server", { linkId }),
 };
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
-  const [settings, projects, assets, findings, advisories, newsSignals, components, instances, evidence, runs, audit] =
+  const [settings, projects, assets, links, findings, advisories, newsSignals, components, instances, evidence, runs, audit] =
     await Promise.all([
       api.settings(),
       api.projects(),
       api.assets(),
+      api.projectServerLinks(),
       api.findings(),
       api.advisories(),
       api.newsSignals(),
@@ -154,5 +161,5 @@ export async function loadWorkspace(): Promise<WorkspaceData> {
       api.runs(),
       api.audit(),
     ]);
-  return { settings, projects, assets, findings, advisories, newsSignals, components, instances, evidence, runs, audit };
+  return { settings, projects, assets, links, findings, advisories, newsSignals, components, instances, evidence, runs, audit };
 }

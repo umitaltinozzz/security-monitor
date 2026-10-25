@@ -73,6 +73,7 @@ try {
       aiConfiguration: initial.ai_configuration,
       projects: [],
       assets: [],
+      links: [],
       findings: [],
       advisories: [],
       components: [],
@@ -165,6 +166,19 @@ try {
           }
           case "collect_server_inventory": return { asset_id: args.assetId, complete: false, package_count: 1, service_count: 1, container_count: 0, deployment_count: 0, approved_at: timestamp };
           case "get_server_inventory_summary": return null;
+          case "list_project_server_links": return state.links;
+          case "link_project_server": {
+            if (!args.confirmed) throw "permission_denied";
+            const link = { id: "link-fixture-1", project_id: args.projectId, asset_id: args.assetId, confirmed_at: timestamp };
+            state.links.push(link);
+            // The desktop backend reassesses drift after a confirmed link; mirror its result for the fixture.
+            state.finding = { ...state.finding, repo_status: "fixed_in_repo", production_status: "still_affected" };
+            state.findings = state.findings.length ? [state.finding] : state.findings;
+            return link;
+          }
+          case "unlink_project_server": state.links = []; return true;
+          case "list_memories": case "list_remediations": case "list_mcp_remediation_requests": return [];
+          case "remediation_sandbox_status": return { available: false, engine: null };
           default: throw "unknown";
         }
       },
@@ -204,6 +218,14 @@ try {
   await page.getByLabel("I independently checked this fingerprint with the server administrator.").check();
   await page.getByRole("button", { name: "Create pairing key" }).click();
   await page.getByRole("heading", { name: "fixture-server" }).waitFor();
+  await page.getByLabel("Link a project").selectOption({ label: "Fixture Project" });
+  await page.getByLabel("I confirm this server runs deployments of this project.").check();
+  await page.getByRole("button", { name: "Link", exact: true }).click();
+  await page.getByText("Project linked. Repository and production status were reassessed.").waitFor();
+  await page.getByRole("button", { name: "All findings", exact: true }).first().click();
+  await page.locator("tr").filter({ hasText: "GHSA-fixture-2025" }).getByText("Fixed in repo").waitFor();
+  await page.locator("tr").filter({ hasText: "GHSA-fixture-2025" }).getByText("Still affected").waitFor();
+  assert.equal(await page.getByText("Local storage is unavailable.").count(), 0, "no storage error notice during the flow");
 
   const axePath = require.resolve("axe-core/axe.min.js");
   const screenshotDirectory = `${repositoryRoot}docs/screenshots`;
