@@ -29,6 +29,39 @@ const PODMAN: &str = "podman";
 const MAX_MCP_REQUEST_BYTES: u64 = 8 * 1024;
 const MAX_MCP_REQUESTS: usize = 200;
 const MAX_WORKTREE_ENTRIES: usize = 250_000;
+const AGENT_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PROGRAMDATA",
+    "SYSTEMROOT",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "CODEX_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+];
+const UNSAFE_AGENT_CONFIG_NAMES: &[&str] = &[
+    ".claude",
+    ".mcp.json",
+    ".codex",
+    "claude.md",
+    "agents.md",
+    "opencode.json",
+    "opencode.jsonc",
+    ".opencode",
+];
 pub(crate) const OPENCODE_POLICY: &str = r#"{
   "$schema": "https://opencode.ai/config.json",
   "permission": {
@@ -137,8 +170,8 @@ pub enum RemediationError {
     WorktreePathInvalid,
     #[error("agent source transfer approval is required")]
     SourceTransferApprovalRequired,
-    #[error("OpenCode project configuration must be reviewed before launching its agent")]
-    OpenCodeProjectConfigPresent,
+    #[error("project agent configuration must be reviewed before launching an agent")]
+    AgentProjectConfigPresent,
     #[error("repository Git filters cannot run in remediation worktrees")]
     GitFiltersNotAllowed,
     #[error("test execution approval is required")]

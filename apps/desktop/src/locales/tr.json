@@ -689,7 +689,7 @@
     "remediation_timed_out": "İşlem süre sınırını aştı.",
     "remediation_image_invalid": "Yerelde bulunan ve SHA-256 özetiyle sabitlenmiş bir imaj kullanın.",
     "remediation_shell_not_allowed": "Test programını doğrudan seçin. Kabuk komutlarına izin verilmez.",
-    "remediation_opencode_project_config": "Bu ajanı başlatmadan önce projedeki OpenCode yapılandırmasını inceleyin veya kaldırın.",
+    "remediation_agent_project_config": "Düzeltme hazırlamayı başlatmadan önce projedeki ajan yapılandırmalarını kaldırın.",
     "sandbox_unavailable": "Docker veya Podman kullanılamıyor.",
     "credential_store_unavailable": "İşletim sistemi kimlik bilgisi kasasına erişilemiyor.",
     "ai_provider_not_configured": "AI ayarlarında bu görev katmanına bir sağlayıcı atayın.",

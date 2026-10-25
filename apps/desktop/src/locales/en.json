@@ -689,7 +689,7 @@
     "remediation_timed_out": "The operation exceeded its time limit.",
     "remediation_image_invalid": "Use an image pinned by a SHA-256 digest that is already available locally.",
     "remediation_shell_not_allowed": "Choose a test executable directly. Shell commands are not allowed.",
-    "remediation_opencode_project_config": "Review or remove the project OpenCode configuration before starting this agent.",
+    "remediation_agent_project_config": "Remove project agent configuration before starting remediation.",
     "sandbox_unavailable": "Docker or Podman is unavailable.",
     "credential_store_unavailable": "The operating system credential store is unavailable.",
     "ai_provider_not_configured": "Assign a provider to this task tier in AI settings.",

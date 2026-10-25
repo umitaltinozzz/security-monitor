@@ -35,7 +35,7 @@ Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli b
 - **Repoyu production ile karşılaştırır.** Salt okunur Linux ajanı (veya ajansız SSH) neyin kurulu olduğunu ve çalıştığını bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil.
 - **Açıklı kod push edilmeden önce uyarır.** `secmon hook` yalnızca değişen lockfile'lara, çevrimdışı ve üç saniyenin altında bakar.
 - **Kodlama ajanınla çalışır.** Tek komut Claude Code, Codex veya OpenCode'u yerel MCP sunucusuna ve Security Monitor skill'lerine bağlar.
-- **Senin onayladığın düzeltmeleri hazırlar.** Düzeltmeler izole bir Git worktree'de hazırlanır ve ağı kapalı bir sandbox'ta test edilir; onayın olmadan hiçbir şey uygulanmaz.
+- **Onayladığın düzeltmeleri hazırlar.** Yerel kodlama ajanı filtrelenmiş ortamla izole bir Git worktree'de çalışır; projedeki ajan yapılandırmaları varsa çalışma reddedilir. Test komutları ağ erişimi kapalı sandbox'ta çalışır ve onayın olmadan hiçbir değişiklik uygulanmaz.
 
 ## Neden farklı
 

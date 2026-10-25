@@ -495,7 +495,7 @@ fn remediation_error_key(error: security_monitor_remediation::RemediationError) 
         RemediationError::GitFiltersNotAllowed => "remediation_git_filter_not_allowed",
         RemediationError::WorktreePathInvalid => "remediation_worktree_invalid",
         RemediationError::SourceTransferApprovalRequired => "permission_denied",
-        RemediationError::OpenCodeProjectConfigPresent => "remediation_opencode_project_config",
+        RemediationError::AgentProjectConfigPresent => "remediation_agent_project_config",
         RemediationError::ExecuteApprovalRequired => "permission_denied",
         RemediationError::SandboxUnavailable => "sandbox_unavailable",
         RemediationError::InvalidImage => "remediation_image_invalid",

@@ -18,8 +18,9 @@ pub async fn run_agent_cli(
     {
         return Err(RemediationError::InvalidTestCommand);
     }
+    reject_agent_project_configuration(&worktree)?;
     let mut command = Command::new(agent_executable(product));
-    command.current_dir(&worktree).kill_on_drop(true);
+    configure_agent_environment(&mut command, &worktree);
     let _opencode_policy = if product == AgentCliProduct::OpenCode {
         Some(ScopedOpenCodePolicy::create(&worktree)?)
     } else {
@@ -29,8 +30,9 @@ pub async fn run_agent_cli(
         AgentCliProduct::ClaudeCode => {
             command.args([
                 "--print",
-                "--restricted",
-                "--safe-mode",
+                "--setting-sources",
+                "user",
+                "--strict-mcp-config",
                 "--permission-mode",
                 "acceptEdits",
                 "--tools",
@@ -49,6 +51,7 @@ pub async fn run_agent_cli(
                 "workspace-write",
                 "--ask-for-approval",
                 "on-request",
+                "--ephemeral",
                 "-",
             ]);
             command.stdin(Stdio::piped());
@@ -84,6 +87,53 @@ pub async fn run_agent_cli(
     })
 }
 
+fn configure_agent_environment(command: &mut Command, worktree: &Path) {
+    command.env_clear();
+    for name in AGENT_ENV_ALLOWLIST {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    command.current_dir(worktree).kill_on_drop(true);
+}
+
+fn reject_agent_project_configuration(worktree: &Path) -> Result<(), RemediationError> {
+    let mut pending = vec![worktree.to_path_buf()];
+    let mut visited = 0usize;
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory).map_err(|_| RemediationError::FilesystemFailed)? {
+            visited = visited.saturating_add(1);
+            if visited > MAX_WORKTREE_ENTRIES {
+                return Err(RemediationError::WorktreePathInvalid);
+            }
+            let entry = entry.map_err(|_| RemediationError::FilesystemFailed)?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if is_agent_config_name(&name) {
+                return Err(RemediationError::AgentProjectConfigPresent);
+            }
+            if name == ".git" {
+                continue;
+            }
+            let file_type = entry
+                .file_type()
+                .map_err(|_| RemediationError::FilesystemFailed)?;
+            if file_type.is_symlink() {
+                return Err(RemediationError::WorktreePathInvalid);
+            }
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_agent_config_name(name: &str) -> bool {
+    UNSAFE_AGENT_CONFIG_NAMES
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+}
+
 pub(crate) struct ScopedOpenCodePolicy {
     pub(crate) path: PathBuf,
 }
@@ -92,7 +142,7 @@ impl ScopedOpenCodePolicy {
     pub(crate) fn create(worktree: &Path) -> Result<Self, RemediationError> {
         for relative in ["opencode.json", "opencode.jsonc", ".opencode"] {
             match fs::symlink_metadata(worktree.join(relative)) {
-                Ok(_) => return Err(RemediationError::OpenCodeProjectConfigPresent),
+                Ok(_) => return Err(RemediationError::AgentProjectConfigPresent),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(_) => return Err(RemediationError::FilesystemFailed),
             }
@@ -117,5 +167,51 @@ impl ScopedOpenCodePolicy {
 impl Drop for ScopedOpenCodePolicy {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::{is_agent_config_name, reject_agent_project_configuration};
+    use crate::{AGENT_ENV_ALLOWLIST, RemediationError, UNSAFE_AGENT_CONFIG_NAMES};
+
+    #[test]
+    fn project_agent_configuration_is_rejected_at_any_depth() {
+        for name in UNSAFE_AGENT_CONFIG_NAMES {
+            let temp = TempDir::new().unwrap();
+            let nested = temp.path().join("nested");
+            std::fs::create_dir(&nested).unwrap();
+            let config = nested.join(name);
+            if name.starts_with('.') && !name.ends_with(".json") {
+                std::fs::create_dir(&config).unwrap();
+            } else {
+                std::fs::write(config, "untrusted project configuration").unwrap();
+            }
+            assert!(matches!(
+                reject_agent_project_configuration(temp.path()),
+                Err(RemediationError::AgentProjectConfigPresent)
+            ));
+        }
+    }
+
+    #[test]
+    fn agent_environment_allowlist_keeps_runtime_paths_and_excludes_secrets_and_hooks() {
+        assert!(AGENT_ENV_ALLOWLIST.contains(&"PATH"));
+        assert!(AGENT_ENV_ALLOWLIST.contains(&"HOME"));
+        for forbidden in [
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "OPENAI_API_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "NODE_OPTIONS",
+            "BASH_ENV",
+            "LD_PRELOAD",
+        ] {
+            assert!(!AGENT_ENV_ALLOWLIST.contains(&forbidden));
+        }
+        assert!(is_agent_config_name("AGENTS.md"));
+        assert!(is_agent_config_name(".CLAUDE"));
     }
 }

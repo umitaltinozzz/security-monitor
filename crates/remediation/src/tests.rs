@@ -227,7 +227,7 @@ fn opencode_policy_denies_commands_and_refuses_project_overrides() {
     fs::write(temp.path().join("opencode.json"), "{}").unwrap();
     assert!(matches!(
         ScopedOpenCodePolicy::create(temp.path()),
-        Err(RemediationError::OpenCodeProjectConfigPresent)
+        Err(RemediationError::AgentProjectConfigPresent)
     ));
 }
 

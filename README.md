@@ -35,7 +35,7 @@ No account. No cloud dashboard. Source code, lockfiles, and inventory stay on yo
 - **Compares the repo with production.** A read-only Linux agent (or agentless SSH) reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries.
 - **Warns before vulnerable code is pushed.** `secmon hook` checks only the changed lockfiles, offline, in under three seconds.
 - **Works with your coding agent.** One command connects Claude Code, Codex, or OpenCode to a local MCP server and Security Monitor skills.
-- **Prepares fixes you approve.** Fixes are prepared in an isolated Git worktree and tested in a network-disabled sandbox; nothing is applied without your approval.
+- **Prepares fixes you approve.** A local coding-agent CLI works in an isolated Git worktree with a filtered environment; project agent configuration files are refused. Test commands run in a network-disabled sandbox, and no change is applied without your approval.
 
 ## Why it is different
 
