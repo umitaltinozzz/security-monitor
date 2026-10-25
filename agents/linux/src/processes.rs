@@ -2,6 +2,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::Read,
     path::Path,
 };
 
@@ -16,6 +17,11 @@ use security_monitor_agent_protocol::MapsStatus;
 
 #[cfg(target_os = "linux")]
 use crate::commands::{CommandOutput, HostCommand, run_allowlisted};
+
+#[cfg(target_os = "linux")]
+const MAX_PROCESS_MAPS_BYTES: u64 = 8 * 1024 * 1024;
+#[cfg(target_os = "linux")]
+const MAX_PROCESS_MAPS_LINES: usize = 100_000;
 
 #[derive(Debug)]
 pub struct ProcessSnapshot {
@@ -253,8 +259,14 @@ pub(super) fn retain_valid_process(
 
 #[cfg(target_os = "linux")]
 fn deleted_shared_libraries(path: &Path) -> (Vec<String>, MapsStatus, Option<DiagnosticCode>) {
-    let contents = match fs::read_to_string(path) {
-        Ok(contents) => contents,
+    // /proc maps is a pseudo-file, so bound the descriptor read directly instead of using
+    // the regular-file-only shared bounded reader.
+    let mut contents = String::new();
+    let bytes_read = match fs::File::open(path).and_then(|file| {
+        file.take(MAX_PROCESS_MAPS_BYTES + 1)
+            .read_to_string(&mut contents)
+    }) {
+        Ok(bytes_read) => bytes_read,
         Err(error) => {
             return (
                 Vec::new(),
@@ -267,8 +279,17 @@ fn deleted_shared_libraries(path: &Path) -> (Vec<String>, MapsStatus, Option<Dia
             );
         }
     };
+    if bytes_read as u64 > MAX_PROCESS_MAPS_BYTES
+        || contents.lines().count() > MAX_PROCESS_MAPS_LINES
+    {
+        return (
+            Vec::new(),
+            MapsStatus::Unavailable,
+            Some(DiagnosticCode::StaleObservation),
+        );
+    }
     let mut names = BTreeSet::new();
-    for line in contents.lines().take(100_000) {
+    for line in contents.lines() {
         let mut fields = line.split_whitespace();
         if fields.nth(4).is_none() {
             continue;
@@ -494,6 +515,31 @@ mod tests {
         let path = std::env::temp_dir().join(format!("secmon-missing-maps-{}", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let (_, status, diagnostic) = super::deleted_shared_libraries(&path);
+        assert_eq!(status, MapsStatus::Unavailable);
+        assert_eq!(diagnostic, Some(DiagnosticCode::StaleObservation));
+    }
+
+    #[test]
+    fn oversized_maps_are_reported_as_incomplete() {
+        let path = std::env::temp_dir().join(format!("secmon-large-maps-{}", std::process::id()));
+        std::fs::write(
+            &path,
+            vec![b'x'; super::MAX_PROCESS_MAPS_BYTES as usize + 1],
+        )
+        .unwrap();
+        let (_, status, diagnostic) = super::deleted_shared_libraries(&path);
+        let _ = std::fs::remove_file(path);
+        assert_eq!(status, MapsStatus::Unavailable);
+        assert_eq!(diagnostic, Some(DiagnosticCode::StaleObservation));
+    }
+
+    #[test]
+    fn maps_with_too_many_lines_are_reported_as_incomplete() {
+        let path = std::env::temp_dir().join(format!("secmon-many-maps-{}", std::process::id()));
+        let contents = "x\n".repeat(super::MAX_PROCESS_MAPS_LINES + 1);
+        std::fs::write(&path, contents).unwrap();
+        let (_, status, diagnostic) = super::deleted_shared_libraries(&path);
+        let _ = std::fs::remove_file(path);
         assert_eq!(status, MapsStatus::Unavailable);
         assert_eq!(diagnostic, Some(DiagnosticCode::StaleObservation));
     }
