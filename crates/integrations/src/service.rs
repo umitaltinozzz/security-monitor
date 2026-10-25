@@ -89,20 +89,21 @@ impl<S: CredentialStore> IntegrationService<S> {
 
         let mut entries = Vec::with_capacity(plan.changes.len());
         for change in &plan.changes {
-            let backup_key_ref = match change.before.as_deref() {
-                Some(bytes) => match self.credential_store.put(bytes) {
-                    Ok(reference) => Some(reference),
+            let backup_key_refs = match change.before.as_deref() {
+                Some(bytes) => match store_backup(&self.credential_store, bytes) {
+                    Ok(references) => references,
                     Err(_) => {
                         delete_backups(&self.credential_store, &entries);
                         return Err(IntegrationError::BackupUnavailable);
                     }
                 },
-                None => None,
+                None => Vec::new(),
             };
             entries.push(ManifestEntry {
                 relative_path: change.relative_path.clone(),
                 existed_before: change.before.is_some(),
-                backup_key_ref,
+                backup_key_ref: None,
+                backup_key_refs,
                 installed_sha256: sha256(&change.after),
                 original_sha256: change.before.as_deref().map(sha256),
             });
@@ -178,16 +179,7 @@ impl<S: CredentialStore> IntegrationService<S> {
                 .is_some_and(|value| sha256(value) == entry.installed_sha256)
             {
                 let original = if entry.existed_before {
-                    let reference = entry
-                        .backup_key_ref
-                        .as_deref()
-                        .ok_or(IntegrationError::StateUnavailable)?;
-                    Some(
-                        self.credential_store
-                            .get(reference)
-                            .map_err(|_| IntegrationError::BackupUnavailable)?
-                            .to_vec(),
-                    )
+                    Some(load_backup(&self.credential_store, entry)?)
                 } else {
                     None
                 };
@@ -220,10 +212,10 @@ impl<S: CredentialStore> IntegrationService<S> {
         }
 
         for entry in &manifest.entries {
-            if let Some(reference) = entry.backup_key_ref.as_deref()
-                && self.credential_store.delete(reference).is_err()
-            {
-                return Err(IntegrationError::BackupUnavailable);
+            for reference in entry.backup_refs() {
+                if self.credential_store.delete(reference).is_err() {
+                    return Err(IntegrationError::BackupUnavailable);
+                }
             }
         }
         fs::remove_file(manifest_path).map_err(|_| IntegrationError::StateUnavailable)?;

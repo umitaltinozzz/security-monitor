@@ -7,11 +7,16 @@ struct MemoryCredentialStore {
     values: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
     delete_calls: Arc<Mutex<usize>>,
     fail_delete_at: Arc<Mutex<Option<usize>>>,
+    max_secret_bytes: Arc<Mutex<Option<usize>>>,
 }
 
 impl MemoryCredentialStore {
     fn fail_delete_on_call(&self, call: usize) {
         *self.fail_delete_at.lock().unwrap() = Some(call);
+    }
+
+    fn limit_secret_size(&self, max_bytes: usize) {
+        *self.max_secret_bytes.lock().unwrap() = Some(max_bytes);
     }
 }
 
@@ -20,6 +25,14 @@ impl CredentialStore for MemoryCredentialStore {
         &self,
         secret: &[u8],
     ) -> Result<String, security_monitor_agent_transport::CredentialError> {
+        if self
+            .max_secret_bytes
+            .lock()
+            .unwrap()
+            .is_some_and(|limit| secret.len() > limit)
+        {
+            return Err(security_monitor_agent_transport::CredentialError::StoreUnavailable);
+        }
         let reference = format!("secmon-keyring:v1:{}", uuid::Uuid::new_v4());
         self.values
             .lock()
@@ -283,6 +296,36 @@ fn install_and_remove_restore_existing_files_byte_for_byte_without_file_backup_s
     assert_eq!(fs::read(config_path).unwrap(), original_config);
     assert_eq!(fs::read(hooks_path).unwrap(), original_hooks);
     assert!(!project_root.join(".agents/skills/secmon/SKILL.md").exists());
+    assert!(store.values.lock().unwrap().is_empty());
+}
+
+#[test]
+fn large_claude_configuration_is_chunked_under_the_windows_keyring_limit_and_restored() {
+    let home = tempfile::tempdir().unwrap();
+    let config_path = home.path().join(".claude.json");
+    let original = serde_json::to_vec(&json!({"other": {"value": "x".repeat(8192)}})).unwrap();
+    assert!(original.len() > 2560);
+    fs::write(&config_path, &original).unwrap();
+
+    let store = MemoryCredentialStore::default();
+    store.limit_secret_size(2560);
+    let service = IntegrationService::new(store.clone());
+    service
+        .install(Agent::ClaudeCode, Scope::User, home.path(), None)
+        .unwrap();
+    assert!(
+        store
+            .values
+            .lock()
+            .unwrap()
+            .values()
+            .all(|chunk| chunk.len() <= 2560)
+    );
+
+    service
+        .remove(Agent::ClaudeCode, Scope::User, home.path(), None)
+        .unwrap();
+    assert_eq!(fs::read(config_path).unwrap(), original);
     assert!(store.values.lock().unwrap().is_empty());
 }
 

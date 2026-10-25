@@ -2,6 +2,7 @@ use super::*;
 
 const AGENT_CONFIG: &str = include_str!("../agents.toml");
 const MAX_CONFIG_BYTES: u64 = 2 * 1024 * 1024;
+const BACKUP_CHUNK_BYTES: usize = 2 * 1024;
 pub(crate) const SKILL: &str = r#"---
 name: secmon
 description: Review local dependency security findings and deployment evidence with Security Monitor.
@@ -44,9 +45,21 @@ pub(crate) struct IntegrationManifest {
 pub(crate) struct ManifestEntry {
     pub(crate) relative_path: PathBuf,
     pub(crate) existed_before: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) backup_key_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) backup_key_refs: Vec<String>,
     pub(crate) installed_sha256: String,
     pub(crate) original_sha256: Option<String>,
+}
+
+impl ManifestEntry {
+    pub(crate) fn backup_refs(&self) -> impl Iterator<Item = &str> {
+        self.backup_key_ref
+            .iter()
+            .chain(&self.backup_key_refs)
+            .map(String::as_str)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -323,10 +336,59 @@ pub(crate) fn rollback_plan(root: &Path, written: &[&PlannedChange]) {
 
 pub(crate) fn delete_backups<S: CredentialStore>(store: &S, entries: &[ManifestEntry]) {
     for entry in entries {
-        if let Some(reference) = entry.backup_key_ref.as_deref() {
+        for reference in entry.backup_refs() {
             let _ = store.delete(reference);
         }
     }
+}
+
+pub(crate) fn store_backup<S: CredentialStore>(
+    store: &S,
+    bytes: &[u8],
+) -> Result<Vec<String>, IntegrationError> {
+    if bytes.len() > MAX_CONFIG_BYTES as usize {
+        return Err(IntegrationError::BackupUnavailable);
+    }
+    let chunks = if bytes.is_empty() {
+        vec![bytes]
+    } else {
+        bytes.chunks(BACKUP_CHUNK_BYTES).collect()
+    };
+    let mut references = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        match store.put(chunk) {
+            Ok(reference) => references.push(reference),
+            Err(_) => {
+                for reference in &references {
+                    let _ = store.delete(reference);
+                }
+                return Err(IntegrationError::BackupUnavailable);
+            }
+        }
+    }
+    Ok(references)
+}
+
+pub(crate) fn load_backup<S: CredentialStore>(
+    store: &S,
+    entry: &ManifestEntry,
+) -> Result<Vec<u8>, IntegrationError> {
+    let references = entry.backup_refs().collect::<Vec<_>>();
+    let max_chunks = (MAX_CONFIG_BYTES as usize).div_ceil(BACKUP_CHUNK_BYTES);
+    if references.is_empty() || references.len() > max_chunks {
+        return Err(IntegrationError::BackupUnavailable);
+    }
+    let mut bytes = Vec::new();
+    for reference in references {
+        let chunk = store
+            .get(reference)
+            .map_err(|_| IntegrationError::BackupUnavailable)?;
+        if bytes.len().saturating_add(chunk.len()) > MAX_CONFIG_BYTES as usize {
+            return Err(IntegrationError::BackupUnavailable);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 
 pub(crate) fn write_json_atomic(

@@ -19,6 +19,8 @@ Installation defaults to user scope. Use `--scope project` to install into the c
 
 Before installation, Security Monitor saves any existing configuration bytes in the operating system credential store. The manifest contains only paths, hashes, and opaque credential references. Removal restores the original files byte for byte. If an installed file has changed since installation, removal stops and leaves the user's edits in place.
 
+Backups are split into 2 KiB credential-store entries so larger configuration files fit Windows Credential Manager's 2,560-byte credential-blob limit ([`CREDENTIALW`](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)).
+
 | Agent | User scope | Project scope | Added hook |
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude.json`, `~/.claude/settings.json`, `~/.claude/skills/secmon/SKILL.md` | `.mcp.json`, `.claude/settings.json`, `.claude/skills/secmon/SKILL.md` | `PreToolUse` for Bash |
