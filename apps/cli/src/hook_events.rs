@@ -6,6 +6,7 @@ use std::{
 use serde::Deserialize;
 
 const MAX_EVENT_BYTES: u64 = 256 * 1024;
+const MAX_REEVALUATED_SHELL_DEPTH: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum GitOperation {
@@ -60,17 +61,77 @@ fn actions_from_event(bytes: &[u8]) -> Result<GitHookActions, &'static str> {
 fn git_actions(command: &str) -> GitHookActions {
     let mut actions = GitHookActions::default();
     let mut variables = BTreeMap::new();
+    collect_git_actions(command, &mut variables, &mut actions, 0);
+    actions
+}
+
+fn collect_git_actions(
+    command: &str,
+    variables: &mut BTreeMap<String, String>,
+    actions: &mut GitHookActions,
+    depth: usize,
+) -> bool {
+    let mut found_action = false;
     for tokens in shell_segments(command) {
-        record_literal_assignments(&tokens, &mut variables);
-        let Some(operation) = git_operation_in_segment(&tokens, &variables) else {
+        record_literal_assignments(&tokens, variables);
+        if let Some(nested_command) = reevaluated_shell_command(&tokens) {
+            if depth >= MAX_REEVALUATED_SHELL_DEPTH {
+                actions.pre_commit = true;
+                actions.pre_push = true;
+                found_action = true;
+                continue;
+            }
+            let nested_action = collect_git_actions(&nested_command, variables, actions, depth + 1);
+            if !nested_action && contains_shell_expansion(&nested_command) {
+                actions.pre_commit = true;
+                actions.pre_push = true;
+                found_action = true;
+            } else {
+                found_action |= nested_action;
+            }
+            continue;
+        }
+        let Some(operation) = git_operation_in_segment(&tokens, variables) else {
             continue;
         };
         match operation {
             GitOperation::Commit => actions.pre_commit = true,
             GitOperation::Push => actions.pre_push = true,
         }
+        found_action = true;
     }
-    actions
+    found_action
+}
+
+fn reevaluated_shell_command(tokens: &[String]) -> Option<String> {
+    let executable = tokens.first()?;
+    let executable_name = executable.rsplit(['/', '\\']).next()?.to_ascii_lowercase();
+    if executable_name == "eval" {
+        let command = tokens.get(1..)?.join(" ");
+        return (!command.is_empty()).then_some(command);
+    }
+    if !matches!(
+        executable_name.as_str(),
+        "sh" | "bash" | "dash" | "zsh" | "ksh" | "ash"
+    ) {
+        return None;
+    }
+    let command_flag = tokens
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find_map(|(index, token)| {
+            (token == "-c" || token == "--command")
+                .then_some(index)
+                .or_else(|| (token.starts_with('-') && token[1..].contains('c')).then_some(index))
+        })?;
+    tokens.get(command_flag + 1).cloned()
+}
+
+fn contains_shell_expansion(command: &str) -> bool {
+    command
+        .chars()
+        .any(|character| matches!(character, '$' | '`' | '*' | '?' | '['))
 }
 
 fn shell_segments(command: &str) -> Vec<Vec<String>> {
@@ -480,6 +541,47 @@ mod tests {
             assert_eq!(
                 actions_from_event(&event(command)),
                 Ok(GitHookActions::default())
+            );
+        }
+    }
+
+    #[test]
+    fn detects_git_actions_re_evaluated_by_shells() {
+        for (command, expected) in [
+            (
+                "eval 'git push origin main'",
+                GitHookActions {
+                    pre_commit: false,
+                    pre_push: true,
+                },
+            ),
+            (
+                "bash -c 'git push origin main'",
+                GitHookActions {
+                    pre_commit: false,
+                    pre_push: true,
+                },
+            ),
+            (
+                "sh -c 'git commit -m ready'",
+                GitHookActions {
+                    pre_commit: true,
+                    pre_push: false,
+                },
+            ),
+            ("bash -c 'echo git push'", GitHookActions::default()),
+            (
+                "eval \"$COMMAND\"",
+                GitHookActions {
+                    pre_commit: true,
+                    pre_push: true,
+                },
+            ),
+        ] {
+            assert_eq!(
+                actions_from_event(&event(command)),
+                Ok(expected),
+                "{command}"
             );
         }
     }
