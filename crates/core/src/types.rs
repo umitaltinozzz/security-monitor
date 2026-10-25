@@ -2,6 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DomainValidationError {
+    #[error("finding disposition is incomplete or inconsistent")]
+    InvalidFindingDisposition,
+    #[error("memory record is invalid")]
+    InvalidMemory,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -327,6 +335,64 @@ pub struct Finding {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Finding {
+    pub fn validate(&self) -> Result<(), DomainValidationError> {
+        let requires_disposition = matches!(
+            &self.status,
+            FindingStatus::NotReachable
+                | FindingStatus::AcceptedRisk
+                | FindingStatus::FalsePositive
+        );
+        if requires_disposition != self.disposition.is_some() {
+            return Err(DomainValidationError::InvalidFindingDisposition);
+        }
+        let Some(disposition) = &self.disposition else {
+            return Ok(());
+        };
+        let expiry_required = matches!(
+            &self.status,
+            FindingStatus::AcceptedRisk | FindingStatus::FalsePositive
+        );
+        let reason_matches_status = matches!(
+            (&self.status, &disposition.reason),
+            (
+                FindingStatus::AcceptedRisk,
+                FindingDispositionReason::BusinessAccepted
+                    | FindingDispositionReason::CompensatingControl
+                    | FindingDispositionReason::TemporaryException
+                    | FindingDispositionReason::FixPlanned,
+            ) | (
+                FindingStatus::FalsePositive,
+                FindingDispositionReason::DuplicateFinding
+                    | FindingDispositionReason::IncorrectPackage
+                    | FindingDispositionReason::UnaffectedVersion
+                    | FindingDispositionReason::NoAffectedCodePath
+                    | FindingDispositionReason::OtherReviewed,
+            ) | (
+                FindingStatus::NotReachable,
+                FindingDispositionReason::NoAffectedCodePath
+                    | FindingDispositionReason::ConfigurationPreventsReachability
+                    | FindingDispositionReason::OtherReviewed,
+            )
+        );
+        if !reason_matches_status
+            || disposition.scope_id.trim().is_empty()
+            || !matches!(
+                disposition.scope.as_str(),
+                "finding" | "project" | "asset" | "deployment"
+            )
+            || (expiry_required && disposition.expires_at.is_none())
+            || disposition
+                .expires_at
+                .is_some_and(|expiry| expiry <= disposition.set_at)
+            || disposition.expires_at != self.risk_expires_at
+        {
+            return Err(DomainValidationError::InvalidFindingDisposition);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -591,6 +657,29 @@ pub struct Memory {
     pub verified_by: Option<String>,
 }
 
+impl Memory {
+    pub fn validate(&self) -> Result<(), DomainValidationError> {
+        let global_without_id = self.scope == MemoryScope::Global && self.scope_id.is_none();
+        let scoped_with_id = matches!(
+            self.scope,
+            MemoryScope::Project | MemoryScope::Server | MemoryScope::Finding
+        ) && self
+            .scope_id
+            .as_deref()
+            .is_some_and(|id| !id.trim().is_empty());
+        if !(global_without_id || scoped_with_id)
+            || self.author.trim().is_empty()
+            || self.author.len() > 96
+            || (self.author.starts_with("agent:") && self.kind == MemoryKind::UserDecision)
+            || is_source_code_like(&self.content)
+            || self.verified_at.is_some() != (self.verified_by.as_deref() == Some("user"))
+        {
+            return Err(DomainValidationError::InvalidMemory);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MemoryArchiveEntry {
@@ -694,5 +783,62 @@ mod memory_tests {
         ] {
             assert!(!is_source_code_like(content), "{content}");
         }
+    }
+
+    #[test]
+    fn memory_rules_live_on_the_domain_record() {
+        let mut memory = Memory {
+            id: "memory-1".to_owned(),
+            scope: MemoryScope::Global,
+            scope_id: None,
+            kind: MemoryKind::AgentSummary,
+            content: "The service is internal-only.".to_owned(),
+            author: "agent:reviewer".to_owned(),
+            source_run_id: None,
+            created_at: Utc::now(),
+            expires_at: None,
+            pinned: false,
+            verified_at: None,
+            verified_by: None,
+        };
+        assert!(memory.validate().is_ok());
+
+        memory.kind = MemoryKind::UserDecision;
+        assert_eq!(memory.validate(), Err(DomainValidationError::InvalidMemory));
+    }
+
+    #[test]
+    fn finding_disposition_rules_live_on_the_domain_record() {
+        let now = Utc::now();
+        let mut finding = Finding {
+            id: "finding-1".to_owned(),
+            advisory_id: "CVE-2026-1".to_owned(),
+            component_instance_id: "instance-1".to_owned(),
+            status: FindingStatus::AcceptedRisk,
+            severity: Severity::High,
+            priority_score: 50,
+            priority_reasons: Vec::new(),
+            fingerprint: "fingerprint".to_owned(),
+            repo_status: RepoStatus::Unknown,
+            production_status: ProductionStatus::Unknown,
+            disposition: Some(FindingDisposition {
+                reason: FindingDispositionReason::TemporaryException,
+                scope: "finding".to_owned(),
+                scope_id: "finding-1".to_owned(),
+                set_at: now,
+                expires_at: Some(now + chrono::Duration::days(7)),
+            }),
+            risk_expires_at: Some(now + chrono::Duration::days(7)),
+            fix_version: None,
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(finding.validate().is_ok());
+
+        finding.risk_expires_at = None;
+        assert_eq!(
+            finding.validate(),
+            Err(DomainValidationError::InvalidFindingDisposition)
+        );
     }
 }

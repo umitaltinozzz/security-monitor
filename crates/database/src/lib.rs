@@ -4,7 +4,7 @@ use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
     ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
     NotificationChannel, NotificationDeliveryState, Project, ProjectScanCheckpoint,
-    ProjectServerLink, Remediation, ScanRun, Service, is_source_code_like,
+    ProjectServerLink, Remediation, ScanRun, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -184,6 +184,7 @@ impl Database {
             return Ok(Err(reason));
         }
 
+        run.validate()?;
         let json = serde_json::to_string(run)?;
         validate_record(AiRun::TABLE, &json)?;
         let columns = AiRun::COLUMNS
@@ -257,6 +258,7 @@ pub struct Repository<T> {
 
 impl<T: Entity> Repository<T> {
     pub async fn create(&self, entity: &T) -> Result<(), DatabaseError> {
+        entity.validate()?;
         let json = serde_json::to_string(entity)?;
         validate_record(T::TABLE, &json)?;
         let columns = T::COLUMNS
@@ -304,6 +306,7 @@ impl<T: Entity> Repository<T> {
     }
 
     pub async fn update(&self, entity: &T) -> Result<bool, DatabaseError> {
+        entity.validate()?;
         let json = serde_json::to_string(entity)?;
         validate_record(T::TABLE, &json)?;
         let assignments = T::COLUMNS
@@ -533,6 +536,10 @@ pub trait Entity: sealed::Sealed + Serialize + DeserializeOwned + Send + Sync + 
     const COLUMNS: &'static [(&'static str, &'static str)];
 
     fn key(&self) -> &str;
+
+    fn validate(&self) -> Result<(), DatabaseError> {
+        Ok(())
+    }
 }
 
 fn quote_identifier(identifier: &str) -> String {
@@ -545,50 +552,6 @@ fn decode_record<T: DeserializeOwned>(json: String) -> Result<T, DatabaseError> 
 
 fn validate_record(table: &str, json: &str) -> Result<(), DatabaseError> {
     let record: serde_json::Value = serde_json::from_str(json)?;
-    if table == "memories" {
-        let scope = record
-            .get("scope")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let scope_id = record.get("scope_id").filter(|value| !value.is_null());
-        let global_without_id = scope == "global" && scope_id.is_none();
-        let scoped_with_id = matches!(scope, "project" | "server" | "finding")
-            && scope_id
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|id| !id.trim().is_empty());
-        let author = record
-            .get("author")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let kind = record
-            .get("kind")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let content = record
-            .get("content")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let verified_at = record
-            .get("verified_at")
-            .filter(|value| !value.is_null())
-            .and_then(serde_json::Value::as_str);
-        let verified_by = record
-            .get("verified_by")
-            .filter(|value| !value.is_null())
-            .and_then(serde_json::Value::as_str);
-        if !(global_without_id || scoped_with_id)
-            || author.trim().is_empty()
-            || author.len() > 96
-            || (author.starts_with("agent:") && kind == "user_decision")
-            || is_source_code_like(content)
-            || verified_at.is_some() != (verified_by == Some("user"))
-        {
-            return Err(DatabaseError::InvalidMemory);
-        }
-    }
-    if table == "findings" {
-        validate_finding_disposition(&record)?;
-    }
     if table == "notification_channels" {
         let kind = record
             .get("kind")
@@ -683,78 +646,6 @@ fn validate_notification_destination(kind: &str, destination: &str) -> Result<()
     Ok(())
 }
 
-fn validate_finding_disposition(record: &serde_json::Value) -> Result<(), DatabaseError> {
-    let status = record
-        .get("status")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let required = matches!(status, "not_reachable" | "accepted_risk" | "false_positive");
-    let disposition = record.get("disposition").filter(|value| !value.is_null());
-    if required != disposition.is_some() {
-        return Err(DatabaseError::InvalidFindingDisposition);
-    }
-    let Some(disposition) = disposition else {
-        return Ok(());
-    };
-    let reason = disposition
-        .get("reason")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let scope = disposition
-        .get("scope")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let scope_id = disposition
-        .get("scope_id")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let set_at = disposition
-        .get("set_at")
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_timestamp);
-    let expires_at = disposition
-        .get("expires_at")
-        .filter(|value| !value.is_null())
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_timestamp);
-    let risk_expires_at = record
-        .get("risk_expires_at")
-        .filter(|value| !value.is_null())
-        .and_then(serde_json::Value::as_str)
-        .and_then(parse_timestamp);
-    let expiry_required = matches!(status, "accepted_risk" | "false_positive");
-    let reason_matches_status = match status {
-        "accepted_risk" => matches!(
-            reason,
-            "business_accepted" | "compensating_control" | "temporary_exception" | "fix_planned"
-        ),
-        "false_positive" => matches!(
-            reason,
-            "duplicate_finding"
-                | "incorrect_package"
-                | "unaffected_version"
-                | "no_affected_code_path"
-                | "other_reviewed"
-        ),
-        "not_reachable" => matches!(
-            reason,
-            "no_affected_code_path" | "configuration_prevents_reachability" | "other_reviewed"
-        ),
-        _ => false,
-    };
-    if !reason_matches_status
-        || scope_id.trim().is_empty()
-        || !matches!(scope, "finding" | "project" | "asset" | "deployment")
-        || set_at.is_none()
-        || (expiry_required && expires_at.is_none())
-        || expires_at.is_some_and(|expiry| set_at.is_some_and(|set| expiry <= set))
-        || expires_at != risk_expires_at
-    {
-        return Err(DatabaseError::InvalidFindingDisposition);
-    }
-    Ok(())
-}
-
 fn parse_timestamp(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     chrono::DateTime::parse_from_rfc3339(value)
         .ok()
@@ -777,6 +668,23 @@ fn is_credential_reference(value: &str) -> bool {
 }
 
 macro_rules! entity {
+    ($type:ty, $key:ident, $table:literal, $key_column:literal, [$(($column:literal, $path:literal)),+ $(,)?], $validator:ident, $error:ident) => {
+        impl sealed::Sealed for $type {}
+
+        impl Entity for $type {
+            const TABLE: &'static str = $table;
+            const KEY_COLUMN: &'static str = $key_column;
+            const COLUMNS: &'static [(&'static str, &'static str)] = &[$(($column, $path)),+];
+
+            fn key(&self) -> &str {
+                self.$key.as_str()
+            }
+
+            fn validate(&self) -> Result<(), DatabaseError> {
+                self.$validator().map_err(|_| DatabaseError::$error)
+            }
+        }
+    };
     ($type:ty, $key:ident, $table:literal, $key_column:literal, [$(($column:literal, $path:literal)),+ $(,)?]) => {
         impl sealed::Sealed for $type {}
 
@@ -949,7 +857,9 @@ entity!(
         ("fix_version", "$.fix_version"),
         ("created_at", "$.created_at"),
         ("updated_at", "$.updated_at"),
-    ]
+    ],
+    validate,
+    InvalidFindingDisposition
 );
 entity!(
     FindingEvidence,
@@ -1151,7 +1061,9 @@ entity!(
         ("pinned", "$.pinned"),
         ("verified_at", "$.verified_at"),
         ("verified_by", "$.verified_by"),
-    ]
+    ],
+    validate,
+    InvalidMemory
 );
 
 #[cfg(test)]

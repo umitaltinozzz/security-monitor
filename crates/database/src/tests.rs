@@ -667,35 +667,6 @@ async fn notification_channel_secrets_are_rejected_on_create_and_update() {
     assert_eq!(repository.list().await.unwrap().len(), 1);
 }
 
-#[test]
-fn finding_dispositions_require_valid_reason_scope_and_consistent_expiry() {
-    let missing = serde_json::json!({"status": "accepted_risk"}).to_string();
-    assert!(matches!(
-        super::validate_record("findings", &missing),
-        Err(DatabaseError::InvalidFindingDisposition)
-    ));
-
-    let valid = serde_json::json!({
-        "status": "accepted_risk",
-        "disposition": {
-            "reason": "temporary_exception",
-            "scope": "finding",
-            "scope_id": "finding-123",
-            "set_at": "2026-01-01T00:00:00Z",
-            "expires_at": "2026-02-01T00:00:00Z"
-        },
-        "risk_expires_at": "2026-02-01T00:00:00Z"
-    })
-    .to_string();
-    assert!(super::validate_record("findings", &valid).is_ok());
-
-    let mismatched_expiry = valid.replacen("2026-02-01T00:00:00Z", "2026-03-01T00:00:00Z", 1);
-    assert!(matches!(
-        super::validate_record("findings", &mismatched_expiry),
-        Err(DatabaseError::InvalidFindingDisposition)
-    ));
-}
-
 fn memory(
     id: &str,
     content: &str,
