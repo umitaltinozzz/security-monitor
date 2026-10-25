@@ -1,0 +1,5 @@
+import type { Page, T } from "../WorkspaceContext";
+export function CommandPalette({ query, setQuery, pages: availablePages, t, close, navigate }: { query: string; setQuery: (value: string) => void; pages: Page[]; t: T; close: () => void; navigate: (page: Page) => void }) {
+  const results = availablePages.filter((page) => t(`navigation.${page}`).toLowerCase().includes(query.toLowerCase()));
+  return <div className="dialog-backdrop palette-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><section className="command-palette panel" role="dialog" aria-modal="true" aria-labelledby="palette-title"><h2 id="palette-title">{t("actions.commandPalette")}</h2><label className="sr-only" htmlFor="command-search">{t("common.search")}</label><input id="command-search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("common.search")} />{results.length === 0 ? <p>{t("common.noResults")}</p> : <ul>{results.map((page) => <li key={page}><button onClick={() => navigate(page)}>{t(`navigation.${page}`)}</button></li>)}</ul>}</section></div>;
+}
