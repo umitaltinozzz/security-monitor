@@ -66,7 +66,7 @@ p { color: var(--muted); line-height: 1.6; }
 .app-frame { display: grid; grid-template-columns: 244px minmax(0, 1fr); min-height: 100vh; }
 .sidebar { position: sticky; top: 0; display: flex; height: 100vh; flex-direction: column; padding: 25px 15px 18px; border-right: 1px solid var(--line); background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 12px 28px; font-size: .96rem; font-weight: 800; text-decoration: none; letter-spacing: -.02em; }
-.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 10px; color: var(--accent); font-family: Manrope, sans-serif; font-weight: 800; }
+.brand-mark { display: block; flex: none; width: 44px; height: 22px; background-color: var(--text); -webkit-mask: url("./assets/brand-mark.png") center / contain no-repeat; mask: url("./assets/brand-mark.png") center / contain no-repeat; }
 .sidebar nav { display: grid; gap: 5px; overflow-y: auto; }
 .nav-item { display: flex; min-height: 42px; align-items: center; gap: 12px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; text-align: left; transition: color .15s ease, background .15s ease; }
 .nav-item:hover { color: var(--text); background: var(--surface-soft); }
