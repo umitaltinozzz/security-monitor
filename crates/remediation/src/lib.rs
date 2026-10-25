@@ -56,6 +56,7 @@ const UNSAFE_AGENT_CONFIG_NAMES: &[&str] = &[
     ".claude",
     ".mcp.json",
     ".codex",
+    ".agents",
     "claude.md",
     "agents.md",
     "agents.override.md",
