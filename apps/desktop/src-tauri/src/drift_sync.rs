@@ -4,8 +4,11 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    io::Read,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    thread,
+    time::{Duration as StdDuration, Instant},
 };
 
 use chrono::{DateTime, Duration, Utc};
@@ -30,6 +33,8 @@ use security_monitor_remediation::GitCommandSafety;
 const PRODUCTION_SNAPSHOT_MAX_AGE_HOURS: i64 = 24;
 /// Large enough for real lockfiles; anything bigger is treated as unverifiable, not read.
 const MAX_DEPENDENCY_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const GIT_REFERENCE_TIMEOUT: StdDuration = StdDuration::from_secs(30);
+const MAX_GIT_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DriftSyncSummary {
@@ -416,7 +421,11 @@ pub fn read_git_reference(
     dependency_paths: &[String],
 ) -> Option<GitReference> {
     let safety = GitCommandSafety::create().ok()?;
-    let git = |args: &[&str]| run_git(&safety, root, args);
+    let deadline = Instant::now() + GIT_REFERENCE_TIMEOUT;
+    let git = |args: &[&str]| {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        (!remaining.is_zero()).then(|| run_git(&safety, root, args, remaining))?
+    };
     let head = text(git(&["rev-parse", "--verify", "HEAD^{commit}"])?)?;
     let branch = match configured_branch {
         Some(branch) => branch.to_owned(),
@@ -556,7 +565,12 @@ fn text(bytes: Vec<u8>) -> Option<String> {
         .map(|value| value.trim_end().to_owned())
 }
 
-fn run_git(safety: &GitCommandSafety, root: &Path, args: &[&str]) -> Option<Vec<u8>> {
+fn run_git(
+    safety: &GitCommandSafety,
+    root: &Path,
+    args: &[&str],
+    timeout: StdDuration,
+) -> Option<Vec<u8>> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -564,14 +578,65 @@ fn run_git(safety: &GitCommandSafety, root: &Path, args: &[&str]) -> Option<Vec<
         .arg("--no-optional-locks")
         .args(args);
     safety.configure_std(&mut command);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command.output().ok()?;
-    output.status.success().then_some(output.stdout)
+    run_bounded_process(command, timeout, MAX_GIT_OUTPUT_BYTES)
+}
+
+fn run_bounded_process(
+    mut command: Command,
+    timeout: StdDuration,
+    max_output: usize,
+) -> Option<Vec<u8>> {
+    let mut child = command.spawn().ok()?;
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    };
+    let reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut buffer = [0_u8; 8192];
+        let mut exceeded_limit = false;
+        loop {
+            let count = stdout.read(&mut buffer).ok()?;
+            if count == 0 {
+                break;
+            }
+            let remaining = max_output.saturating_sub(output.len());
+            let retained = remaining.min(count);
+            output.extend_from_slice(&buffer[..retained]);
+            exceeded_limit |= retained < count;
+        }
+        Some((output, exceeded_limit))
+    });
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let (output, exceeded_limit) = reader.join().ok()??;
+                return (status.success() && !exceeded_limit).then_some(output);
+            }
+            Ok(None) if Instant::now() < deadline => thread::sleep(StdDuration::from_millis(10)),
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return None;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

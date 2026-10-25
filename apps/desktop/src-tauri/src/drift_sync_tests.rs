@@ -1,4 +1,10 @@
-use std::{collections::HashSet, path::Path, process::Command};
+use std::{
+    collections::HashSet,
+    path::Path,
+    process::Command,
+    thread,
+    time::{Duration as StdDuration, Instant},
+};
 
 use chrono::{DateTime, Duration, Utc};
 use security_monitor_agent_protocol::AgentInventory;
@@ -12,7 +18,7 @@ use security_monitor_inventory::Inventory;
 
 use super::{
     GitReference, apply_drift, dependency_tree_status, normalize_remote, read_git_reference,
-    select_deployment,
+    run_bounded_process, select_deployment,
 };
 
 const ADVISORY: &str = include_str!("../../../../tests/fixtures/drift/advisory.json");
@@ -21,6 +27,28 @@ const PRODUCTION_AFFECTED: &str =
     include_str!("../../../../tests/fixtures/drift/production-affected.json");
 const PRODUCTION_FIXED: &str =
     include_str!("../../../../tests/fixtures/drift/production-fixed.json");
+
+#[test]
+fn git_process_timeout_fixture() {
+    if std::env::var_os("SECMON_GIT_TIMEOUT_FIXTURE").is_some() {
+        thread::sleep(StdDuration::from_secs(20));
+    }
+}
+
+#[test]
+fn stuck_git_process_is_killed_at_the_deadline() {
+    let mut command = Command::new(std::env::current_exe().expect("test executable"));
+    command
+        .args([
+            "--exact",
+            "drift_sync::tests::git_process_timeout_fixture",
+            "--nocapture",
+        ])
+        .env("SECMON_GIT_TIMEOUT_FIXTURE", "1");
+    let started = Instant::now();
+    assert!(run_bounded_process(command, StdDuration::from_millis(200), 1024).is_none());
+    assert!(started.elapsed() < StdDuration::from_secs(3));
+}
 
 fn now() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-10-24T12:00:00Z")

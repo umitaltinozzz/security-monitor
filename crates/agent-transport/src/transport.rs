@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -23,6 +24,7 @@ use crate::{
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+const COLLECTION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_COMMAND_OUTPUT: usize = 16 * 1024 * 1024;
 const MAX_AGENT_COMMAND: &[u8] = b"secmon-agent collect";
 
@@ -223,30 +225,33 @@ impl Handler for KeyHandler {
 }
 
 pub async fn inspect_host_key(target: &SshTarget) -> Result<HostKeyCandidate, CollectionError> {
-    target
-        .validate()
-        .map_err(|_| CollectionError::InvalidTarget)?;
-    if target.proxy_jump.is_some() {
-        return Err(CollectionError::InvalidTarget);
-    }
-    let observed = Arc::new(Mutex::new(None));
-    let handler = KeyHandler {
-        expected_fingerprint: None,
-        observed_fingerprint: Arc::clone(&observed),
-    };
-    let session = timeout(CONNECT_TIMEOUT, connect_direct(target, handler))
-        .await
-        .map_err(|_| CollectionError::Timeout)??;
-    let fingerprint = observed
-        .lock()
-        .map_err(|_| CollectionError::Ssh)?
-        .clone()
-        .ok_or(CollectionError::Ssh)?;
-    session
-        .disconnect(Disconnect::ByApplication, "host key inspected", "en")
-        .await
-        .map_err(|_| CollectionError::Ssh)?;
-    Ok(HostKeyCandidate { fingerprint })
+    with_collection_timeout(async {
+        target
+            .validate()
+            .map_err(|_| CollectionError::InvalidTarget)?;
+        if target.proxy_jump.is_some() {
+            return Err(CollectionError::InvalidTarget);
+        }
+        let observed = Arc::new(Mutex::new(None));
+        let handler = KeyHandler {
+            expected_fingerprint: None,
+            observed_fingerprint: Arc::clone(&observed),
+        };
+        let session = timeout(CONNECT_TIMEOUT, connect_direct(target, handler))
+            .await
+            .map_err(|_| CollectionError::Timeout)??;
+        let fingerprint = observed
+            .lock()
+            .map_err(|_| CollectionError::Ssh)?
+            .clone()
+            .ok_or(CollectionError::Ssh)?;
+        session
+            .disconnect(Disconnect::ByApplication, "host key inspected", "en")
+            .await
+            .map_err(|_| CollectionError::Ssh)?;
+        Ok(HostKeyCandidate { fingerprint })
+    })
+    .await
 }
 
 pub async fn inspect_host_key_via_jump(
@@ -255,44 +260,51 @@ pub async fn inspect_host_key_via_jump(
     identity: &SshIdentity,
     store: &dyn CredentialStore,
 ) -> Result<HostKeyCandidate, CollectionError> {
-    validate_route(target, Some(jump))?;
-    validate_fingerprint(&jump.confirmed_fingerprint)
-        .map_err(|_| CollectionError::InvalidFingerprint)?;
-    let mut jump_session = connect_pinned_host(&jump.target, &jump.confirmed_fingerprint).await?;
-    authenticate(&mut jump_session, &jump.target.username, identity, store).await?;
-    let channel = jump_session
-        .channel_open_direct_tcpip(
-            target.hostname.clone(),
-            target.port.into(),
-            "127.0.0.1".to_owned(),
-            0,
+    with_collection_timeout(async {
+        validate_route(target, Some(jump))?;
+        validate_fingerprint(&jump.confirmed_fingerprint)
+            .map_err(|_| CollectionError::InvalidFingerprint)?;
+        let mut jump_session =
+            connect_pinned_host(&jump.target, &jump.confirmed_fingerprint).await?;
+        authenticate(&mut jump_session, &jump.target.username, identity, store).await?;
+        let channel = timeout(
+            CONNECT_TIMEOUT,
+            jump_session.channel_open_direct_tcpip(
+                target.hostname.clone(),
+                target.port.into(),
+                "127.0.0.1".to_owned(),
+                0,
+            ),
         )
         .await
+        .map_err(|_| CollectionError::Timeout)?
         .map_err(|_| CollectionError::Ssh)?;
-    let stream: ChannelStream<_> = channel.into_stream();
-    let observed = Arc::new(Mutex::new(None));
-    let handler = KeyHandler {
-        expected_fingerprint: None,
-        observed_fingerprint: Arc::clone(&observed),
-    };
-    let config = ssh_client_config();
-    let session = timeout(
-        CONNECT_TIMEOUT,
-        client::connect_stream(config, stream, handler),
-    )
-    .await
-    .map_err(|_| CollectionError::Timeout)?
-    .map_err(|_| CollectionError::Ssh)?;
-    let fingerprint = observed
-        .lock()
-        .map_err(|_| CollectionError::Ssh)?
-        .clone()
-        .ok_or(CollectionError::Ssh)?;
-    session
-        .disconnect(Disconnect::ByApplication, "host key inspected", "en")
+        let stream: ChannelStream<_> = channel.into_stream();
+        let observed = Arc::new(Mutex::new(None));
+        let handler = KeyHandler {
+            expected_fingerprint: None,
+            observed_fingerprint: Arc::clone(&observed),
+        };
+        let config = ssh_client_config();
+        let session = timeout(
+            CONNECT_TIMEOUT,
+            client::connect_stream(config, stream, handler),
+        )
         .await
+        .map_err(|_| CollectionError::Timeout)?
         .map_err(|_| CollectionError::Ssh)?;
-    Ok(HostKeyCandidate { fingerprint })
+        let fingerprint = observed
+            .lock()
+            .map_err(|_| CollectionError::Ssh)?
+            .clone()
+            .ok_or(CollectionError::Ssh)?;
+        session
+            .disconnect(Disconnect::ByApplication, "host key inspected", "en")
+            .await
+            .map_err(|_| CollectionError::Ssh)?;
+        Ok(HostKeyCandidate { fingerprint })
+    })
+    .await
 }
 
 pub async fn collect_agent(
@@ -302,14 +314,17 @@ pub async fn collect_agent(
     store: &dyn CredentialStore,
     approval: InventoryCollectionApproval,
 ) -> Result<AgentCollection, CollectionError> {
-    let mut connection =
-        connect_for_target(target, confirmed_fingerprint, identity, store, None).await?;
-    let output = run_remote(&mut connection.target, MAX_AGENT_COMMAND).await?;
-    let inventory = decode_inventory(&output).map_err(|_| CollectionError::Protocol)?;
-    Ok(AgentCollection {
-        inventory,
-        approval,
+    with_collection_timeout(async {
+        let mut connection =
+            connect_for_target(target, confirmed_fingerprint, identity, store, None).await?;
+        let output = run_remote(&mut connection.target, MAX_AGENT_COMMAND).await?;
+        let inventory = decode_inventory(&output).map_err(|_| CollectionError::Protocol)?;
+        Ok(AgentCollection {
+            inventory,
+            approval,
+        })
     })
+    .await
 }
 
 pub async fn collect_agent_via_jump(
@@ -320,14 +335,17 @@ pub async fn collect_agent_via_jump(
     store: &dyn CredentialStore,
     approval: InventoryCollectionApproval,
 ) -> Result<AgentCollection, CollectionError> {
-    let mut connection =
-        connect_for_target(target, confirmed_fingerprint, identity, store, Some(jump)).await?;
-    let output = run_remote(&mut connection.target, MAX_AGENT_COMMAND).await?;
-    let inventory = decode_inventory(&output).map_err(|_| CollectionError::Protocol)?;
-    Ok(AgentCollection {
-        inventory,
-        approval,
+    with_collection_timeout(async {
+        let mut connection =
+            connect_for_target(target, confirmed_fingerprint, identity, store, Some(jump)).await?;
+        let output = run_remote(&mut connection.target, MAX_AGENT_COMMAND).await?;
+        let inventory = decode_inventory(&output).map_err(|_| CollectionError::Protocol)?;
+        Ok(AgentCollection {
+            inventory,
+            approval,
+        })
     })
+    .await
 }
 
 pub async fn collect_agentless(
@@ -337,49 +355,53 @@ pub async fn collect_agentless(
     store: &dyn CredentialStore,
     approval: AgentlessApproval,
 ) -> Result<AgentlessCollection, CollectionError> {
-    validate_fingerprint(confirmed_fingerprint).map_err(|_| CollectionError::InvalidFingerprint)?;
-    if !approval.full_access_key_notice_shown {
-        return Err(CollectionError::AgentlessNotApproved);
-    }
-
-    let mut connection =
-        connect_for_target(target, confirmed_fingerprint, identity, store, None).await?;
-    let commands = [
-        AgentlessCommand::OsRelease,
-        AgentlessCommand::DpkgPackages,
-        AgentlessCommand::RpmPackages,
-        AgentlessCommand::ApkPackages,
-        AgentlessCommand::NodeVersion,
-        AgentlessCommand::PhpVersion,
-        AgentlessCommand::Python3Version,
-        AgentlessCommand::DockerPs,
-    ];
-    let mut outputs = Vec::with_capacity(commands.len());
-    for command in &commands {
-        if *command == AgentlessCommand::DockerPs && !approval.docker_inspection_approved {
-            continue;
+    with_collection_timeout(async {
+        validate_fingerprint(confirmed_fingerprint)
+            .map_err(|_| CollectionError::InvalidFingerprint)?;
+        if !approval.full_access_key_notice_shown {
+            return Err(CollectionError::AgentlessNotApproved);
         }
-        outputs.push((
-            command.clone(),
-            run_remote(&mut connection.target, command.command()).await,
-        ));
-    }
-    let inventory = agentless_inventory(
-        target,
-        outputs,
-        Utc::now(),
-        approval.docker_inspection_approved,
-    );
-    Ok(AgentlessCollection {
-        inventory,
-        approval,
-        executed_commands: commands
-            .into_iter()
-            .filter(|command| {
-                *command != AgentlessCommand::DockerPs || approval.docker_inspection_approved
-            })
-            .collect(),
+
+        let mut connection =
+            connect_for_target(target, confirmed_fingerprint, identity, store, None).await?;
+        let commands = [
+            AgentlessCommand::OsRelease,
+            AgentlessCommand::DpkgPackages,
+            AgentlessCommand::RpmPackages,
+            AgentlessCommand::ApkPackages,
+            AgentlessCommand::NodeVersion,
+            AgentlessCommand::PhpVersion,
+            AgentlessCommand::Python3Version,
+            AgentlessCommand::DockerPs,
+        ];
+        let mut outputs = Vec::with_capacity(commands.len());
+        for command in &commands {
+            if *command == AgentlessCommand::DockerPs && !approval.docker_inspection_approved {
+                continue;
+            }
+            outputs.push((
+                command.clone(),
+                run_remote(&mut connection.target, command.command()).await,
+            ));
+        }
+        let inventory = agentless_inventory(
+            target,
+            outputs,
+            Utc::now(),
+            approval.docker_inspection_approved,
+        );
+        Ok(AgentlessCollection {
+            inventory,
+            approval,
+            executed_commands: commands
+                .into_iter()
+                .filter(|command| {
+                    *command != AgentlessCommand::DockerPs || approval.docker_inspection_approved
+                })
+                .collect(),
+        })
     })
+    .await
 }
 
 pub async fn collect_agentless_via_jump(
@@ -390,49 +412,68 @@ pub async fn collect_agentless_via_jump(
     store: &dyn CredentialStore,
     approval: AgentlessApproval,
 ) -> Result<AgentlessCollection, CollectionError> {
-    validate_fingerprint(confirmed_fingerprint).map_err(|_| CollectionError::InvalidFingerprint)?;
-    if !approval.full_access_key_notice_shown {
-        return Err(CollectionError::AgentlessNotApproved);
-    }
-    let mut connection =
-        connect_for_target(target, confirmed_fingerprint, identity, store, Some(jump)).await?;
-    let commands = [
-        AgentlessCommand::OsRelease,
-        AgentlessCommand::DpkgPackages,
-        AgentlessCommand::RpmPackages,
-        AgentlessCommand::ApkPackages,
-        AgentlessCommand::NodeVersion,
-        AgentlessCommand::PhpVersion,
-        AgentlessCommand::Python3Version,
-        AgentlessCommand::DockerPs,
-    ];
-    let mut outputs = Vec::with_capacity(commands.len());
-    for command in &commands {
-        if *command == AgentlessCommand::DockerPs && !approval.docker_inspection_approved {
-            continue;
+    with_collection_timeout(async {
+        validate_fingerprint(confirmed_fingerprint)
+            .map_err(|_| CollectionError::InvalidFingerprint)?;
+        if !approval.full_access_key_notice_shown {
+            return Err(CollectionError::AgentlessNotApproved);
         }
-        outputs.push((
-            command.clone(),
-            run_remote(&mut connection.target, command.command()).await,
-        ));
-    }
-    let inventory = agentless_inventory(
-        target,
-        outputs,
-        Utc::now(),
-        approval.docker_inspection_approved,
-    );
-    let executed_commands = commands
-        .into_iter()
-        .filter(|command| {
-            *command != AgentlessCommand::DockerPs || approval.docker_inspection_approved
+        let mut connection =
+            connect_for_target(target, confirmed_fingerprint, identity, store, Some(jump)).await?;
+        let commands = [
+            AgentlessCommand::OsRelease,
+            AgentlessCommand::DpkgPackages,
+            AgentlessCommand::RpmPackages,
+            AgentlessCommand::ApkPackages,
+            AgentlessCommand::NodeVersion,
+            AgentlessCommand::PhpVersion,
+            AgentlessCommand::Python3Version,
+            AgentlessCommand::DockerPs,
+        ];
+        let mut outputs = Vec::with_capacity(commands.len());
+        for command in &commands {
+            if *command == AgentlessCommand::DockerPs && !approval.docker_inspection_approved {
+                continue;
+            }
+            outputs.push((
+                command.clone(),
+                run_remote(&mut connection.target, command.command()).await,
+            ));
+        }
+        let inventory = agentless_inventory(
+            target,
+            outputs,
+            Utc::now(),
+            approval.docker_inspection_approved,
+        );
+        let executed_commands = commands
+            .into_iter()
+            .filter(|command| {
+                *command != AgentlessCommand::DockerPs || approval.docker_inspection_approved
+            })
+            .collect();
+        Ok(AgentlessCollection {
+            inventory,
+            approval,
+            executed_commands,
         })
-        .collect();
-    Ok(AgentlessCollection {
-        inventory,
-        approval,
-        executed_commands,
     })
+    .await
+}
+
+async fn with_collection_timeout<T>(
+    future: impl Future<Output = Result<T, CollectionError>>,
+) -> Result<T, CollectionError> {
+    with_timeout(COLLECTION_TIMEOUT, future).await
+}
+
+async fn with_timeout<T>(
+    limit: Duration,
+    future: impl Future<Output = Result<T, CollectionError>>,
+) -> Result<T, CollectionError> {
+    timeout(limit, future)
+        .await
+        .map_err(|_| CollectionError::Timeout)?
 }
 
 async fn connect_pinned_host(
@@ -489,15 +530,18 @@ async fn connect_for_target(
         let mut jump_session =
             connect_pinned_host(&jump.target, &jump.confirmed_fingerprint).await?;
         authenticate(&mut jump_session, &jump.target.username, identity, store).await?;
-        let channel = jump_session
-            .channel_open_direct_tcpip(
+        let channel = timeout(
+            CONNECT_TIMEOUT,
+            jump_session.channel_open_direct_tcpip(
                 target.hostname.clone(),
                 target.port.into(),
                 "127.0.0.1".to_owned(),
                 0,
-            )
-            .await
-            .map_err(|_| CollectionError::Ssh)?;
+            ),
+        )
+        .await
+        .map_err(|_| CollectionError::Timeout)?
+        .map_err(|_| CollectionError::Ssh)?;
         let stream: ChannelStream<_> = channel.into_stream();
         let observed = Arc::new(Mutex::new(None));
         let handler = KeyHandler {
@@ -590,13 +634,16 @@ async fn authenticate(
         std::str::from_utf8(&private_key_pem).map_err(|_| CollectionError::InvalidPrivateKey)?;
     let private_key =
         decode_secret_key(pem, None).map_err(|_| CollectionError::InvalidPrivateKey)?;
-    let auth = session
-        .authenticate_publickey(
+    let auth = timeout(
+        COMMAND_TIMEOUT,
+        session.authenticate_publickey(
             username.to_owned(),
             PrivateKeyWithHashAlg::new(Arc::new(private_key), None),
-        )
-        .await
-        .map_err(|_| CollectionError::Authentication)?;
+        ),
+    )
+    .await
+    .map_err(|_| CollectionError::Timeout)?
+    .map_err(|_| CollectionError::Authentication)?;
     if auth.success() {
         Ok(())
     } else {
@@ -608,16 +655,16 @@ async fn run_remote(
     session: &mut Handle<KeyHandler>,
     command: &[u8],
 ) -> Result<Vec<u8>, CollectionError> {
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|_| CollectionError::Ssh)?;
-    channel
-        .exec(true, command)
-        .await
-        .map_err(|_| CollectionError::Ssh)?;
-    let stream: ChannelStream<_> = channel.into_stream();
-    let read = async move {
+    timeout(COMMAND_TIMEOUT, async {
+        let channel = session
+            .channel_open_session()
+            .await
+            .map_err(|_| CollectionError::Ssh)?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|_| CollectionError::Ssh)?;
+        let stream: ChannelStream<_> = channel.into_stream();
         let mut limited = stream.take((MAX_COMMAND_OUTPUT + 1) as u64);
         let mut output = Vec::new();
         limited
@@ -628,10 +675,9 @@ async fn run_remote(
             return Err(CollectionError::OutputTooLarge);
         }
         Ok(output)
-    };
-    timeout(COMMAND_TIMEOUT, read)
-        .await
-        .map_err(|_| CollectionError::Timeout)?
+    })
+    .await
+    .map_err(|_| CollectionError::Timeout)?
 }
 
 fn agentless_inventory(
@@ -907,9 +953,19 @@ mod tests {
     use super::{
         AgentlessApproval, AgentlessCommand, CollectionError, ServerState, agentless_inventory,
         parse_docker_ps, parse_os_release, parse_package_output, server_state_for_error,
-        server_state_for_inventory,
+        server_state_for_inventory, with_timeout,
     };
     use crate::SshTarget;
+
+    #[tokio::test]
+    async fn collection_deadline_returns_timeout_when_a_step_never_finishes() {
+        let result = with_timeout(
+            std::time::Duration::from_millis(1),
+            std::future::pending::<Result<(), CollectionError>>(),
+        )
+        .await;
+        assert!(matches!(result, Err(CollectionError::Timeout)));
+    }
 
     #[test]
     fn remote_command_allowlist_is_a_fixed_static_set() {
