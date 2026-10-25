@@ -2,17 +2,19 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use security_monitor_core::{
-    Advisory, Component, ComponentEvidence, ComponentInstance, Environment,
-    FindingDispositionReason, FindingStatus, Project, Severity,
+    Advisory, AffectedRange, Component, ComponentEvidence, ComponentInstance, Environment,
+    FindingDispositionReason, FindingStatus, Project, RangeEvent, Severity,
 };
 use security_monitor_database::Database;
+use security_monitor_inventory::{Inventory, InventoryComponent};
 
 use crate::{
     AliasMerger, BusinessImpact, CorrelationComponent, DispositionScope, FindingFingerprintInput,
-    InventoryFreshness, PriorityContext, PriorityError, PriorityInput, ScopeVerification,
-    SsvcAutomatability, SsvcExploitation, SsvcImpact, SsvcSignal, StatusActor, StatusEvidence,
-    StatusTransition, TestCost, TransitionError, UserDisposition, apply_transition,
-    calculate_priority, correlate, correlate_and_persist, finding_fingerprint, validate_transition,
+    FindingReason, InventoryFreshness, PriorityContext, PriorityError, PriorityInput,
+    ScopeVerification, SsvcAutomatability, SsvcExploitation, SsvcImpact, SsvcSignal, StatusActor,
+    StatusEvidence, StatusTransition, TestCost, TransitionError, UserDisposition, apply_transition,
+    calculate_priority, correlate, correlate_and_persist, evaluate_inventory, finding_fingerprint,
+    validate_transition,
 };
 
 const ALIAS_FIXTURE: &[u8] =
@@ -60,6 +62,60 @@ fn priority_context() -> PriorityContext {
         business_impacts: BTreeSet::from([BusinessImpact::CustomerData]),
         ..PriorityContext::default()
     }
+}
+
+#[test]
+fn unknown_rubygems_platform_suffix_is_not_ordered_as_a_semver_prerelease() {
+    let advisory = Advisory {
+        canonical_id: "CVE-2026-9001".to_owned(),
+        title: "Fixture advisory".to_owned(),
+        summary: None,
+        summary_model: None,
+        description: None,
+        source_attributions: Vec::new(),
+        aliases: Vec::new(),
+        affected_ranges: vec![AffectedRange {
+            ecosystem: "rubygems".to_owned(),
+            package: Some("rack".to_owned()),
+            source: Some("fixture".to_owned()),
+            range_type: Some("SEMVER".to_owned()),
+            events: vec![RangeEvent {
+                introduced: Some("2.1.0".to_owned()),
+                fixed: Some("2.2.0".to_owned()),
+                last_affected: None,
+                limit: None,
+            }],
+        }],
+        fixed_versions: vec!["2.2.0".to_owned()],
+        cvss: None,
+        severity: None,
+        kev: false,
+        epss: None,
+        epss_date: None,
+        source_urls: Vec::new(),
+        source_updated_at: None,
+        created_at: timestamp(20),
+        updated_at: timestamp(20),
+    };
+    let inventory = Inventory {
+        components: vec![InventoryComponent {
+            purl: "pkg:gem/rack@2.1.0-arm64-linux".to_owned(),
+            ecosystem: "rubygems".to_owned(),
+            name: "rack".to_owned(),
+            version: Some("2.1.0-arm64-linux".to_owned()),
+            source_type: "lockfile".to_owned(),
+            evidence_paths: vec!["Gemfile.lock".to_owned()],
+        }],
+        project_roots: vec!["fixture".to_owned()],
+        detected_files: Vec::new(),
+        diagnostics: Vec::new(),
+        complete: true,
+    };
+
+    let findings = evaluate_inventory(&[advisory], &inventory);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].reason, FindingReason::VersionRangeUnverified);
+    assert_eq!(findings[0].status, FindingStatus::NeedsReview);
 }
 
 #[test]
