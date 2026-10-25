@@ -59,6 +59,10 @@ fn should_keep_tray_process_alive(exit_code: Option<i32>) -> bool {
     exit_code.is_none()
 }
 
+fn app_context<R: tauri::Runtime>() -> tauri::Context<R> {
+    tauri::generate_context!()
+}
+
 fn main() {
     let smoke_test = std::env::args_os().any(|argument| argument == "--smoke-test");
     let background_cancellation = CancellationToken::new();
@@ -193,7 +197,7 @@ fn main() {
             ipc::drift::link_project_server,
             ipc::drift::unlink_project_server,
         ])
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("failed to build Security Monitor");
     app.run(move |_, event| match event {
         tauri::RunEvent::Exit => background_cancellation.cancel(),
@@ -260,7 +264,7 @@ mod tests {
             .invoke_handler(tauri::generate_handler![
                 crate::ipc::settings::get_app_settings
             ])
-            .build(tauri::generate_context!())
+            .build(crate::app_context())
             .unwrap();
         let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
