@@ -513,7 +513,42 @@ pub fn decode_inventory(bytes: &[u8]) -> Result<AgentInventory, ProtocolError> {
 }
 
 pub fn json_schema() -> Result<String, serde_json::Error> {
-    serde_json::to_string_pretty(&schema_for!(AgentInventory))
+    let mut schema = serde_json::to_value(schema_for!(AgentInventory))?;
+    sort_schema_maps(&mut schema);
+    serde_json::to_string_pretty(&schema)
+}
+
+// The workspace preserves JSON key order for user-owned config; schema artifacts stay canonical.
+fn sort_schema_maps(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for key in ["$defs", "properties"] {
+                if let Some(serde_json::Value::Object(map)) = object.get_mut(key) {
+                    sort_schema_map(map);
+                }
+            }
+            for (key, nested) in object.iter_mut() {
+                if key != "$defs" && key != "properties" {
+                    sort_schema_maps(nested);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                sort_schema_maps(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sort_schema_map(map: &mut serde_json::Map<String, serde_json::Value>) {
+    let mut entries = std::mem::take(map).into_iter().collect::<Vec<_>>();
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    *map = entries.into_iter().collect();
+    for value in map.values_mut() {
+        sort_schema_maps(value);
+    }
 }
 
 #[cfg(test)]

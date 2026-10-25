@@ -59,8 +59,8 @@
     "protocol_version": {
       "type": "integer",
       "format": "uint16",
-      "maximum": 65535,
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 65535
     },
     "runtimes": {
       "type": "array",
@@ -393,10 +393,10 @@
         "deleted_shared_libraries": {
           "description": "Basenames of shared libraries still mapped after their files were removed.",
           "type": "array",
-          "default": [],
           "items": {
             "type": "string"
-          }
+          },
+          "default": []
         },
         "executable_path": {
           "type": [
