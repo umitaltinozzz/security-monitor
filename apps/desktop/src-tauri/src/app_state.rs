@@ -15,6 +15,25 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::ipc_types::{AppSettings, ScanResult};
 
+const MAX_RETAINED_SCAN_RESULTS: usize = 128;
+
+pub fn retain_scan_result(results: &mut HashMap<String, ScanResult>, result: ScanResult) {
+    if results.len() >= MAX_RETAINED_SCAN_RESULTS
+        && !results.contains_key(&result.scan_id)
+        && let Some(evicted) = results.keys().next().cloned()
+    {
+        results.remove(&evicted);
+    }
+    results.insert(result.scan_id.clone(), result);
+}
+
+pub fn take_scan_result(
+    results: &mut HashMap<String, ScanResult>,
+    scan_id: &str,
+) -> Option<ScanResult> {
+    results.remove(scan_id)
+}
+
 pub struct ScanServices {
     pub scanner: Arc<LocalProjectScanner>,
     pub queue: Arc<ScanQueue>,
@@ -124,7 +143,10 @@ fn load_ai_settings(app_data_dir: &Path) -> AiSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::AppSettings;
+    use super::{AppSettings, MAX_RETAINED_SCAN_RESULTS, retain_scan_result, take_scan_result};
+    use crate::ipc_types::ScanResult;
+    use security_monitor_core::ScanOutcome;
+    use std::collections::HashMap;
 
     #[test]
     fn saved_settings_ignore_the_removed_notification_toggle() {
@@ -134,5 +156,26 @@ mod tests {
 
         assert_eq!(settings.scan_interval_hours, 12);
         assert_eq!(settings.ecosystems, AppSettings::default().ecosystems);
+    }
+
+    #[test]
+    fn scan_results_are_bounded_and_consumed_once() {
+        let mut results = HashMap::new();
+        for index in 0..MAX_RETAINED_SCAN_RESULTS + 1 {
+            let result = ScanResult {
+                scan_id: format!("scan-{index}"),
+                outcome: ScanOutcome::Succeeded,
+                inventory_complete: true,
+                component_count: 0,
+                finding_count: 0,
+                scanner_finding_count: 0,
+                diagnostics: Vec::new(),
+            };
+            retain_scan_result(&mut results, result);
+        }
+        assert_eq!(results.len(), MAX_RETAINED_SCAN_RESULTS);
+        let scan_id = results.keys().next().cloned().unwrap();
+        assert!(take_scan_result(&mut results, &scan_id).is_some());
+        assert!(take_scan_result(&mut results, &scan_id).is_none());
     }
 }

@@ -66,7 +66,8 @@ pub async fn start_project_scan(
                 diagnostics: vec!["scan_failed".to_owned()],
             },
         };
-        result_store.lock().await.insert(scan_id, result);
+        let mut result_store = result_store.lock().await;
+        super::super::app_state::retain_scan_result(&mut result_store, result);
     });
     Ok(returned_id)
 }
@@ -99,7 +100,11 @@ pub async fn get_scan_result(
     state: State<'_, AppState>,
     scan_id: String,
 ) -> Result<Option<ScanResult>, String> {
-    Ok(state.scan_results.lock().await.get(&scan_id).cloned())
+    let mut results = state.scan_results.lock().await;
+    Ok(super::super::app_state::take_scan_result(
+        &mut results,
+        &scan_id,
+    ))
 }
 
 #[tauri::command]
