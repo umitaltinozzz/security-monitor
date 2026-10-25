@@ -262,6 +262,7 @@ export function Onboarding() {
                     ),
                   )}
                 </div>
+                <small>{t("settings.unsupportedRangeEcosystems")}</small>
                 {data.settings.public_downloads_enabled && (
                   <button
                     className="button secondary advisory-download"

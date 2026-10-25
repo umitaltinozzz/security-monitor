@@ -150,6 +150,7 @@ export function Settings() {
               </label>
             ))}
           </div>
+          <small>{t("settings.unsupportedRangeEcosystems")}</small>
         </div>
         {settings.public_downloads_enabled && (
           <div className="setting-row">

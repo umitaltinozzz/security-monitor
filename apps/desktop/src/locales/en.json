@@ -327,7 +327,8 @@
   },
   "evidence": {
     "component_inventory": "Local component inventory",
-    "lockfile": "Lockfile"
+    "lockfile": "Lockfile",
+    "version_range_unverified": "Advisory version range could not be verified; review is required."
   },
   "drift": {
     "title": "Deploy drift",
@@ -512,6 +513,7 @@
     "description": "Privacy, update, appearance, and language preferences.",
     "privacyTitle": "Privacy and network",
     "ecosystems": "Ecosystems for advisory downloads",
+    "unsupportedRangeEcosystems": "Advisory downloads are available for Packagist (Composer), Maven, NuGet, and RubyGems, but affected-version ranges for these ecosystems are not evaluated. Their findings stay in review.",
     "scanners": "Scanner and runtime tools",
     "dataSources": "Data source attribution",
     "dataSourcesHelp": "Attribution and license details preserved with advisory records stored on this device.",

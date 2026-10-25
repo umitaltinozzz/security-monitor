@@ -327,7 +327,8 @@
   },
   "evidence": {
     "component_inventory": "Yerel bileşen envanteri",
-    "lockfile": "Kilit dosyası"
+    "lockfile": "Kilit dosyası",
+    "version_range_unverified": "Duyurudaki sürüm aralığı doğrulanamadı; inceleme gerekli."
   },
   "drift": {
     "title": "Dağıtım farkı",
@@ -512,6 +513,7 @@
     "description": "Gizlilik, güncelleme, görünüm ve dil tercihleri.",
     "privacyTitle": "Gizlilik ve ağ",
     "ecosystems": "Duyuru indirmeleri için ekosistemler",
+    "unsupportedRangeEcosystems": "Packagist (Composer), Maven, NuGet ve RubyGems duyuruları indirilebilir; ancak etkilenen sürüm aralıkları değerlendirilmez. Bu bulgular inceleme gerekli durumunda kalır.",
     "scanners": "Tarayıcı ve çalışma zamanı araçları",
     "dataSources": "Veri kaynağı atıfları",
     "dataSourcesHelp": "Bu cihazda saklanan duyuru kayıtlarıyla birlikte korunan atıf ve lisans bilgileri.",

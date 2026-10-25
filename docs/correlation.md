@@ -17,6 +17,8 @@ When a persisted advisory changes canonical ID, the database repository layer re
 
 The correlation matcher uses ecosystem-aware package normalization and the advisory's range semantics. Exact, semantic-version, and supported ecosystem ranges can establish an affected version. Missing versions, unsupported range forms, empty event sequences, or disagreement between sources remain `needs_review`. A malformed PURL or a mismatch between its embedded version and the component version also stays in `needs_review`. Stale, incomplete, or unknown inventory freshness and unverified component-to-project/asset relationships keep a finding in `needs_review` even when the package version matches. The persistence entry point checks that component, instance, and parent scope records still match SQLite before it writes findings.
 
+Affected-version ranges for Packagist (Composer), Maven, NuGet, and RubyGems are not currently evaluated. Their advisories may still be downloaded, but matching findings stay `needs_review`; Settings and the finding evidence show this limitation. Do not interpret a missing finding for one of these ecosystems as evidence that its installed version is unaffected.
+
 A finding fingerprint is SHA-256 over the canonical advisory ID, project/asset/service/deployment IDs, package URL, component version, and a normalized relative evidence path. Absolute paths, traversal paths, scanner references, and free-form evidence labels are excluded. Identical sources at the same scope and evidence location therefore share a fingerprint; a different location has a separate fingerprint.
 
 ## Priority calculation
