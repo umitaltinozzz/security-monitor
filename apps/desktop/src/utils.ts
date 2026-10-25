@@ -19,7 +19,8 @@ export function initialLanguage(): Language {
 }
 
 export function safeError(error: unknown, t: T): string {
-  const code = typeof error === "string" && error in (en.error as Record<string, string>) ? error : "unknown";
+  const code =
+    typeof error === "string" && error in (en.error as Record<string, string>) ? error : "unknown";
   return t(`error.${code}`);
 }
 
@@ -45,7 +46,11 @@ export function safeExternalUrl(value: string): string | null {
 export function isFresh(value: string | null | undefined, hours: number): boolean {
   if (!value) return false;
   const timestamp = new Date(value).getTime();
-  return Number.isFinite(timestamp) && timestamp >= Date.now() - hours * 60 * 60 * 1000 && timestamp <= Date.now();
+  return (
+    Number.isFinite(timestamp) &&
+    timestamp >= Date.now() - hours * 60 * 60 * 1000 &&
+    timestamp <= Date.now()
+  );
 }
 
 export function auditAction(action: string, t: T): string {

@@ -80,7 +80,8 @@ export const api = {
     }),
   projects: () => invoke<Project[]>("list_projects"),
   addProject: (path: string) => invoke<Project>("add_project", { path }),
-  discoverProjects: (path: string) => invoke<ProjectDiscoveryView>("discover_local_projects", { path }),
+  discoverProjects: (path: string) =>
+    invoke<ProjectDiscoveryView>("discover_local_projects", { path }),
   startScan: (projectId: string, profile: "quick" | "full") =>
     invoke<string>("start_project_scan", { projectId, profile }),
   cancelScan: (scanId: string) => invoke<boolean>("cancel_project_scan", { scanId }),
@@ -111,10 +112,19 @@ export const api = {
     invoke<Finding>("set_finding_status", { change }),
   memories: (scope: MemoryScope, scopeId?: string) =>
     invoke<Memory[]>("list_memories", { scope, scopeId: scopeId ?? null }),
-  createMemory: (scope: MemoryScope, scopeId: string | null, kind: MemoryKind, content: string, pinned: boolean) =>
-    invoke<Memory>("create_memory", { scope, scopeId, kind, content, pinned }),
-  updateMemory: (memoryId: string, content: string | null, pinned: boolean | null, verified: boolean | null) =>
-    invoke<Memory>("update_memory", { memoryId, content, pinned, verified }),
+  createMemory: (
+    scope: MemoryScope,
+    scopeId: string | null,
+    kind: MemoryKind,
+    content: string,
+    pinned: boolean,
+  ) => invoke<Memory>("create_memory", { scope, scopeId, kind, content, pinned }),
+  updateMemory: (
+    memoryId: string,
+    content: string | null,
+    pinned: boolean | null,
+    verified: boolean | null,
+  ) => invoke<Memory>("update_memory", { memoryId, content, pinned, verified }),
   deleteMemory: (memoryId: string) => invoke<void>("delete_memory", { memoryId }),
   exportMemories: () => invoke<MemoryArchive>("export_memories"),
   importMemories: (archive: MemoryArchive) => invoke<number>("import_memories", { archive }),
@@ -128,7 +138,12 @@ export const api = {
   installUpdate: (expectedVersion: string) => invoke<void>("install_update", { expectedVersion }),
   sshHosts: () => invoke<SshHostSummary[]>("list_ssh_config_hosts"),
   inspectHost: (input: SshTargetInput) => invoke<string>("inspect_server_host_key", { input }),
-  pairServer: (input: SshTargetInput, fingerprint: string, fingerprintConfirmed: boolean, deviceLabel: string) =>
+  pairServer: (
+    input: SshTargetInput,
+    fingerprint: string,
+    fingerprintConfirmed: boolean,
+    deviceLabel: string,
+  ) =>
     invoke<PairingInstructionsView>("pair_server", {
       input,
       confirmedFingerprint: fingerprint,
@@ -146,20 +161,45 @@ export const api = {
 };
 
 export async function loadWorkspace(): Promise<WorkspaceData> {
-  const [settings, projects, assets, links, findings, advisories, newsSignals, components, instances, evidence, runs, audit] =
-    await Promise.all([
-      api.settings(),
-      api.projects(),
-      api.assets(),
-      api.projectServerLinks(),
-      api.findings(),
-      api.advisories(),
-      api.newsSignals(),
-      api.components(),
-      api.instances(),
-      api.evidence(),
-      api.runs(),
-      api.audit(),
-    ]);
-  return { settings, projects, assets, links, findings, advisories, newsSignals, components, instances, evidence, runs, audit };
+  const [
+    settings,
+    projects,
+    assets,
+    links,
+    findings,
+    advisories,
+    newsSignals,
+    components,
+    instances,
+    evidence,
+    runs,
+    audit,
+  ] = await Promise.all([
+    api.settings(),
+    api.projects(),
+    api.assets(),
+    api.projectServerLinks(),
+    api.findings(),
+    api.advisories(),
+    api.newsSignals(),
+    api.components(),
+    api.instances(),
+    api.evidence(),
+    api.runs(),
+    api.audit(),
+  ]);
+  return {
+    settings,
+    projects,
+    assets,
+    links,
+    findings,
+    advisories,
+    newsSignals,
+    components,
+    instances,
+    evidence,
+    runs,
+    audit,
+  };
 }

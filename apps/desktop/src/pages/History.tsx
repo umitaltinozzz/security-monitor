@@ -3,5 +3,84 @@ import { useWorkspace } from "../WorkspaceContext";
 import { auditAction, date } from "../utils";
 export function History() {
   const { data, t } = useWorkspace();
-  return <><PageHeading title={t("history.title")} description={t("history.description")} /><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.scanRuns")}</h2></div>{data.runs.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.project")}</th><th>{t("common.status")}</th><th>{t("common.updated")}</th></tr></thead><tbody>{data.runs.map((run) => <tr key={run.id}><td>{run.scanner === "security-monitor" ? t("appName") : t("common.unknown")}</td><td><StatusTag value={run.outcome} t={t} /><ScanDiagnostics error={run.error} t={t} /></td><td>{date(run.finished_at ?? run.started_at, data.settings.language)}</td></tr>)}</tbody></table></div>}</section><section className="panel table-panel"><div className="panel-heading"><h2>{t("history.auditEvents")}</h2></div>{data.audit.length === 0 ? <Empty t={t} /> : <div className="table-wrap"><table><thead><tr><th>{t("common.updated")}</th><th>{t("history.actor")}</th><th>{t("history.action")}</th><th>{t("history.scope")}</th><th>{t("history.outcome")}</th></tr></thead><tbody>{[...data.audit].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).map((event) => <tr key={event.id}><td>{date(event.timestamp, data.settings.language)}</td><td>{event.actor === "user" ? t("common.user") : t("common.unknown")}</td><td>{auditAction(event.action, t)}</td><td>{event.scope.resource_type === "project" ? t("common.project") : event.scope.resource_type === "asset" ? t("common.server") : t("common.unknown")}</td><td>{t(`status.${event.result}`)}</td></tr>)}</tbody></table></div>}</section></>;
+  return (
+    <>
+      <PageHeading title={t("history.title")} description={t("history.description")} />
+      <section className="panel table-panel">
+        <div className="panel-heading">
+          <h2>{t("history.scanRuns")}</h2>
+        </div>
+        {data.runs.length === 0 ? (
+          <Empty t={t} />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("common.project")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("common.updated")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.runs.map((run) => (
+                  <tr key={run.id}>
+                    <td>
+                      {run.scanner === "security-monitor" ? t("appName") : t("common.unknown")}
+                    </td>
+                    <td>
+                      <StatusTag value={run.outcome} t={t} />
+                      <ScanDiagnostics error={run.error} t={t} />
+                    </td>
+                    <td>{date(run.finished_at ?? run.started_at, data.settings.language)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <section className="panel table-panel">
+        <div className="panel-heading">
+          <h2>{t("history.auditEvents")}</h2>
+        </div>
+        {data.audit.length === 0 ? (
+          <Empty t={t} />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("common.updated")}</th>
+                  <th>{t("history.actor")}</th>
+                  <th>{t("history.action")}</th>
+                  <th>{t("history.scope")}</th>
+                  <th>{t("history.outcome")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...data.audit]
+                  .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                  .map((event) => (
+                    <tr key={event.id}>
+                      <td>{date(event.timestamp, data.settings.language)}</td>
+                      <td>{event.actor === "user" ? t("common.user") : t("common.unknown")}</td>
+                      <td>{auditAction(event.action, t)}</td>
+                      <td>
+                        {event.scope.resource_type === "project"
+                          ? t("common.project")
+                          : event.scope.resource_type === "asset"
+                            ? t("common.server")
+                            : t("common.unknown")}
+                      </td>
+                      <td>{t(`status.${event.result}`)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
 }

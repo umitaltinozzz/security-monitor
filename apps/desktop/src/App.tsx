@@ -113,7 +113,9 @@ export function App() {
   async function addProject(path: string): Promise<Project | null> {
     try {
       const project = await api.addProject(path);
-      setData((current) => (current ? { ...current, projects: [...current.projects, project] } : current));
+      setData((current) =>
+        current ? { ...current, projects: [...current.projects, project] } : current,
+      );
       setNotice({ message: t("projects.addSuccess"), kind: "success" });
       return project;
     } catch (error) {
@@ -286,7 +288,13 @@ export function App() {
                     }}
                   >
                     <span className="nav-icon" aria-hidden="true">
-                      {item === "review" ? "◉" : item === "findings" ? "⚠" : item === "history" ? "◷" : "⌕"}
+                      {item === "review"
+                        ? "◉"
+                        : item === "findings"
+                          ? "⚠"
+                          : item === "history"
+                            ? "◷"
+                            : "⌕"}
                     </span>
                     {t("navigation." + item)}
                     {item === "review" && reviewCount > 0 && (
@@ -416,7 +424,10 @@ export function App() {
               </button>
             </header>
             {notice && (
-              <div className={"notice " + notice.kind} role={notice.kind === "error" ? "alert" : "status"}>
+              <div
+                className={"notice " + notice.kind}
+                role={notice.kind === "error" ? "alert" : "status"}
+              >
                 {notice.message}
                 <button
                   type="button"
