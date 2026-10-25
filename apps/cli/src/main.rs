@@ -1,4 +1,5 @@
 mod commands;
+mod hook_events;
 mod hooks;
 
 use std::{io::Write, path::PathBuf, sync::Arc};
@@ -124,6 +125,9 @@ enum HookCommand {
         pre_push: bool,
         #[arg(long, group = "hook_kind")]
         pre_commit: bool,
+        /// Read an agent PreToolUse JSON event from stdin and scan only Git commit/push commands.
+        #[arg(long)]
+        agent_event: bool,
     },
 }
 
@@ -182,7 +186,18 @@ async fn main() {
                 fail_on,
                 pre_push,
                 pre_commit,
-            } => commands::run_hook(database_path, mode, &fail_on, pre_push, pre_commit).await,
+                agent_event,
+            } => {
+                commands::run_hook(
+                    database_path,
+                    mode,
+                    &fail_on,
+                    pre_push,
+                    pre_commit,
+                    agent_event,
+                )
+                .await
+            }
         },
         Some(Command::Integrate {
             parts,

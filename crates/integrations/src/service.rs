@@ -65,7 +65,7 @@ impl<S: CredentialStore> IntegrationService<S> {
             hook_path,
             hook_before,
             hook_after,
-            "Installs a local pre-tool Git hook that calls secmon hook run.",
+            "Installs a local pre-tool Git hook that checks commit and push commands.",
         );
         Ok(plan)
     }

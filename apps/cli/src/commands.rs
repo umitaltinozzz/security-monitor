@@ -554,20 +554,47 @@ pub async fn run_hook(
     fail_on: &str,
     pre_push: bool,
     pre_commit: bool,
+    agent_event: bool,
 ) -> Result<i32, &'static str> {
-    if pre_push && pre_commit {
+    if (pre_push && pre_commit) || (agent_event && (pre_push || pre_commit)) {
         return Err("choose_one_hook");
     }
-    let fail_on = FailOn::parse(fail_on).ok_or("invalid_fail_on")?;
-    let code = match hook_scan(database_path, fail_on, pre_push, pre_commit).await {
-        Ok(code) => code,
-        // Warn mode never stops a commit or push, not even when the check itself fails.
-        Err(error) if matches!(mode, HookMode::Warn) => {
-            eprintln!("warning: security check could not run ({error}); continuing");
-            return Ok(0);
+    let actions = if agent_event {
+        match super::hook_events::actions_from_stdin() {
+            Ok(actions) => actions,
+            Err(error) if matches!(mode, HookMode::Warn) => {
+                eprintln!("warning: security check could not run ({error}); continuing");
+                return Ok(0);
+            }
+            Err(error) => return Err(error),
         }
-        Err(error) => return Err(error),
+    } else if !pre_push && !pre_commit {
+        return Ok(0);
+    } else {
+        super::hook_events::GitHookActions {
+            pre_commit,
+            pre_push,
+        }
     };
+    if !actions.pre_commit && !actions.pre_push {
+        return Ok(0);
+    }
+    let fail_on = FailOn::parse(fail_on).ok_or("invalid_fail_on")?;
+    let mut code = 0;
+    for (pre_push, selected) in [(false, actions.pre_commit), (true, actions.pre_push)] {
+        if !selected {
+            continue;
+        }
+        code = match hook_scan(database_path.clone(), fail_on, pre_push, !pre_push).await {
+            Ok(next_code) => code.max(next_code),
+            // Warn mode never stops a commit or push, not even when the check itself fails.
+            Err(error) if matches!(mode, HookMode::Warn) => {
+                eprintln!("warning: security check could not run ({error}); continuing");
+                return Ok(0);
+            }
+            Err(error) => return Err(error),
+        };
+    }
     if code == 0 {
         return Ok(0);
     }
@@ -595,14 +622,7 @@ async fn hook_scan(
         fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
         super::hooks::scan_changed_inputs(&root, &database_path, &app_data, pre_push, fail_on).await
     } else {
-        run_scan(
-            root,
-            database_path,
-            "table",
-            Some(fail_on_text(fail_on)),
-            true,
-        )
-        .await
+        Ok(0)
     }
 }
 

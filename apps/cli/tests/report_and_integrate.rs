@@ -1,6 +1,7 @@
 use std::{
     env,
     ffi::OsString,
+    io::Write,
     path::Path,
     process::{Command, Output, Stdio},
     time::Instant,
@@ -552,4 +553,43 @@ fn warn_hook_never_blocks_when_the_check_itself_cannot_run() {
     );
     let block = run("block");
     assert!(!block.status.success());
+}
+
+#[test]
+fn agent_hook_ignores_non_git_commands_without_opening_the_database() {
+    let project = tempfile::tempdir().unwrap();
+    let home = HookTestEnvironment::new();
+    let database = home.data_home.path().join("must-not-be-created.sqlite");
+    let mut command = secmon();
+    command
+        .args([
+            "--database",
+            database.to_str().unwrap(),
+            "hook",
+            "run",
+            "--mode",
+            "block",
+            "--agent-event",
+        ])
+        .current_dir(project.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    home.configure(&mut command);
+    let mut child = command.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            br#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status"}}"#,
+        )
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "agent hook failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!database.exists());
 }

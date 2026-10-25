@@ -11,7 +11,7 @@ Use Security Monitor MCP tools to inspect local findings, advisories, and approv
 
 Before proposing a dependency change, verify the advisory, affected version, and available fixed version. Do not change finding status, priority, permissions, or risk acceptance on behalf of the user.
 
-Before running a Git commit or push, invoke secmon hook run locally. If it reports a blocking finding or incomplete verification, stop and show the user the result.
+Before running a Git commit, invoke secmon hook run --pre-commit locally. Before running a Git push, invoke secmon hook run --pre-push locally. If the check reports a blocking finding or incomplete verification, stop and show the user the result.
 "#;
 
 #[derive(Debug, Deserialize)]

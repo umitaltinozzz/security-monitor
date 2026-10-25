@@ -108,7 +108,7 @@ fn generated_agent_configs_match_vendor_supported_shapes() {
     assert_eq!(claude_hooks["hooks"]["PreToolUse"][0]["matcher"], "Bash");
     assert_eq!(
         claude_hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
-        "secmon hook run"
+        "secmon hook run --agent-event"
     );
 
     let codex = service
@@ -146,7 +146,7 @@ fn generated_agent_configs_match_vendor_supported_shapes() {
     assert_eq!(codex_hooks["hooks"]["PreToolUse"][0]["matcher"], "^Bash$");
     assert_eq!(
         codex_hooks["hooks"]["PreToolUse"][0]["hooks"][0]["commandWindows"],
-        "secmon.exe hook run"
+        "secmon.exe hook run --agent-event"
     );
 
     let opencode = service
@@ -179,7 +179,46 @@ fn generated_agent_configs_match_vendor_supported_shapes() {
         .as_slice();
     let opencode_plugin = std::str::from_utf8(opencode_plugin).unwrap();
     assert!(opencode_plugin.contains("tool.execute.before"));
-    assert!(opencode_plugin.contains("Bun.spawn([\"secmon\", \"hook\", \"run\"]"));
+    assert!(
+        opencode_plugin.contains("Bun.spawn([\"secmon\", \"hook\", \"run\", \"--agent-event\"]")
+    );
+    assert!(opencode_plugin.contains("hook_event_name: \"PreToolUse\""));
+    assert!(opencode_plugin.contains("stdin: \"pipe\""));
+}
+
+#[test]
+fn json_agent_hook_merge_does_not_duplicate_the_secmon_handler() {
+    let handler = json!({
+        "type": "command",
+        "command": "secmon hook run --agent-event",
+        "timeout": 30,
+    });
+    let group = json!({"matcher":"Bash","hooks":[handler]});
+    let once = common::merge_hook_json(
+        &None,
+        "PreToolUse",
+        group.clone(),
+        "secmon hook run --agent-event",
+    )
+    .unwrap()
+    .unwrap();
+    let twice = common::merge_hook_json(
+        &Some(once),
+        "PreToolUse",
+        group,
+        "secmon hook run --agent-event",
+    )
+    .unwrap()
+    .unwrap();
+    let merged: Value = serde_json::from_slice(&twice).unwrap();
+    let matching_handlers = merged["hooks"]["PreToolUse"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().unwrap())
+        .filter(|handler| handler["command"] == "secmon hook run --agent-event")
+        .count();
+    assert_eq!(matching_handlers, 1);
 }
 
 #[test]
