@@ -70,9 +70,7 @@ async fn collect_with_config(
         if let Some(check) = checks
             .iter_mut()
             .find(|check| check.kind == CheckKind::OperatingSystem)
-            && (os.kernel_release.is_none()
-                || os.installed_kernel_release.is_none()
-                || os.kernel_restart_required.is_none())
+            && !os_collection_is_complete(os)
         {
             check.status = CheckStatus::Partial;
             check.diagnostic = Some(DiagnosticCode::StaleObservation);
@@ -632,6 +630,28 @@ fn parse_os_release(contents: &str) -> Option<OperatingSystem> {
     })
 }
 
+fn is_well_formed_version_id(value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let mut segment_has_digit = false;
+    for byte in value.bytes() {
+        match byte {
+            b'0'..=b'9' => segment_has_digit = true,
+            b'.' if segment_has_digit => segment_has_digit = false,
+            _ => return false,
+        }
+    }
+    segment_has_digit
+}
+
+fn os_collection_is_complete(os: &OperatingSystem) -> bool {
+    os.kernel_release.is_some()
+        && os.installed_kernel_release.is_some()
+        && os.kernel_restart_required.is_some()
+        && is_well_formed_version_id(os.version_id.as_deref())
+}
+
 struct ParsedPackages {
     records: Vec<PackageRecord>,
     partial: bool,
@@ -1167,9 +1187,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        collect_dependency_inventory, kernel_restart_required, manual_product_name,
-        newest_installed_kernel, package_command_for_os, parse_docker_inspect, parse_os_release,
-        parse_package_output,
+        collect_dependency_inventory, is_well_formed_version_id, kernel_restart_required,
+        manual_product_name, newest_installed_kernel, os_collection_is_complete,
+        package_command_for_os, parse_docker_inspect, parse_os_release, parse_package_output,
     };
     use security_monitor_agent_protocol::{CheckKind, CheckStatus, DiagnosticCode, PackageSource};
 
@@ -1192,6 +1212,27 @@ mod tests {
         assert_eq!(alpine.records[0].name, "lib-example");
         assert_eq!(alpine.records[0].version.as_deref(), Some("2.4.1-r3"));
         assert!(!alpine.partial);
+    }
+
+    #[test]
+    fn missing_or_malformed_distro_version_id_cannot_be_complete() {
+        let mut missing = parse_os_release("ID=debian\nNAME=Debian\n").expect("OS");
+        missing.kernel_release = Some("6.1.0".to_owned());
+        missing.installed_kernel_release = Some("6.1.0".to_owned());
+        missing.kernel_restart_required = Some(false);
+        assert!(!os_collection_is_complete(&missing));
+        assert!(!is_well_formed_version_id(missing.version_id.as_deref()));
+
+        for version_id in ["unknown", "rolling", "12..1", ".12", "12."] {
+            assert!(!is_well_formed_version_id(Some(version_id)));
+        }
+
+        for version_id in ["12", "24.04", "9.5", "3.22"] {
+            assert!(is_well_formed_version_id(Some(version_id)));
+        }
+
+        missing.version_id = Some("12".to_owned());
+        assert!(os_collection_is_complete(&missing));
     }
 
     #[test]
