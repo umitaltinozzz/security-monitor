@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::sync::OnceLock;
+use std::{net::IpAddr, str::FromStr, sync::OnceLock};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedactionResult {
@@ -9,24 +9,37 @@ pub struct RedactionResult {
 
 pub fn is_sensitive_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
-    normalized.split('/').any(|part| {
-        let lower = part.to_ascii_lowercase();
-        lower == ".env"
-            || lower.starts_with(".env")
-            || lower.ends_with(".pem")
-            || lower.ends_with(".key")
-            || lower.ends_with(".p12")
-            || lower.ends_with(".pfx")
-            || lower.ends_with(".secret")
-            || lower.starts_with("id_")
-            || lower.starts_with("credentials")
-            || lower == ".netrc"
-            || lower == ".npmrc"
-            || lower == ".pypirc"
-            || lower == ".git"
-            || lower == ".ssh"
-            || lower == ".aws"
-            || lower == ".gnupg"
+    let parts = normalized
+        .split('/')
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    parts.iter().enumerate().any(|(index, part)| {
+        let sensitive_name = part == ".pgpass"
+            || part == ".git-credentials"
+            || part == ".htpasswd"
+            || part == ".vault-token"
+            || part.ends_with(".tfstate")
+            || part.ends_with(".tfstate.backup")
+            || part.ends_with(".tfvars")
+            || part.ends_with(".tfvars.json")
+            || part == ".env"
+            || part.starts_with(".env")
+            || part.ends_with(".pem")
+            || part.ends_with(".key")
+            || part.ends_with(".p12")
+            || part.ends_with(".pfx")
+            || part.ends_with(".secret")
+            || part.starts_with("id_")
+            || part.starts_with("credentials")
+            || matches!(
+                part.as_str(),
+                ".netrc" | ".npmrc" | ".pypirc" | ".git" | ".ssh" | ".aws" | ".gnupg"
+            );
+        let sensitive_pair = matches!(part.as_str(), ".docker" | ".kube")
+            && parts.get(index + 1).is_some_and(|next| {
+                next == "config" || (part == ".docker" && next == "config.json")
+            });
+        sensitive_name || sensitive_pair
     })
 }
 
@@ -62,16 +75,16 @@ pub fn redact_text_with_host_aliases(
     static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     let patterns = PATTERNS.get_or_init(|| {
         [
-            r#"(?i)(api[_-]?key|access[_-]?token|token|secret|password|authorization)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"#,
+            r#"(?i)(?:api[_-]?key|access[_-]?token|token|secret|pwd|passwd|db[_-]?pass|password|authorization)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"#,
             r"(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
-            r"(?i)\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b",
-            r"(?i)\bAKIA[0-9A-Z]{16}\b",
-            r"(?i)\b[0-9a-f]{32,}\b",
+            r"(?i)\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|shpat_[A-Za-z0-9_-]{8,}|dop_v1_[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,})\b",
+            r"(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
             r"(?i)\b(?:xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{30,}|sk_(?:live|test)_[A-Za-z0-9]{16,})\b",
             r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}",
             r"(?i)\b[a-z][a-z0-9+.-]*://[^/@\s:]*:[^/@\s]+@[^/\s?#]+(?:/[^\s?#]*)?(?:\?[^\s#]*)?",
-            r#"(^|[\s"'(])([A-Z]:\\(?:[^\\\s"']+\\)*[^\\\s"']*)"#,
-            r#"(^|[\s"'(])(/[^/\s"']+(?:/[^/\s"']*)*)"#,
+            r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/\s"'<>|:?*]+[\\/])*[^\\/\s"'<>|:?*]*)"#,
+            r#"(^|[\s"'(=])((?:\\\\|//)[^\\/\s"'<>|:?*]+[\\/][^\\/\s"'<>|:?*]+(?:[\\/][^\\/\s"'<>|:?*]+)*)"#,
+            r#"(?i)(^|[\s"'(=])(/(?:home|users|root|tmp|var|etc|opt|workspace|workspaces|mnt|private|volumes|srv|run|app|data)/[^\s"'<>|]*)"#,
         ]
         .into_iter()
         .filter_map(|pattern| Regex::new(pattern).ok())
@@ -90,6 +103,9 @@ pub fn redact_text_with_host_aliases(
             redacted_values += count;
         }
     }
+    let (xml_redacted, xml_redactions) = redact_xml_passwords(&text);
+    text = xml_redacted;
+    redacted_values += xml_redactions;
     let (redacted_yaml_lists, yaml_list_redactions) = redact_yaml_host_lists(&text, host_aliases);
     text = redacted_yaml_lists;
     redacted_values += yaml_list_redactions;
@@ -206,6 +222,16 @@ pub fn redact_text_with_host_aliases(
             .into_owned();
         redacted_values += host_redactions;
     }
+    let (with_emails, email_redactions) = redact_email_addresses(&text);
+    text = with_emails;
+    redacted_values += email_redactions;
+    let (with_internal_hosts, internal_host_redactions) =
+        redact_internal_hostnames(&text, host_aliases);
+    text = with_internal_hosts;
+    redacted_values += internal_host_redactions;
+    let (with_ips, ip_redactions) = redact_ip_literals(&text);
+    text = with_ips;
+    redacted_values += ip_redactions;
     static ENTROPY_TOKEN: OnceLock<Option<Regex>> = OnceLock::new();
     let Some(entropy_token) = ENTROPY_TOKEN
         .get_or_init(|| Regex::new(r"\b[A-Za-z0-9_+/=-]{24,}\b").ok())
@@ -223,7 +249,10 @@ pub fn redact_text_with_host_aliases(
                 .get(0)
                 .map(|matched| matched.as_str())
                 .unwrap_or_default();
-            if shannon_entropy(token) >= 3.6
+            let is_hex_digest = (32..=128).contains(&token.len())
+                && token.bytes().all(|byte| byte.is_ascii_hexdigit());
+            if !is_hex_digest
+                && shannon_entropy(token) >= 3.6
                 && token
                     .chars()
                     .any(|character| character.is_ascii_lowercase())
@@ -244,6 +273,126 @@ pub fn redact_text_with_host_aliases(
         text,
         redacted_values,
     }
+}
+
+fn redact_xml_passwords(input: &str) -> (String, usize) {
+    static XML_PASSWORD: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(pattern) = XML_PASSWORD
+        .get_or_init(|| Regex::new(r"(?is)(<password\b[^>]*>)[\s\S]*?(</password\s*>)").ok())
+        .as_ref()
+    else {
+        return (input.to_owned(), 0);
+    };
+    let mut redactions = 0;
+    let output = pattern
+        .replace_all(input, |captures: &regex::Captures<'_>| {
+            redactions += 1;
+            format!("{}[REDACTED]{}", &captures[1], &captures[2])
+        })
+        .into_owned();
+    (output, redactions)
+}
+
+fn redact_email_addresses(input: &str) -> (String, usize) {
+    static EMAIL: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(pattern) = EMAIL
+        .get_or_init(|| Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").ok())
+        .as_ref()
+    else {
+        return (input.to_owned(), 0);
+    };
+    let count = pattern.find_iter(input).count();
+    (
+        pattern.replace_all(input, "[REDACTED_EMAIL]").into_owned(),
+        count,
+    )
+}
+
+fn redact_internal_hostnames(
+    input: &str,
+    host_aliases: &std::collections::BTreeMap<String, String>,
+) -> (String, usize) {
+    static INTERNAL_HOSTNAME: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(pattern) = INTERNAL_HOSTNAME
+        .get_or_init(|| {
+            Regex::new(
+                r"(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\.)+(?:internal|local|lan|home|corp|intranet|svc)\b",
+            )
+            .ok()
+        })
+        .as_ref()
+    else {
+        return (input.to_owned(), 0);
+    };
+    let mut redactions = 0;
+    let output = pattern
+        .replace_all(input, |captures: &regex::Captures<'_>| {
+            redactions += 1;
+            redact_host_token(&captures[0], host_aliases)
+        })
+        .into_owned();
+    (output, redactions)
+}
+
+fn redact_ip_literals(input: &str) -> (String, usize) {
+    static IPV4: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(ipv4) = IPV4
+        .get_or_init(|| {
+            let octet = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])";
+            Regex::new(&format!(
+                r"(^|[^0-9A-Za-z_.])({octet}(?:\.{octet}){{3}})([^0-9A-Za-z_.]|$)"
+            ))
+            .ok()
+        })
+        .as_ref()
+    else {
+        return (input.to_owned(), 0);
+    };
+    let mut redactions = 0;
+    let mut output = ipv4
+        .replace_all(input, |captures: &regex::Captures<'_>| {
+            let address = captures.get(2).map_or("", |value| value.as_str());
+            if IpAddr::from_str(address).is_ok() {
+                redactions += 1;
+                format!("{}[REDACTED_IP]{}", &captures[1], &captures[3])
+            } else {
+                captures[0].to_owned()
+            }
+        })
+        .into_owned();
+
+    static IPV6: OnceLock<Option<Regex>> = OnceLock::new();
+    let Some(ipv6) = IPV6
+        .get_or_init(|| {
+            Regex::new(
+                r"(^|[^0-9A-Fa-f:.])([0-9A-Fa-f:.]{2,}(?:%[A-Za-z0-9_.-]+)?)([^0-9A-Fa-f:.]|$)",
+            )
+            .ok()
+        })
+        .as_ref()
+    else {
+        return (output, redactions);
+    };
+    output = ipv6
+        .replace_all(&output, |captures: &regex::Captures<'_>| {
+            let raw = captures.get(2).map_or("", |value| value.as_str());
+            let address_end = raw.trim_end_matches('.').len();
+            let address = &raw[..address_end];
+            let unscoped = address.split('%').next().unwrap_or(address);
+            if address.contains(':') && IpAddr::from_str(unscoped).is_ok() {
+                redactions += 1;
+                format!(
+                    "{}[REDACTED_IP]{}{}",
+                    &captures[1],
+                    &raw[address_end..],
+                    &captures[3]
+                )
+            } else {
+                captures[0].to_owned()
+            }
+        })
+        .into_owned();
+    (output, redactions)
 }
 
 fn redact_yaml_host_lists(
@@ -488,6 +637,112 @@ mod tests {
         assert!(!result.text.contains("short-key"));
         assert_eq!(result.redacted_values, 2);
         assert!(is_sensitive_path("config/.envrc"));
+    }
+
+    #[test]
+    fn sensitive_file_paths_cover_credential_and_cloud_configuration_files() {
+        for path in [
+            ".pgpass",
+            "repo/.git-credentials",
+            "repo/.docker/config.json",
+            "repo/.kube/config",
+            "web/.htpasswd",
+            "infra/prod.tfstate",
+            "infra/prod.tfvars",
+            "infra/prod.tfvars.json",
+            ".vault-token",
+        ] {
+            assert!(is_sensitive_path(path), "{path}");
+        }
+        for path in [
+            "README.md",
+            "repo/.docker/compose.yaml",
+            "repo/.kube/pod.yaml",
+            "infra/prod.tfstate.example",
+            "infra/prod.tfvars.example",
+        ] {
+            assert!(!is_sensitive_path(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn redacts_emails_sts_keys_password_variants_and_xml_passwords() {
+        let result = redact_text(
+            "contact=alice@example.com host_user=alice@localhost AWS=ASIA1234567890123456 LEGACY=AKIA1234567890123456 short=ASIA123 pwd=one passwd=two DB_PASS=three <password>four</password> pwdle=keep passenger=stay DB_PASSING=leave <passwordless>safe</passwordless>",
+        );
+        for secret in [
+            "alice@example.com",
+            "ASIA1234567890123456",
+            "AKIA1234567890123456",
+            "one",
+            "two",
+            "three",
+            "four",
+        ] {
+            assert!(!result.text.contains(secret), "{secret}");
+        }
+        assert!(result.text.contains("alice@localhost"));
+        for ordinary in [
+            "pwdle=keep",
+            "passenger=stay",
+            "DB_PASSING=leave",
+            "<passwordless>safe</passwordless>",
+        ] {
+            assert!(result.text.contains(ordinary), "{ordinary}");
+        }
+        assert!(result.redacted_values >= 6);
+    }
+
+    #[test]
+    fn redacts_case_insensitive_windows_paths_in_both_separator_styles() {
+        let result = redact_text(
+            "files c:/Users/Alice/private.txt C:\\Users\\Alice\\work\\secret.rs //fileserver/share/Secrets/key.txt \\\\fileserver\\share\\Secrets\\key.txt",
+        );
+        for private in [
+            "c:/Users/Alice",
+            "C:\\Users\\Alice",
+            "//fileserver/share",
+            "\\\\fileserver\\share",
+        ] {
+            assert!(!result.text.contains(private), "{private}");
+        }
+        assert!(result.redacted_values >= 4);
+    }
+
+    #[test]
+    fn redacts_bare_ips_and_internal_hostnames_but_preserves_public_hosts() {
+        let result = redact_text(
+            "nodes 192.0.2.44 fd00::12 zone fe80::1%eth0 host prod-db.internal cache.local public api.example.com route /api/v1",
+        );
+        for private in [
+            "192.0.2.44",
+            "fd00::12",
+            "fe80::1",
+            "prod-db.internal",
+            "cache.local",
+        ] {
+            assert!(!result.text.contains(private), "{private}");
+        }
+        assert!(result.text.contains("api.example.com"));
+        assert!(result.text.contains("/api/v1"));
+        assert!(result.redacted_values >= 5);
+    }
+
+    #[test]
+    fn redacts_lowercase_provider_tokens_but_preserves_hashes_and_routes() {
+        let git_sha = "abcdef0123456789abcdef0123456789abcdef01";
+        let integrity = "0123456789abcdef".repeat(4);
+        let result = redact_text(&format!(
+            "shpat_abcdEFGH12345678 dop_v1_abcdefgh12345678 git={git_sha} integrity={integrity} route=/api/v1"
+        ));
+        assert!(!result.text.contains("shpat_"));
+        assert!(!result.text.contains("dop_v1_"));
+        assert!(result.text.contains(git_sha));
+        assert!(result.text.contains(&integrity));
+        assert!(result.text.contains("/api/v1"));
+        let short_tokens = redact_text("shpat_label dop_v1_guide");
+        assert!(short_tokens.text.contains("shpat_label"));
+        assert!(short_tokens.text.contains("dop_v1_guide"));
     }
 
     #[test]
