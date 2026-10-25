@@ -139,7 +139,7 @@ Ekran görüntüleri gerçek bir taramadan veya sunucudan değil, deterministik 
 
 Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Kullanım: [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
+- Kullanım: [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
 - Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu ve bildirimler](docs/orchestration.md)
 - Güven: [Gizlilik](docs/privacy.md) · [Tehdit modeli](docs/threat-model.md) · [Veri kaynakları](docs/data-sources.md) · [İmzalı sürümler ve güncellemeler](docs/release.md) · [Performans bütçeleri](docs/performance.md)
 

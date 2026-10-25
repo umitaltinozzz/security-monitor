@@ -139,7 +139,7 @@ Screenshots come from the deterministic test fixture, not a real scan or server.
 
 Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Using it: [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
+- Using it: [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
 - How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration and notifications](docs/orchestration.md)
 - Trust: [Privacy](docs/privacy.md) · [Threat model](docs/threat-model.md) · [Data sources](docs/data-sources.md) · [Signed releases and updates](docs/release.md) · [Performance budgets](docs/performance.md)
 

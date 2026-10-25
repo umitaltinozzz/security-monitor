@@ -8,12 +8,30 @@ export default defineConfig({
     starlight({
       title: 'Security Monitor',
       description: 'Local-first security monitoring for software projects and deployed environments.',
+      logo: {
+        light: './src/assets/logo-light.png',
+        dark: './src/assets/logo-dark.png',
+        alt: 'Security Monitor logo',
+      },
+      favicon: '/favicon.png',
+      customCss: ['./src/styles/custom.css'],
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/umitaltinozzz/security-monitor' },
+      ],
+      head: [
+        {
+          tag: 'meta',
+          attrs: { property: 'og:image', content: 'https://umitaltinozzz.github.io/security-monitor/social-preview.png' },
+        },
+        { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+      ],
       defaultLocale: 'root',
       locales: {
         root: { label: 'English', lang: 'en' },
       },
       sidebar: [
         { label: 'Overview', link: '/' },
+        { label: 'Getting started', link: '/getting-started/' },
         {
           label: 'Product',
           items: [

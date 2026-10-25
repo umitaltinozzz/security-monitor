@@ -1,0 +1,23 @@
+/* Monochrome theme to match the desktop app: no brand accent color. */
+:root {
+  --sl-color-accent-low: #2a2a2a;
+  --sl-color-accent: #d4d4d4;
+  --sl-color-accent-high: #f5f5f5;
+  --sl-color-text-accent: #f5f5f5;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e6e6e6;
+  --sl-color-accent: #3a3a3a;
+  --sl-color-accent-high: #111111;
+  --sl-color-text-accent: #111111;
+}
+
+.site-title img {
+  height: 1.6rem;
+  width: auto;
+}
+
+.hero img {
+  max-width: 22rem;
+}
