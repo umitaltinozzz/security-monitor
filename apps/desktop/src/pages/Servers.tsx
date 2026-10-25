@@ -276,6 +276,14 @@ export function Servers() {
                         : ` · ${t("servers.processNeedsRestart")}`}
                     </p>
                   )}
+                  {summary && summary.maps_unverified_process_count > 0 && (
+                    <p className="unverified-line">
+                      {t("servers.mapsUnverified").replace(
+                        "{count}",
+                        String(summary.maps_unverified_process_count),
+                      )}
+                    </p>
+                  )}
                   <ServerProjectLinks asset={asset} />
                   {approvedAsset === asset.id ? (
                     <div className="approval-box">

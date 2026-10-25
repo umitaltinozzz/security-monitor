@@ -5,9 +5,14 @@ use std::{
     path::Path,
 };
 
+#[cfg(target_os = "linux")]
+use crate::valid_container_id;
 use security_monitor_agent_protocol::{
     CheckStatus, CollectionCheck, DiagnosticCode, ProcessRecord, ServiceRecord,
 };
+
+#[cfg(target_os = "linux")]
+use security_monitor_agent_protocol::MapsStatus;
 
 #[cfg(target_os = "linux")]
 use crate::commands::{CommandOutput, HostCommand, run_allowlisted};
@@ -61,6 +66,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
     let mut processes = Vec::new();
     let mut units = BTreeSet::new();
     let mut had_permission_denied = false;
+    let mut had_stale_observation = false;
     let mut hit_limit = false;
     for entry in entries {
         let Ok(entry) = entry else {
@@ -76,11 +82,25 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             break;
         }
         let process_dir = entry.path();
-        let executable_path = fs::read_link(process_dir.join("exe"))
-            .ok()
-            .map(|path| clean_executable_path(&path));
-        if executable_path.is_none() {
-            had_permission_denied = true;
+        let mut executable_missing = false;
+        let executable_path = match fs::read_link(process_dir.join("exe")) {
+            Ok(path) => Some(clean_executable_path(&path)),
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                had_permission_denied = true;
+                None
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                executable_missing = true;
+                None
+            }
+            Err(_) => {
+                had_stale_observation = true;
+                None
+            }
+        };
+        let kernel_thread = executable_missing && process_cmdline_is_empty(&process_dir);
+        if executable_path.is_none() && !kernel_thread {
+            had_stale_observation = true;
         }
         let uid = process_uid(&process_dir.join("status"));
         let user_name = uid.and_then(|uid| user_names.get(&uid).cloned());
@@ -94,10 +114,15 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             .and_then(|path| Path::new(path).file_name())
             .and_then(|name| name.to_str())
             .and_then(runtime_name);
-        let (deleted_shared_libraries, maps_unavailable) =
-            deleted_shared_libraries(&process_dir.join("maps"));
-        if maps_unavailable {
-            had_permission_denied = true;
+        let (deleted_shared_libraries, maps_status, maps_diagnostic) = if kernel_thread {
+            (Vec::new(), MapsStatus::NotApplicable, None)
+        } else {
+            deleted_shared_libraries(&process_dir.join("maps"))
+        };
+        match maps_diagnostic {
+            Some(DiagnosticCode::PermissionDenied) => had_permission_denied = true,
+            Some(_) => had_stale_observation = true,
+            None => {}
         }
         processes.push(ProcessRecord {
             pid,
@@ -106,6 +131,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
             service_unit,
             container_id,
             runtime_name: runtime_name.map(str::to_owned),
+            maps_status,
             deleted_shared_libraries,
         });
     }
@@ -147,7 +173,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         .collect::<Vec<_>>();
 
     let (process_status, process_diagnostic) =
-        process_collection_status(hit_limit, had_permission_denied);
+        process_collection_status(hit_limit, had_permission_denied, had_stale_observation);
     let service_status = if systemd_available {
         CheckStatus::Complete
     } else if services.is_empty() {
@@ -177,24 +203,32 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
 fn process_collection_status(
     hit_limit: bool,
     permission_denied: bool,
+    stale_observation: bool,
 ) -> (CheckStatus, Option<DiagnosticCode>) {
     if hit_limit {
         (CheckStatus::Partial, Some(DiagnosticCode::LimitReached))
     } else if permission_denied {
         (CheckStatus::Partial, Some(DiagnosticCode::PermissionDenied))
+    } else if stale_observation {
+        (CheckStatus::Partial, Some(DiagnosticCode::StaleObservation))
     } else {
         (CheckStatus::Complete, None)
     }
 }
 
 #[cfg(target_os = "linux")]
-fn deleted_shared_libraries(path: &Path) -> (Vec<String>, bool) {
+fn deleted_shared_libraries(path: &Path) -> (Vec<String>, MapsStatus, Option<DiagnosticCode>) {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) => {
             return (
                 Vec::new(),
-                error.kind() == std::io::ErrorKind::PermissionDenied,
+                MapsStatus::Unavailable,
+                Some(if error.kind() == std::io::ErrorKind::PermissionDenied {
+                    DiagnosticCode::PermissionDenied
+                } else {
+                    DiagnosticCode::StaleObservation
+                }),
             );
         }
     };
@@ -227,7 +261,17 @@ fn deleted_shared_libraries(path: &Path) -> (Vec<String>, bool) {
             names.insert(name.to_owned());
         }
     }
-    (names.into_iter().take(256).collect(), false)
+    (
+        names.into_iter().take(256).collect(),
+        MapsStatus::Checked,
+        None,
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn process_cmdline_is_empty(process_dir: &Path) -> bool {
+    fs::metadata(process_dir.join("cmdline"))
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() == 0)
 }
 
 #[cfg(target_os = "linux")]
@@ -343,7 +387,7 @@ fn runtime_name(value: &str) -> Option<&'static str> {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
-    use security_monitor_agent_protocol::{CheckStatus, DiagnosticCode};
+    use security_monitor_agent_protocol::{CheckStatus, DiagnosticCode, MapsStatus};
 
     #[test]
     fn runtime_matching_uses_only_known_executable_names() {
@@ -360,17 +404,48 @@ mod tests {
             include_str!("../../../tests/fixtures/agent/process-maps-nginx.txt"),
         )
         .unwrap();
-        let (names, unavailable) = super::deleted_shared_libraries(&path);
+        let (names, status, diagnostic) = super::deleted_shared_libraries(&path);
         let _ = std::fs::remove_file(path);
-        assert!(!unavailable);
+        assert_eq!(status, MapsStatus::Checked);
+        assert_eq!(diagnostic, None);
         assert_eq!(names, ["libssl.so.3"]);
     }
 
     #[test]
     fn permission_limited_process_collection_stays_partial() {
         assert_eq!(
-            super::process_collection_status(false, true),
+            super::process_collection_status(false, true, false),
             (CheckStatus::Partial, Some(DiagnosticCode::PermissionDenied))
         );
+        assert_eq!(
+            super::process_collection_status(false, false, true),
+            (CheckStatus::Partial, Some(DiagnosticCode::StaleObservation))
+        );
+        assert_eq!(
+            super::process_collection_status(false, false, false),
+            (CheckStatus::Complete, None)
+        );
+    }
+
+    #[test]
+    fn missing_maps_are_not_reported_as_permission_errors() {
+        let path = std::env::temp_dir().join(format!("secmon-missing-maps-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let (_, status, diagnostic) = super::deleted_shared_libraries(&path);
+        assert_eq!(status, MapsStatus::Unavailable);
+        assert_eq!(diagnostic, Some(DiagnosticCode::StaleObservation));
+    }
+
+    #[test]
+    fn kernel_thread_shape_is_an_empty_cmdline_file() {
+        let path = std::env::temp_dir().join(format!("secmon-proc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        let cmdline = path.join("cmdline");
+        std::fs::write(&cmdline, b"").unwrap();
+        assert!(super::process_cmdline_is_empty(&path));
+        std::fs::write(&cmdline, b"/usr/bin/example\0").unwrap();
+        assert!(!super::process_cmdline_is_empty(&path));
+        let _ = std::fs::remove_dir_all(path);
     }
 }

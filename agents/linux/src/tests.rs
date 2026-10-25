@@ -5,7 +5,9 @@ use super::{
     manual_product_name, newest_installed_kernel, os_collection_is_complete,
     package_command_for_os, parse_docker_inspect, parse_os_release, parse_package_output,
 };
-use security_monitor_agent_protocol::{CheckKind, CheckStatus, DiagnosticCode, PackageSource};
+use security_monitor_agent_protocol::{
+    CheckKind, CheckStatus, DeploymentSource, DiagnosticCode, PackageSource,
+};
 
 #[test]
 fn system_metadata_parsers_return_only_allowlisted_fields() {
@@ -222,6 +224,17 @@ fn oci_inspection_keeps_only_approved_labels_and_never_verifies_integrity() {
         Some("sha256:1111111111111111111111111111111111111111111111111111111111111111")
     );
     assert!(!deploy.expect("deployment identity").integrity_verified);
+}
+
+#[test]
+fn invalid_container_deployment_metadata_stays_unknown() {
+    let line = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\t/web\tacme/web:1\t\tbad-commit\tv1\thttps://github.com/acme/web";
+    let (_, deployment) = parse_docker_inspect(line.as_bytes(), "bbbbbbbbbbbb", "web", "fallback")
+        .expect("container inspection should parse");
+    let deployment = deployment.expect("invalid supplied metadata should remain visible");
+
+    assert_eq!(deployment.source, DeploymentSource::Unknown);
+    assert!(!deployment.integrity_verified);
 }
 
 #[tokio::test]

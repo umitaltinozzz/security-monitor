@@ -16,6 +16,8 @@ For a service in a container, the collector checks OCI revision, version, source
 3. Only `SECMON_COMMIT_SHA`, `SOURCE_COMMIT`, and `GIT_COMMIT` in the service environment
 4. `.git/HEAD` with a safe loose or packed reference in the application root
 
+Deployment checks apply to services under an allowlisted application root or with an explicit system deployment file or recognized deployment environment variable. A service with no deployment configuration (for example, an ordinary system daemon such as `sshd`) is omitted from the deployment check and does not make that check partial. Configured services with missing or invalid identity data remain unknown. Containers are evaluated when their OCI metadata provides a recognized deployment identity.
+
 The JSON record accepts these fields:
 
 ```json

@@ -226,6 +226,44 @@ pub(super) fn collection_summary(
             .iter()
             .map(|process| process.deleted_shared_libraries.len())
             .sum(),
+        maps_unverified_process_count: inventory
+            .processes
+            .iter()
+            .filter(|process| {
+                matches!(
+                    process.maps_status,
+                    security_monitor_agent_protocol::MapsStatus::Unavailable
+                        | security_monitor_agent_protocol::MapsStatus::Unknown
+                )
+            })
+            .count(),
         approved_at,
+    }
+}
+
+#[cfg(test)]
+mod collection_summary_tests {
+    use chrono::Utc;
+    use security_monitor_agent_protocol::{MapsStatus, decode_inventory};
+
+    use super::collection_summary;
+
+    #[test]
+    fn collection_summary_counts_unknown_and_unavailable_maps_per_process() {
+        let mut inventory = decode_inventory(include_bytes!(
+            "../../../../../tests/fixtures/agent/realistic-complete.json"
+        ))
+        .expect("complete server inventory fixture should decode");
+        let mut unavailable = inventory.processes[0].clone();
+        unavailable.maps_status = MapsStatus::Unavailable;
+        let mut not_applicable = inventory.processes[0].clone();
+        not_applicable.maps_status = MapsStatus::NotApplicable;
+        let mut unknown = inventory.processes[0].clone();
+        unknown.maps_status = MapsStatus::Unknown;
+        inventory.processes = vec![unavailable, not_applicable, unknown];
+
+        let summary = collection_summary("asset-1".to_owned(), &inventory, Utc::now());
+
+        assert_eq!(summary.maps_unverified_process_count, 2);
     }
 }

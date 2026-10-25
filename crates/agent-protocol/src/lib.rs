@@ -11,7 +11,7 @@ pub use parsers::{
     parse_os_release_with_architecture, parse_package_output, valid_container_id,
 };
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 const MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_RECORDS: usize = 100_000;
@@ -90,9 +90,21 @@ pub struct ProcessRecord {
     pub service_unit: Option<String>,
     pub container_id: Option<String>,
     pub runtime_name: Option<String>,
+    #[serde(default)]
+    pub maps_status: MapsStatus,
     /// Basenames of shared libraries still mapped after their files were removed.
     #[serde(default)]
     pub deleted_shared_libraries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MapsStatus {
+    Checked,
+    Unavailable,
+    NotApplicable,
+    #[default]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -502,6 +514,7 @@ mod tests {
             "multiple-node-runtimes.json",
             "containers-different-digests.json",
             "deploy-unknown.json",
+            "realistic-complete.json",
             "stale-inventory.json",
         ];
         for scenario in scenarios {
@@ -531,7 +544,35 @@ mod tests {
             Some("6.1.0-21-amd64")
         );
         assert_eq!(os.kernel_restart_required, Some(true));
-        assert_eq!(inventory.protocol_version, PROTOCOL_VERSION);
+        assert_eq!(inventory.protocol_version, 2);
+    }
+
+    #[test]
+    fn realistic_server_inventory_can_be_complete_with_verified_process_maps() {
+        let inventory = decode_inventory(&fixture("realistic-complete.json"))
+            .expect("complete server fixture should decode");
+        assert!(inventory.complete);
+        assert!(
+            inventory
+                .checks
+                .iter()
+                .all(|check| { check.status == super::CheckStatus::Complete })
+        );
+        assert_eq!(inventory.processes.len(), 1);
+        assert_eq!(
+            inventory.processes[0].maps_status,
+            super::MapsStatus::Checked
+        );
+    }
+
+    #[test]
+    fn older_inventory_without_maps_status_is_unverified() {
+        let inventory = decode_inventory(&fixture("single-node.json"))
+            .expect("legacy inventory should remain compatible");
+        assert_eq!(
+            inventory.processes[0].maps_status,
+            super::MapsStatus::Unknown
+        );
     }
 
     #[test]

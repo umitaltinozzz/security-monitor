@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::Path, process::Stdio, time::Duration};
+use std::{ffi::OsString, fs, process::Stdio, time::Duration};
 
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, process::Command, time::timeout};
@@ -163,8 +163,13 @@ pub struct CommandOutput {
 
 pub async fn run_allowlisted(command: &HostCommand) -> Result<CommandOutput, HostCommandError> {
     let (program, args) = command.executable_and_args()?;
-    if !Path::new(program).is_file() {
-        return Err(HostCommandError::Unavailable);
+    match fs::metadata(program) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return Err(HostCommandError::Unavailable),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(HostCommandError::Unavailable);
+        }
+        Err(_) => return Err(HostCommandError::Failed),
     }
     let mut child = Command::new(program)
         .args(args)
@@ -178,9 +183,7 @@ pub async fn run_allowlisted(command: &HostCommand) -> Result<CommandOutput, Hos
         .kill_on_drop(true)
         .spawn()
         .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied => {
-                HostCommandError::Unavailable
-            }
+            std::io::ErrorKind::NotFound => HostCommandError::Unavailable,
             _ => HostCommandError::Failed,
         })?;
     let Some(stdout) = child.stdout.take() else {

@@ -73,7 +73,7 @@ pub(super) fn collect_manual_binaries() -> ManualCollection {
 }
 
 #[cfg(target_os = "linux")]
-fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection {
+pub(super) fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection {
     use std::os::unix::fs::PermissionsExt;
 
     const MAX_ENTRIES: usize = 50_000;

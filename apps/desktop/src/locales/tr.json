@@ -181,6 +181,7 @@
     "kernelRestartNeeded": "Kurulu çekirdek daha yeni; etkinleştirmek için sunucuyu yeniden başlatın",
     "kernelStateUnknown": "Çekirdek yeniden başlatma durumu doğrulanamadı",
     "deletedSharedLibraries": "silinmiş paylaşılan kitaplık hâlâ belleğe eşlenmiş",
+    "mapsUnverified": "{count} süreç doğrulanamadı",
     "needsRestart": "servisin yeniden başlatılması gerekiyor",
     "processNeedsRestart": "sürecin yeniden başlatılması gerekebilir",
     "health": "Sağlık",

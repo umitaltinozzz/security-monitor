@@ -181,6 +181,7 @@
     "kernelRestartNeeded": "Installed kernel is newer; restart the server to activate it",
     "kernelStateUnknown": "Kernel restart status could not be verified",
     "deletedSharedLibraries": "deleted shared libraries are still mapped",
+    "mapsUnverified": "{count} processes could not be verified",
     "needsRestart": "needs a service restart",
     "processNeedsRestart": "a process restart may be needed",
     "health": "Health",

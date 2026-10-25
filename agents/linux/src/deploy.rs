@@ -36,10 +36,9 @@ pub fn collect_deployments(snapshot: &mut ProcessSnapshot, allowed_roots: &[Path
             if service
                 .deploy_identity
                 .as_ref()
-                .is_none_or(|identity| identity.source == DeploymentSource::Unknown)
+                .is_some_and(|identity| identity.source == DeploymentSource::Unknown)
             {
                 any_unknown = true;
-                service.deploy_identity = Some(unknown_identity());
             }
             continue;
         }
@@ -50,6 +49,18 @@ pub fn collect_deployments(snapshot: &mut ProcessSnapshot, allowed_roots: &[Path
             .map(|process| process.pid)
             .and_then(process_working_directory)
             .filter(|directory| allowed_roots.iter().any(|root| directory.starts_with(root)));
+        let system_configured = has_system_deployment_config(&service.name);
+        let environment_configured = process
+            .map(|process| process.pid)
+            .is_some_and(has_deployment_environment);
+        if !deployment_is_configured(
+            app_directory.is_some(),
+            system_configured,
+            environment_configured,
+        ) {
+            service.deploy_identity = None;
+            continue;
+        }
         let deployment = app_directory
             .as_deref()
             .and_then(read_application_deployment)
@@ -103,6 +114,46 @@ fn read_system_deployment(service_name: &str) -> Option<DeploymentIdentity> {
     let root = Path::new(SYSTEM_DEPLOYMENTS).canonicalize().ok()?;
     let file_name = format!("{service_name}.json");
     read_deployment_file(&root.join(file_name), &root, DeploymentSource::SystemFile)
+}
+
+fn has_system_deployment_config(service_name: &str) -> bool {
+    if service_name.is_empty()
+        || service_name.len() > 200
+        || !service_name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-@".contains(&byte))
+    {
+        return false;
+    }
+    let path = Path::new(SYSTEM_DEPLOYMENTS).join(format!("{service_name}.json"));
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+}
+
+fn has_deployment_environment(pid: u32) -> bool {
+    read_bounded_file(
+        &PathBuf::from(format!("/proc/{pid}/environ")),
+        MAX_ENV_BYTES,
+    )
+    .is_some_and(|data| {
+        data.split(|byte| *byte == 0).any(|entry| {
+            let Some(separator) = entry.iter().position(|byte| *byte == b'=') else {
+                return false;
+            };
+            matches!(
+                &entry[..separator],
+                b"SECMON_COMMIT_SHA" | b"SOURCE_COMMIT" | b"GIT_COMMIT"
+            )
+        })
+    })
+}
+
+fn deployment_is_configured(
+    application_path: bool,
+    system_file: bool,
+    environment_metadata: bool,
+) -> bool {
+    application_path || system_file || environment_metadata
 }
 
 fn read_deployment_file(
@@ -311,8 +362,8 @@ fn validate_digest(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DeploymentFile, DeploymentSource, normalize_commit, normalize_deployment,
-        validate_repository,
+        DeploymentFile, DeploymentSource, deployment_is_configured, normalize_commit,
+        normalize_deployment, validate_repository,
     };
 
     #[test]
@@ -336,5 +387,13 @@ mod tests {
         assert!(!deployment.integrity_verified);
         assert!(normalize_commit("abc$(id)").is_none());
         assert!(validate_repository("https://user:secret@example.test/repo").is_none());
+    }
+
+    #[test]
+    fn deployment_checks_only_include_services_with_explicit_configuration() {
+        assert!(!deployment_is_configured(false, false, false));
+        assert!(deployment_is_configured(true, false, false));
+        assert!(deployment_is_configured(false, true, false));
+        assert!(deployment_is_configured(false, false, true));
     }
 }

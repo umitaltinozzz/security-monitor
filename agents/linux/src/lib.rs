@@ -12,7 +12,7 @@ use std::{
 use chrono::Utc;
 use commands::{HostCommand, RuntimeExecutable, run_allowlisted};
 use config::{AgentConfig, ConfigDiagnostic};
-use deploy::{collect_deployments, unknown_identity};
+use deploy::collect_deployments;
 use processes::collect_processes;
 use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DeploymentIdentity,
@@ -106,10 +106,7 @@ async fn collect_with_config(
             });
         if let Some(container) = matched_container {
             service.container_id = Some(container.id.clone());
-            service.deploy_identity = container_deployments
-                .get(&container.id)
-                .cloned()
-                .or_else(|| Some(unknown_identity()));
+            service.deploy_identity = container_deployments.get(&container.id).cloned();
         }
     }
 
@@ -195,7 +192,9 @@ pub(crate) use dependencies::collect_dependency_inventory;
 pub(crate) use os::{collect_operating_system, os_collection_is_complete};
 #[cfg(test)]
 pub(crate) use os::{is_well_formed_version_id, parse_os_release};
-#[cfg(any(target_os = "linux", test))]
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) use packages::collect_manual_binaries_at;
+#[cfg(test)]
 pub(crate) use packages::manual_product_name;
 #[cfg(test)]
 pub(crate) use packages::package_command_for_os;

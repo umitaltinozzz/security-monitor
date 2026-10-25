@@ -139,6 +139,7 @@ pub struct CollectionSummary {
     pub kernel_restart_required: Option<bool>,
     pub services_needing_restart: Vec<String>,
     pub deleted_shared_library_count: usize,
+    pub maps_unverified_process_count: usize,
     pub approved_at: DateTime<Utc>,
 }
 

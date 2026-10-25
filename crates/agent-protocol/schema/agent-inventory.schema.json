@@ -261,6 +261,15 @@
         "stale_observation"
       ]
     },
+    "MapsStatus": {
+      "type": "string",
+      "enum": [
+        "checked",
+        "unavailable",
+        "not_applicable",
+        "unknown"
+      ]
+    },
     "OperatingSystem": {
       "type": "object",
       "properties": {
@@ -394,6 +403,10 @@
             "string",
             "null"
           ]
+        },
+        "maps_status": {
+          "$ref": "#/$defs/MapsStatus",
+          "default": "unknown"
         },
         "pid": {
           "type": "integer",

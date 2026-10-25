@@ -1,4 +1,5 @@
 use super::*;
+use crate::deploy::unknown_identity;
 
 pub(super) async fn collect_containers(
     docker_cli_approved: bool,
@@ -121,7 +122,7 @@ pub(crate) fn parse_docker_inspect(
     let id = fields.next()?.trim().trim_start_matches('/');
     let name = fields.next()?.trim().trim_start_matches('/');
     let image = fields.next()?.trim();
-    let image_digest = fields.next()?.trim();
+    let raw_image_digest = fields.next()?.trim();
     let revision = fields.next()?.trim();
     let version = fields.next()?.trim();
     let source = fields.next()?.trim();
@@ -136,7 +137,7 @@ pub(crate) fn parse_docker_inspect(
     } else {
         image
     };
-    let image_digest = valid_sha256_digest(image_digest);
+    let image_digest = valid_sha256_digest(raw_image_digest);
     let oci_revision = if revision.is_empty() {
         None
     } else {
@@ -144,7 +145,13 @@ pub(crate) fn parse_docker_inspect(
     };
     let oci_version = nonempty_bounded(version);
     let oci_source = validate_repository(source);
-    let deploy = if oci_revision.is_some()
+    let invalid_metadata = (!revision.is_empty() && oci_revision.is_none())
+        || (!version.is_empty() && oci_version.is_none())
+        || (!source.is_empty() && oci_source.is_none())
+        || (!raw_image_digest.is_empty() && image_digest.is_none());
+    let deploy = if invalid_metadata {
+        Some(unknown_identity())
+    } else if oci_revision.is_some()
         || oci_version.is_some()
         || oci_source.is_some()
         || image_digest.is_some()

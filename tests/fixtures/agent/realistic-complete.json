@@ -1,0 +1,81 @@
+{
+  "protocol_version": 3,
+  "agent_version": "0.1.0",
+  "captured_at": "2026-10-24T05:00:00Z",
+  "hostname": "fixture-app-1",
+  "operating_system": {
+    "id": "debian",
+    "name": "Debian GNU/Linux",
+    "version_id": "12",
+    "pretty_name": "Debian GNU/Linux 12",
+    "kernel_release": "6.1.0-fixture",
+    "architecture": "x86_64"
+  },
+  "packages": [
+    {
+      "name": "nodejs",
+      "version": "20.12.0",
+      "architecture": "amd64",
+      "ecosystem": "deb",
+      "purl": "pkg:deb/debian/nodejs@20.12.0?arch=amd64",
+      "source": "dpkg",
+      "evidence_path": null
+    }
+  ],
+  "runtimes": [
+    { "name": "node", "version": "v20.12.0", "binary_path": "/usr/bin/node" }
+  ],
+  "processes": [
+    {
+      "pid": 1200,
+      "executable_path": "/usr/bin/node",
+      "user_name": "app",
+      "service_unit": "web.service",
+      "container_id": null,
+      "runtime_name": "node",
+      "maps_status": "checked"
+    }
+  ],
+  "services": [
+    {
+      "name": "web",
+      "unit_name": "web.service",
+      "pid": 1200,
+      "executable_path": "/usr/bin/node",
+      "user_name": "app",
+      "container_id": null,
+      "deploy_identity": {
+        "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+        "repository": "https://github.com/acme/web",
+        "release_id": "v2.4.1",
+        "image_digest": null,
+        "built_at": "2026-10-20T12:00:00Z",
+        "source": "application_file",
+        "integrity_verified": false
+      }
+    }
+  ],
+  "containers": [],
+  "deployments": [
+    {
+      "commit_sha": "0123456789abcdef0123456789abcdef01234567",
+      "repository": "https://github.com/acme/web",
+      "release_id": "v2.4.1",
+      "image_digest": null,
+      "built_at": "2026-10-20T12:00:00Z",
+      "source": "application_file",
+      "integrity_verified": false
+    }
+  ],
+  "checks": [
+    { "kind": "operating_system", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "package_inventory", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "runtimes", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "processes", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "services", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "containers", "status": "complete", "diagnostic": null, "item_count": 0 },
+    { "kind": "deployments", "status": "complete", "diagnostic": null, "item_count": 1 },
+    { "kind": "dependency_files", "status": "complete", "diagnostic": null, "item_count": 0 }
+  ],
+  "complete": true
+}
