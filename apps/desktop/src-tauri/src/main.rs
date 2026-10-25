@@ -212,6 +212,7 @@ mod tests {
     use super::{
         EN_TRAY_LOCALE, TR_TRAY_LOCALE, app_data_dir_for_build, should_keep_tray_process_alive,
     };
+    use crate::ipc_types::AppSettings;
 
     #[test]
     fn tray_close_keeps_process_alive_but_explicit_exit_does_not() {
@@ -239,5 +240,46 @@ mod tests {
             assert!(locale["tray"]["show"].as_str().is_some());
             assert!(locale["tray"]["quit"].as_str().is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn registered_settings_command_responds_through_tauri_ipc() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = crate::Database::open(directory.path().join("test.sqlite3"))
+            .await
+            .unwrap();
+        let state = crate::app_state::AppState::new(
+            database,
+            directory.path().to_owned(),
+            AppSettings::default(),
+        )
+        .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(state)
+            .invoke_handler(tauri::generate_handler![
+                crate::ipc::settings::get_app_settings
+            ])
+            .build(tauri::generate_context!())
+            .unwrap();
+        let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let response = tauri::test::get_ipc_response(
+            &window,
+            tauri::webview::InvokeRequest {
+                cmd: "get_app_settings".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_owned(),
+            },
+        )
+        .unwrap()
+        .deserialize::<AppSettings>()
+        .unwrap();
+
+        assert_eq!(response, AppSettings::default());
     }
 }
