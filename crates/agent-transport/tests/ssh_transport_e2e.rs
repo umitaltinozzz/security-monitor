@@ -1,7 +1,10 @@
 use std::{
     collections::BTreeMap,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
 use chrono::Utc;
@@ -11,8 +14,8 @@ use russh::{
     server::{self, Auth, Msg, Server as _, Session},
 };
 use security_monitor_agent_transport::{
-    CredentialError, CredentialStore, InventoryCollectionApproval, SshIdentity, SshTarget,
-    collect_agent, create_pairing_instructions, inspect_host_key,
+    CollectionError, CredentialError, CredentialStore, InventoryCollectionApproval, SshIdentity,
+    SshTarget, collect_agent, create_pairing_instructions, inspect_host_key,
 };
 use tokio::net::TcpListener;
 use zeroize::Zeroizing;
@@ -56,6 +59,7 @@ impl CredentialStore for MemoryStore {
 struct FixtureServer {
     authorized_key: PublicKey,
     commands: Arc<Mutex<Vec<Vec<u8>>>>,
+    exit_status: Arc<AtomicU32>,
 }
 
 impl server::Server for FixtureServer {
@@ -105,14 +109,14 @@ impl server::Handler for FixtureServer {
         }
         session.channel_success(channel)?;
         session.data(channel, FIXTURE_INVENTORY)?;
-        session.exit_status_request(channel, 0)?;
+        session.exit_status_request(channel, self.exit_status.load(Ordering::Relaxed))?;
         session.eof(channel)?;
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn pinned_ssh_transport_collects_only_the_fixed_agent_command() {
+async fn pinned_ssh_transport_rejects_nonzero_command_exit_status() {
     let store = MemoryStore::default();
     let pairing = create_pairing_instructions(&store, "loopback-e2e").expect("client key");
     let fields = pairing
@@ -127,9 +131,11 @@ async fn pinned_ssh_transport_collects_only_the_fixed_agent_command() {
         PublicKey::from_openssh(&format!("{} {}", fields[key_type], fields[key_type + 1]))
             .expect("pairing public key");
     let commands = Arc::new(Mutex::new(Vec::new()));
+    let exit_status = Arc::new(AtomicU32::new(0));
     let server = FixtureServer {
         authorized_key,
         commands: Arc::clone(&commands),
+        exit_status: Arc::clone(&exit_status),
     };
     let config = Arc::new(server::Config {
         keys: vec![
@@ -156,24 +162,25 @@ async fn pinned_ssh_transport_collects_only_the_fixed_agent_command() {
         .await
         .expect("loopback host key should be readable")
         .fingerprint;
-    let collection = collect_agent(
-        &target,
-        &fingerprint,
-        &SshIdentity::PrivateKeyRef(pairing.private_key_ref),
-        &store,
-        InventoryCollectionApproval::after_explicit_user_confirmation(Utc::now()),
-    )
-    .await
-    .expect("agent inventory should be collected over SSH");
+    let identity = SshIdentity::PrivateKeyRef(pairing.private_key_ref);
+    let approval = InventoryCollectionApproval::after_explicit_user_confirmation(Utc::now());
+    let collection = collect_agent(&target, &fingerprint, &identity, &store, approval)
+        .await
+        .expect("agent inventory should be collected over SSH");
 
     assert_eq!(collection.inventory.hostname, "fixture-app-1");
     collection
         .inventory
         .validate()
         .expect("fixture inventory should satisfy the protocol");
+    exit_status.store(1, Ordering::Relaxed);
+    assert!(matches!(
+        collect_agent(&target, &fingerprint, &identity, &store, approval).await,
+        Err(CollectionError::RemoteCommandFailed)
+    ));
     assert_eq!(
         commands.lock().expect("command lock").clone(),
-        vec![AGENT_COMMAND.to_vec()]
+        vec![AGENT_COMMAND.to_vec(), AGENT_COMMAND.to_vec()]
     );
 
     server_handle.shutdown("test complete".to_owned());

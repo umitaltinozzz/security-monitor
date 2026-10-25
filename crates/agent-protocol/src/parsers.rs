@@ -11,12 +11,6 @@ pub struct ParsedPackages {
     pub diagnostic: DiagnosticCode,
 }
 
-#[derive(Clone, Copy)]
-enum PackageOutputMode {
-    Agent,
-    AgentlessCompatibility,
-}
-
 pub fn valid_container_id(value: &str) -> bool {
     (12..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -75,53 +69,21 @@ pub fn parse_package_output(
     ecosystem: &str,
     source: PackageSource,
 ) -> ParsedPackages {
-    parse_package_output_with_mode(output, ecosystem, source, PackageOutputMode::Agent)
-}
-
-/// Keeps the pre-existing agentless tabular parser behavior while both collectors
-/// share the parsing and record construction code. Agentless format alignment is
-/// handled separately from this behavior-preserving consolidation.
-pub fn parse_agentless_package_output(
-    output: &str,
-    ecosystem: &str,
-    source: PackageSource,
-) -> Vec<PackageRecord> {
-    parse_package_output_with_mode(
-        output.as_bytes(),
-        ecosystem,
-        source,
-        PackageOutputMode::AgentlessCompatibility,
-    )
-    .records
-}
-
-fn parse_package_output_with_mode(
-    output: &[u8],
-    ecosystem: &str,
-    source: PackageSource,
-    mode: PackageOutputMode,
-) -> ParsedPackages {
-    let output = match mode {
-        PackageOutputMode::Agent => match std::str::from_utf8(output) {
-            Ok(output) => Cow::Borrowed(output),
-            Err(_) => {
-                return ParsedPackages {
-                    records: Vec::new(),
-                    partial: true,
-                    diagnostic: DiagnosticCode::InvalidOutput,
-                };
-            }
-        },
-        PackageOutputMode::AgentlessCompatibility => {
-            Cow::Owned(String::from_utf8_lossy(output).into_owned())
+    let output = match std::str::from_utf8(output) {
+        Ok(output) => Cow::Borrowed(output),
+        Err(_) => {
+            return ParsedPackages {
+                records: Vec::new(),
+                partial: true,
+                diagnostic: DiagnosticCode::InvalidOutput,
+            };
         }
     };
-    let strict = matches!(mode, PackageOutputMode::Agent);
     let mut records = Vec::new();
     let mut partial = false;
     let mut diagnostic = DiagnosticCode::InvalidOutput;
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
-        let record = if strict && source == PackageSource::Dpkg {
+        let record = if source == PackageSource::Dpkg {
             match parse_strict_tabbed_package(line, ecosystem, source) {
                 Ok(Some(record)) => Some(record),
                 Ok(None) => continue,
@@ -130,20 +92,18 @@ fn parse_package_output_with_mode(
                     continue;
                 }
             }
-        } else if strict && source == PackageSource::Apk {
+        } else if source == PackageSource::Apk {
             parse_apk_package(line, ecosystem)
-        } else if strict {
+        } else {
             parse_strict_tabbed_package(line, ecosystem, source)
                 .ok()
                 .flatten()
-        } else {
-            parse_agentless_tabbed_package(line, ecosystem, source)
         };
         let Some(record) = record else {
             partial = true;
             continue;
         };
-        if strict && records.len() == MAX_PACKAGE_RECORDS {
+        if records.len() == MAX_PACKAGE_RECORDS {
             partial = true;
             diagnostic = DiagnosticCode::LimitReached;
             break;
@@ -198,36 +158,6 @@ fn parse_strict_tabbed_package(
         ecosystem,
         source,
     )))
-}
-
-fn parse_agentless_tabbed_package(
-    line: &str,
-    ecosystem: &str,
-    source: PackageSource,
-) -> Option<PackageRecord> {
-    let mut fields = line.split('\t');
-    let name = fields.next()?.trim();
-    let version = fields.next()?.trim();
-    if name.is_empty() || version.is_empty() {
-        return None;
-    }
-    let architecture = fields
-        .next()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if source == PackageSource::Dpkg {
-        let status = fields.next()?.trim();
-        if fields.next().is_some() || dpkg_current_state(status)? != "installed" {
-            return None;
-        }
-    }
-    Some(package_record(
-        name,
-        version,
-        architecture,
-        ecosystem,
-        source,
-    ))
 }
 
 fn dpkg_current_state(status: &str) -> Option<&str> {

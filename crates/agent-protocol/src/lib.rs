@@ -7,8 +7,8 @@ use thiserror::Error;
 mod parsers;
 
 pub use parsers::{
-    ParsedPackages, normalize_commit, parse_agentless_package_output, parse_os_release,
-    parse_os_release_with_architecture, parse_package_output, valid_container_id,
+    ParsedPackages, normalize_commit, parse_os_release, parse_os_release_with_architecture,
+    parse_package_output, valid_container_id,
 };
 
 pub const PROTOCOL_VERSION: u16 = 3;

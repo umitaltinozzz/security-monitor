@@ -6,17 +6,17 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use russh::{
-    ChannelStream, Disconnect,
+    ChannelMsg, ChannelStream, Disconnect,
     client::{self, Handle, Handler},
     keys::{HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate, decode_secret_key},
 };
 use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DiagnosticCode,
-    PackageSource, ProcessRecord, RuntimeRecord, ServiceRecord, decode_inventory,
-    parse_agentless_package_output as parse_package_output, parse_os_release, valid_container_id,
+    PackageSource, ProcessRecord, RuntimeRecord, ServiceRecord, decode_inventory, parse_os_release,
+    parse_package_output, valid_container_id,
 };
 use thiserror::Error;
-use tokio::{io::AsyncReadExt, time::timeout};
+use tokio::time::timeout;
 
 use crate::{
     CredentialError, CredentialStore, SshTarget, host::proxy_jump_matches, validate_fingerprint,
@@ -188,6 +188,8 @@ pub enum CollectionError {
     Protocol,
     #[error("remote response exceeded the size limit")]
     OutputTooLarge,
+    #[error("remote command failed or did not return a successful exit status")]
+    RemoteCommandFailed,
     #[error("server key fingerprint is invalid")]
     InvalidFingerprint,
 }
@@ -664,15 +666,30 @@ async fn run_remote(
             .exec(true, command)
             .await
             .map_err(|_| CollectionError::Ssh)?;
-        let stream: ChannelStream<_> = channel.into_stream();
-        let mut limited = stream.take((MAX_COMMAND_OUTPUT + 1) as u64);
         let mut output = Vec::new();
-        limited
-            .read_to_end(&mut output)
-            .await
-            .map_err(|_| CollectionError::Ssh)?;
-        if output.len() > MAX_COMMAND_OUTPUT {
-            return Err(CollectionError::OutputTooLarge);
+        let mut exit_status = None;
+        let mut channel = channel;
+        while let Some(message) = channel.wait().await {
+            match message {
+                ChannelMsg::Data { data } => {
+                    if output.len().saturating_add(data.len()) > MAX_COMMAND_OUTPUT {
+                        return Err(CollectionError::OutputTooLarge);
+                    }
+                    output.extend_from_slice(&data);
+                }
+                ChannelMsg::ExitStatus {
+                    exit_status: status,
+                } => {
+                    if exit_status.replace(status).is_some() {
+                        return Err(CollectionError::RemoteCommandFailed);
+                    }
+                }
+                ChannelMsg::Eof | ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+        if exit_status != Some(0) {
+            return Err(CollectionError::RemoteCommandFailed);
         }
         Ok(output)
     })
@@ -692,13 +709,18 @@ fn agentless_inventory(
     let mut containers = Vec::new();
     let mut os_attempted = false;
     let mut os_succeeded = false;
+    let mut os_command_failed = false;
     let mut package_commands_succeeded = 0usize;
     let mut package_output_invalid = false;
+    let mut package_command_failed = false;
     let mut runtime_commands_attempted = 0usize;
     let mut runtime_commands_succeeded = 0usize;
+    let mut runtime_output_invalid = false;
+    let mut runtime_command_failed = false;
     let mut docker_attempted = false;
     let mut docker_succeeded = false;
     let mut docker_output_invalid = false;
+    let mut docker_command_failed = false;
 
     for (command, result) in outputs {
         match command {
@@ -711,7 +733,24 @@ fn agentless_inventory(
             | AgentlessCommand::Python3Version => runtime_commands_attempted += 1,
             AgentlessCommand::DockerPs => docker_attempted = true,
         }
-        let Ok(output) = result else { continue };
+        let output = match result {
+            Ok(output) => output,
+            Err(error) => {
+                if matches!(error, CollectionError::RemoteCommandFailed) {
+                    match &command {
+                        AgentlessCommand::OsRelease => os_command_failed = true,
+                        AgentlessCommand::DpkgPackages
+                        | AgentlessCommand::RpmPackages
+                        | AgentlessCommand::ApkPackages => package_command_failed = true,
+                        AgentlessCommand::NodeVersion
+                        | AgentlessCommand::PhpVersion
+                        | AgentlessCommand::Python3Version => runtime_command_failed = true,
+                        AgentlessCommand::DockerPs => docker_command_failed = true,
+                    }
+                }
+                continue;
+            }
+        };
         let text = String::from_utf8_lossy(&output);
         match command {
             AgentlessCommand::OsRelease => {
@@ -719,41 +758,37 @@ fn agentless_inventory(
                 os_succeeded = operating_system.is_some();
             }
             AgentlessCommand::DpkgPackages => {
-                let found = parse_package_output(&text, "deb", PackageSource::Dpkg);
+                let found = parse_package_output(&output, "deb", PackageSource::Dpkg);
                 package_commands_succeeded += 1;
-                package_output_invalid |=
-                    found.len() != text.lines().filter(|line| !line.trim().is_empty()).count();
-                packages.extend(found);
+                package_output_invalid |= found.partial || found.records.is_empty();
+                packages.extend(found.records);
             }
             AgentlessCommand::RpmPackages => {
-                let found = parse_package_output(&text, "rpm", PackageSource::Rpm);
+                let found = parse_package_output(&output, "rpm", PackageSource::Rpm);
                 package_commands_succeeded += 1;
-                package_output_invalid |=
-                    found.len() != text.lines().filter(|line| !line.trim().is_empty()).count();
-                packages.extend(found);
+                package_output_invalid |= found.partial || found.records.is_empty();
+                packages.extend(found.records);
             }
             AgentlessCommand::ApkPackages => {
-                let found = parse_package_output(&text, "apk", PackageSource::Apk);
+                let found = parse_package_output(&output, "apk", PackageSource::Apk);
                 package_commands_succeeded += 1;
-                package_output_invalid |=
-                    found.len() != text.lines().filter(|line| !line.trim().is_empty()).count();
-                packages.extend(found);
+                package_output_invalid |= found.partial || found.records.is_empty();
+                packages.extend(found.records);
             }
             AgentlessCommand::NodeVersion => {
-                runtime_commands_succeeded +=
-                    usize::from(add_runtime(&mut runtimes, "node", &text, "/usr/bin/node"));
+                let succeeded = add_runtime(&mut runtimes, "node", &text, "/usr/bin/node");
+                runtime_commands_succeeded += usize::from(succeeded);
+                runtime_output_invalid |= !succeeded;
             }
             AgentlessCommand::PhpVersion => {
-                runtime_commands_succeeded +=
-                    usize::from(add_runtime(&mut runtimes, "php", &text, "/usr/bin/php"));
+                let succeeded = add_runtime(&mut runtimes, "php", &text, "/usr/bin/php");
+                runtime_commands_succeeded += usize::from(succeeded);
+                runtime_output_invalid |= !succeeded;
             }
             AgentlessCommand::Python3Version => {
-                runtime_commands_succeeded += usize::from(add_runtime(
-                    &mut runtimes,
-                    "python3",
-                    &text,
-                    "/usr/bin/python3",
-                ));
+                let succeeded = add_runtime(&mut runtimes, "python3", &text, "/usr/bin/python3");
+                runtime_commands_succeeded += usize::from(succeeded);
+                runtime_output_invalid |= !succeeded;
             }
             AgentlessCommand::DockerPs => {
                 docker_succeeded = parse_docker_ps(&text, &mut containers);
@@ -795,7 +830,11 @@ fn agentless_inventory(
             CheckKind::OperatingSystem,
             os_status,
             (!os_succeeded).then_some(if os_attempted {
-                DiagnosticCode::InvalidOutput
+                if os_command_failed {
+                    DiagnosticCode::CommandFailed
+                } else {
+                    DiagnosticCode::InvalidOutput
+                }
             } else {
                 DiagnosticCode::CommandUnavailable
             }),
@@ -806,7 +845,11 @@ fn agentless_inventory(
             package_status,
             (package_status != CheckStatus::Complete).then_some(
                 if package_commands_succeeded == 0 {
-                    DiagnosticCode::CommandUnavailable
+                    if package_command_failed {
+                        DiagnosticCode::CommandFailed
+                    } else {
+                        DiagnosticCode::CommandUnavailable
+                    }
                 } else {
                     DiagnosticCode::InvalidOutput
                 },
@@ -816,7 +859,13 @@ fn agentless_inventory(
         collection_check(
             CheckKind::Runtimes,
             runtime_status,
-            (runtime_status != CheckStatus::Complete).then_some(DiagnosticCode::CommandUnavailable),
+            (runtime_status != CheckStatus::Complete).then_some(if runtime_command_failed {
+                DiagnosticCode::CommandFailed
+            } else if runtime_output_invalid {
+                DiagnosticCode::InvalidOutput
+            } else {
+                DiagnosticCode::CommandUnavailable
+            }),
             runtimes.len(),
         ),
         collection_check(
@@ -834,10 +883,14 @@ fn agentless_inventory(
         collection_check(
             CheckKind::Containers,
             docker_status,
-            (docker_status != CheckStatus::Complete).then_some(if docker_inspection_approved {
-                DiagnosticCode::CommandUnavailable
-            } else {
+            (docker_status != CheckStatus::Complete).then_some(if !docker_inspection_approved {
                 DiagnosticCode::PermissionDenied
+            } else if docker_command_failed {
+                DiagnosticCode::CommandFailed
+            } else if docker_output_invalid {
+                DiagnosticCode::InvalidOutput
+            } else {
+                DiagnosticCode::CommandUnavailable
             }),
             containers.len(),
         ),
@@ -910,7 +963,9 @@ fn add_runtime(runtimes: &mut Vec<RuntimeRecord>, name: &str, output: &str, path
 
 fn parse_docker_ps(output: &str, containers: &mut Vec<ContainerRecord>) -> bool {
     let mut valid = true;
+    let mut saw_row = false;
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
+        saw_row = true;
         let row: Result<serde_json::Value, _> = serde_json::from_str(line);
         let Ok(row) = row else {
             valid = false;
@@ -942,7 +997,7 @@ fn parse_docker_ps(output: &str, containers: &mut Vec<ContainerRecord>) -> bool 
             oci_source: None,
         });
     }
-    valid
+    valid && saw_row
 }
 
 #[cfg(test)]
@@ -951,9 +1006,9 @@ mod tests {
     use security_monitor_agent_protocol::{CheckKind, CheckStatus, decode_inventory};
 
     use super::{
-        AgentlessApproval, AgentlessCommand, CollectionError, ServerState, agentless_inventory,
-        parse_docker_ps, parse_os_release, parse_package_output, server_state_for_error,
-        server_state_for_inventory, with_timeout,
+        AgentlessApproval, AgentlessCommand, CollectionError, DiagnosticCode, ServerState,
+        agentless_inventory, parse_docker_ps, parse_os_release, parse_package_output,
+        server_state_for_error, server_state_for_inventory, with_timeout,
     };
     use crate::SshTarget;
 
@@ -1011,17 +1066,19 @@ mod tests {
             .expect("OS should parse");
         assert_eq!(os.id.as_deref(), Some("debian"));
         let packages = parse_package_output(
-            "libssl3\t3.0.11\tamd64\tinstall ok installed\nold-package\t1.0\tall\tdeinstall ok config-files\ninvalid\n",
+            b"libssl3\t3.0.11\tamd64\tinstall ok installed\nold-package\t1.0\tall\tdeinstall ok config-files\ninvalid\n",
             "deb",
             security_monitor_agent_protocol::PackageSource::Dpkg,
         );
-        assert_eq!(packages.len(), 1);
-        assert_eq!(packages[0].name, "libssl3");
+        assert_eq!(packages.records.len(), 1);
+        assert_eq!(packages.records[0].name, "libssl3");
+        assert!(packages.partial);
     }
 
     #[test]
     fn docker_output_requires_hex_ids_and_preserves_distinct_digests_when_present() {
         let mut containers = Vec::new();
+        assert!(!parse_docker_ps("", &mut containers));
         assert!(!parse_docker_ps(
             "{\"ID\":\"bad;id\",\"Names\":\"web\",\"Image\":\"web:latest\"}\n",
             &mut containers
@@ -1051,6 +1108,30 @@ mod tests {
     }
 
     #[test]
+    fn empty_docker_output_is_not_reported_as_a_complete_inventory() {
+        let target = SshTarget::new("fixture", "127.0.0.1", "app", 22, None).expect("target valid");
+        let now = Utc
+            .timestamp_opt(1_792_820_000, 0)
+            .single()
+            .expect("timestamp");
+        let inventory = agentless_inventory(
+            &target,
+            vec![(AgentlessCommand::DockerPs, Ok(Vec::new()))],
+            now,
+            true,
+        );
+        let check = inventory
+            .checks
+            .iter()
+            .find(|check| check.kind == CheckKind::Containers)
+            .expect("container check");
+
+        assert_eq!(check.status, CheckStatus::Partial);
+        assert_eq!(check.diagnostic, Some(DiagnosticCode::InvalidOutput));
+        assert!(inventory.validate().is_ok());
+    }
+
+    #[test]
     fn agentless_aggregation_has_one_check_per_category_and_keeps_missing_runtimes_partial() {
         let target = SshTarget::new("fixture", "127.0.0.1", "app", 22, None).expect("target valid");
         let now = Utc
@@ -1068,7 +1149,7 @@ mod tests {
                 (AgentlessCommand::RpmPackages, Err(CollectionError::Ssh)),
                 (
                     AgentlessCommand::ApkPackages,
-                    Ok(b"libssl\t3.0\tamd64\n".to_vec()),
+                    Ok(b"libssl-3.0.0-r0\n".to_vec()),
                 ),
                 (AgentlessCommand::NodeVersion, Ok(b"v20.0.0\n".to_vec())),
                 (AgentlessCommand::PhpVersion, Err(CollectionError::Ssh)),
@@ -1103,6 +1184,9 @@ mod tests {
                 .map(|check| check.status),
             Some(CheckStatus::Unavailable)
         );
+        assert!(inventory.packages.iter().any(|package| {
+            package.name == "libssl" && package.version.as_deref() == Some("3.0.0-r0")
+        }));
     }
 
     #[test]
