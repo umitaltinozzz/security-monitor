@@ -27,12 +27,12 @@ Security Monitor (`secmon`) is an open-source, local-first security monitor for 
 
 No account. No cloud dashboard. Source code, lockfiles, and inventory stay on your device unless you approve a specific transfer.
 
-> **Status: pre-release.** v1.0 is code complete; signed installers are not published yet. Build from source to try it. Missing, stale, or unverified data is always shown as *could not verify*, never as safe.
+> **Pre-release: 0.1.0.** The product is in active development; signed installers are not published. See the [feature status](docs/feature-status.md) for current scope. Missing, stale, or unsupported data is never shown as safe.
 
 ## What it does
 
-- **Finds vulnerable dependencies locally.** Lockfile inventory, offline OSV data, GHSA, CISA KEV and EPSS, plus OSV-Scanner, Trivy, and Semgrep adapters.
-- **Compares the repo with production.** A read-only Linux agent over pinned SSH reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries.
+- **Finds vulnerable dependencies locally.** Supported lockfile inventory is matched on-device against local advisory data, with optional OSV-Scanner, Trivy, and Semgrep adapters. Server OS packages are evaluated only for Debian and Ubuntu when collection is complete and local OSV data is fresh; other distributions are marked not evaluated.
+- **Compares the repo with production.** A read-only Linux agent over pinned SSH reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries. Each collection requires user approval.
 - **Warns before vulnerable code is pushed.** `secmon hook` checks only the changed lockfiles, offline, in under three seconds.
 - **Works with your coding agent.** One command connects Claude Code, Codex, or OpenCode to a local MCP server and Security Monitor skills.
 - **Prepares fixes you approve.** A local coding-agent CLI works in an isolated Git worktree with a filtered environment; project agent configuration files are refused. Test commands run in a network-disabled sandbox, and no change is applied without your approval.
@@ -43,7 +43,7 @@ No account. No cloud dashboard. Source code, lockfiles, and inventory stay on yo
 | --- | --- | --- | --- |
 | Account required | No | Yes | Varies |
 | Source code leaves your device | Only with explicit approval | Usually | No |
-| Sees what runs on your servers | Yes, read-only | Some, with cloud agents | No |
+| Sees what runs on your servers | With the read-only Linux agent and approved collection | Some, with cloud agents | No |
 | "Fixed in repo, still running in production" | Yes | Rarely | No |
 | Missing data shown as safe | Never | Varies | Varies |
 | Cost | Free, Apache-2.0 | Paid tiers | Free |
@@ -139,7 +139,7 @@ Screenshots come from the deterministic test fixture, not a real scan or server.
 
 Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Using it: [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
+- Using it: [Feature status](docs/feature-status.md) · [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
 - How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration](docs/orchestration.md)
 - Trust: [Privacy](docs/privacy.md) · [Threat model](docs/threat-model.md) · [Data sources](docs/data-sources.md) · [Signed releases and updates](docs/release.md) · [Performance budgets](docs/performance.md)
 

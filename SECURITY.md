@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security Monitor is under active development and has no stable release yet. Security fixes are currently made against the `main` branch. Do not rely on the current build as a production security control.
+Security Monitor is pre-release, version 0.1.0, and under active development. Security fixes are currently made against the `main` branch. Review the [feature status matrix](docs/feature-status.md) for implemented scope and unsupported features. Do not use this build as the sole production security control.
 
 ## Reporting a vulnerability
 
@@ -12,4 +12,4 @@ Include the affected commit or version, impact, and a minimal reproduction when 
 
 ## Security boundaries
 
-The project is incomplete. Current builds do not provide vulnerability scanning, production monitoring, or an operational Linux agent. Missing features and missing data must not be interpreted as a safe result.
+The desktop build provides local scans and approved Linux-agent collection over pinned SSH, within the limits listed in the feature status matrix. Debian and Ubuntu OS packages are evaluated only when package collection is complete and local OSV data is fresh; unsupported distributions are marked not evaluated. Missing, stale, or unsupported evidence must not be interpreted as a safe result. Notification delivery and agentless SSH collection are not available.

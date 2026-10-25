@@ -27,12 +27,12 @@ Security Monitor (`secmon`), projelerin ve Linux sunucuların için açık kayna
 
 Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli bir aktarımı onaylamadıkça cihazından çıkmaz.
 
-> **Durum: yayın öncesi.** v1.0'ın kodu tamamlandı; imzalı kurulum paketleri henüz yayımlanmadı. Denemek için kaynaktan derleyin. Eksik, eski veya doğrulanmamış veri her zaman *doğrulanamadı* olarak gösterilir, asla güvenli olarak değil.
+> **Yayın öncesi: 0.1.0.** Ürün geliştirme aşamasındadır; imzalı kurulum paketi yayımlanmadı. Güncel kapsam için [özellik durumuna](docs/feature-status.md) bakın. Eksik, eski veya desteklenmeyen veri hiçbir zaman güvenli gösterilmez.
 
 ## Ne yapar
 
-- **Açıklı bağımlılıkları yerelde bulur.** Lockfile envanteri, çevrimdışı OSV verisi, GHSA, CISA KEV ve EPSS; ayrıca OSV-Scanner, Trivy ve Semgrep adaptörleri.
-- **Repoyu production ile karşılaştırır.** Sabitlenmiş SSH üzerinden çalışan salt okunur Linux ajanı neyin kurulu olduğunu ve çalıştığını bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil.
+- **Açıklı bağımlılıkları yerelde bulur.** Desteklenen lockfile envanteri cihazda yerel duyuru verisiyle eşleştirilir; OSV-Scanner, Trivy ve Semgrep isteğe bağlı adaptörlerdir. Sunucu işletim sistemi paketleri yalnızca toplama eksiksiz ve yerel OSV verisi güncelse Debian ve Ubuntu için değerlendirilir; diğer dağıtımlar değerlendirilmemiş olarak gösterilir.
+- **Repoyu production ile karşılaştırır.** Sabitlenmiş SSH üzerinden çalışan salt okunur Linux ajanı kurulu ve çalışan bileşenleri bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil. Her toplama kullanıcı onayı ister.
 - **Açıklı kod push edilmeden önce uyarır.** `secmon hook` yalnızca değişen lockfile'lara, çevrimdışı ve üç saniyenin altında bakar.
 - **Kodlama ajanınla çalışır.** Tek komut Claude Code, Codex veya OpenCode'u yerel MCP sunucusuna ve Security Monitor skill'lerine bağlar.
 - **Onayladığın düzeltmeleri hazırlar.** Yerel kodlama ajanı filtrelenmiş ortamla izole bir Git worktree'de çalışır; projedeki ajan yapılandırmaları varsa çalışma reddedilir. Test komutları ağ erişimi kapalı sandbox'ta çalışır ve onayın olmadan hiçbir değişiklik uygulanmaz.
@@ -43,7 +43,7 @@ Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli b
 | --- | --- | --- | --- |
 | Hesap gerekir mi | Hayır | Evet | Değişir |
 | Kaynak kod cihazdan çıkar mı | Yalnızca açık onayla | Genellikle | Hayır |
-| Sunucunda çalışanı görür mü | Evet, salt okunur | Bazıları, bulut ajanlarıyla | Hayır |
+| Sunucunda çalışanı görür mü | Salt okunur Linux ajanı ve onaylı toplamayla | Bazıları, bulut ajanlarıyla | Hayır |
 | "Repoda düzeldi, production'da hâlâ çalışıyor" | Evet | Nadiren | Hayır |
 | Eksik veriyi güvenli gösterir mi | Asla | Değişir | Değişir |
 | Maliyet | Ücretsiz, Apache-2.0 | Ücretli planlar | Ücretsiz |
@@ -139,7 +139,7 @@ Ekran görüntüleri gerçek bir taramadan veya sunucudan değil, deterministik 
 
 Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Kullanım: [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
+- Kullanım: [Özellik durumu](docs/feature-status.md) · [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
 - Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu](docs/orchestration.md)
 - Güven: [Gizlilik](docs/privacy.md) · [Tehdit modeli](docs/threat-model.md) · [Veri kaynakları](docs/data-sources.md) · [İmzalı sürümler ve güncellemeler](docs/release.md) · [Performans bütçeleri](docs/performance.md)
 

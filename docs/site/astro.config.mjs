@@ -35,6 +35,7 @@ export default defineConfig({
         {
           label: 'Product',
           items: [
+            { label: 'Feature status', link: '/feature-status/' },
             { label: 'Architecture', link: '/architecture/' },
             { label: 'Threat model', link: '/threat-model/' },
             { label: 'Privacy', link: '/privacy/' },

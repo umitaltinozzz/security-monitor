@@ -1,23 +1,23 @@
 ---
 title: Architecture
-description: Current implementation, target components, and trust boundaries.
+description: Current implementation, feature scope, and trust boundaries.
 ---
 
 # Architecture
 
 ## Current implementation
 
-The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains the Tauri 2 + React application, and `apps/cli` contains the `secmon` binary for local scans, reports, advisory refresh, diagnostics, approved server collection, Git hooks, agent integrations, and the local MCP server. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local scan orchestration with tray scheduling and file watching, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). Notification delivery is not available in the desktop build. The desktop and CLI share a local SQLite memory store for untrusted notes across supported coding agents.
+The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains the Tauri 2 + React application, and `apps/cli` contains the `secmon` binary for local scans, reports, advisory refresh, diagnostics, approved server collection, Git hooks, agent integrations, and the local MCP server. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local scan orchestration with tray scheduling and file watching, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). Notification delivery is not available in the desktop build. The desktop and CLI share a local SQLite memory store for untrusted notes across supported coding agents. See the [feature status matrix](feature-status.md) for maturity and limits.
 
 | Component | Responsibility |
 | --- | --- |
 | `crates/agent-protocol` | Versioned bounded inventory document and generated JSON Schema. |
 | `crates/agent-transport` | Pinned SSH connections, dedicated key pairing, SSH config parsing, and local project association suggestions. Agentless collection is not available in the product. |
-| `agents/linux` | Root-free Linux collection for OS packages, runtimes, processes, services, containers, selected lockfiles, and deployment identity. |
+| `agents/linux` | Root-free Linux collection for OS packages, runtimes, processes, services, containers, selected lockfiles, and deployment identity. The desktop evaluates OS packages only for Debian and Ubuntu; other distributions are not evaluated. |
 
-## Target architecture
+## Current data flow
 
-The target is a local application that stores project and deployment observations in SQLite, with the desktop app and CLI using shared Rust services. Repository inventory and lockfiles are parsed locally. Advisory feeds and scanner adapters populate normalized evidence through narrowly scoped provider crates. A read-only Linux agent may return a fixed inventory protocol over SSH. Optional AI receives only approved, redacted metadata and uses a restricted tool set.
+The desktop app and CLI use shared Rust services and store project and deployment observations in SQLite. Repository inventory and lockfiles are parsed locally. Advisory feeds and scanner adapters populate normalized evidence through narrowly scoped provider crates. The desktop pairs with a read-only Linux agent over pinned SSH and requires approval for each collection. Optional AI receives only approved, redacted metadata and uses a restricted tool set. Current maturity and limits are listed in the [feature status matrix](feature-status.md).
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ flowchart TD
   DB --> AI[Optional approved AI workflow]
 ```
 
-This is the target, not a claim that the desktop pairing flow exists. Network-capable components must use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions.
+The desktop implements project management and Linux-agent pairing over pinned SSH; each server inventory collection requires user approval. Network-capable components use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions. Notification delivery and agentless SSH collection are not available in the desktop product.
 
 ## Trust boundaries
 

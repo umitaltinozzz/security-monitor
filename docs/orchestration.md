@@ -27,7 +27,7 @@ Parent-folder discovery returns canonical project candidates for user review. It
 
 ## Notifications
 
-Notification delivery is not available in the desktop build. The notification transport crate has no app channel setup or UI, so the app does not send desktop alerts, webhooks, Slack, Discord, or email. The Settings page states this directly.
+Notification delivery is not available in the desktop build. The notification transport crate has no app channel setup or UI, so the app does not send desktop alerts, webhooks, Slack, Discord, or email. The Settings page states this directly; see the [feature status matrix](feature-status.md).
 
 ## Verification fixtures
 

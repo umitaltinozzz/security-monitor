@@ -7,6 +7,7 @@ const sourceDirectory = resolve(scriptDirectory, '../..');
 const contentDirectory = resolve(scriptDirectory, '../src/content/docs');
 const publicPages = [
   'index.md',
+  'feature-status.md',
   'getting-started.md',
   'architecture.md',
   'threat-model.md',
