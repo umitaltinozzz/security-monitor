@@ -46,19 +46,23 @@ impl GitCommandSafety {
         })
     }
 
-    fn environment(&self) -> [(&'static str, &std::ffi::OsStr); 11] {
+    fn environment(&self) -> [(&'static str, &std::ffi::OsStr); 15] {
         [
             ("GIT_CONFIG_NOSYSTEM", "1".as_ref()),
             ("GIT_CONFIG_GLOBAL", self.empty_file.as_os_str()),
             ("GIT_ATTR_NOSYSTEM", "1".as_ref()),
-            ("GIT_CONFIG_COUNT", "3".as_ref()),
+            ("GIT_CONFIG_COUNT", "4".as_ref()),
             ("GIT_CONFIG_KEY_0", "core.hooksPath".as_ref()),
             ("GIT_CONFIG_VALUE_0", self.hooks_directory.as_os_str()),
             ("GIT_CONFIG_KEY_1", "core.fsmonitor".as_ref()),
             ("GIT_CONFIG_VALUE_1", "false".as_ref()),
             ("GIT_CONFIG_KEY_2", "core.attributesFile".as_ref()),
             ("GIT_CONFIG_VALUE_2", self.empty_file.as_os_str()),
+            ("GIT_CONFIG_KEY_3", "core.sshCommand".as_ref()),
+            ("GIT_CONFIG_VALUE_3", "".as_ref()),
             ("GIT_TERMINAL_PROMPT", "0".as_ref()),
+            ("GIT_NO_LAZY_FETCH", "1".as_ref()),
+            ("GIT_ALLOW_PROTOCOL", "".as_ref()),
         ]
     }
 

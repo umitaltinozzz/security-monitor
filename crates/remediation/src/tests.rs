@@ -1,5 +1,5 @@
 use super::*;
-use std::{fs, process::Command as StdCommand};
+use std::{collections::BTreeMap, fs, process::Command as StdCommand};
 use tempfile::TempDir;
 
 fn fixture_repository() -> (TempDir, PathBuf) {
@@ -50,6 +50,45 @@ fn copy_tree(from: &Path, to: &Path) {
             fs::copy(entry.path(), dest).unwrap();
         }
     }
+}
+
+#[test]
+fn git_command_safety_blocks_ssh_and_promisor_fetches() {
+    let safety = GitCommandSafety::create().unwrap();
+    let mut command = StdCommand::new("git");
+    command
+        .env("GIT_CONFIG_PARAMETERS", "'core.sshCommand=untrusted'")
+        .env("GIT_NO_LAZY_FETCH", "0")
+        .env("GIT_ALLOW_PROTOCOL", "ssh:file");
+    safety.configure_std(&mut command);
+
+    let environment = command
+        .get_envs()
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.map(|value| value.to_string_lossy().into_owned()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        environment.get("GIT_NO_LAZY_FETCH"),
+        Some(&Some("1".into()))
+    );
+    assert_eq!(
+        environment.get("GIT_ALLOW_PROTOCOL"),
+        Some(&Some(String::new()))
+    );
+    assert_eq!(environment.get("GIT_CONFIG_COUNT"), Some(&Some("4".into())));
+    assert_eq!(
+        environment.get("GIT_CONFIG_KEY_3"),
+        Some(&Some("core.sshCommand".into()))
+    );
+    assert_eq!(
+        environment.get("GIT_CONFIG_VALUE_3"),
+        Some(&Some(String::new()))
+    );
+    assert_eq!(environment.get("GIT_CONFIG_PARAMETERS"), Some(&None));
 }
 
 async fn git(root: &Path, args: &[&str]) -> String {
