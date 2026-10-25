@@ -54,7 +54,7 @@ fn sandbox_user(worktree: &Path) -> Result<String, RemediationError> {
         use std::os::unix::fs::MetadataExt;
 
         let metadata = fs::metadata(worktree).map_err(|_| RemediationError::FilesystemFailed)?;
-        return Ok(format!("{}:{}", metadata.uid(), metadata.gid()));
+        Ok(format!("{}:{}", metadata.uid(), metadata.gid()))
     }
     #[cfg(windows)]
     {
