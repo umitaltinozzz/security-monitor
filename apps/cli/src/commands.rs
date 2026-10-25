@@ -86,7 +86,8 @@ pub async fn run_scan(
     if !root.is_dir() {
         return Err("project_path_invalid");
     }
-    let (database_path, app_data) = database_locations(database_path);
+    let (database_path, app_data) =
+        database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
     fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
     let database = Database::open(&database_path)
         .await
@@ -135,7 +136,8 @@ pub async fn run_report(
     project_id: Option<&str>,
 ) -> Result<i32, &'static str> {
     let format = ReportFormat::parse(format).ok_or("invalid_report_format")?;
-    let (database_path, _) = database_locations(database_path);
+    let (database_path, _) =
+        database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
     let database = Database::open_read_only(database_path)
         .await
         .map_err(|_| "database_unavailable")?;
@@ -151,7 +153,8 @@ pub async fn run_database_update(
     database_path: Option<PathBuf>,
     ecosystems: Vec<String>,
 ) -> Result<i32, &'static str> {
-    let (_, app_data) = database_locations(database_path);
+    let (_, app_data) =
+        database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
     let settings = load_settings(&app_data);
     if !settings.public_downloads_enabled {
         return Err("public_downloads_disabled");
@@ -187,7 +190,8 @@ pub async fn run_database_update(
 }
 
 pub async fn run_doctor(database_path: Option<PathBuf>) -> Result<i32, &'static str> {
-    let (database_path, app_data) = database_locations(database_path);
+    let (database_path, app_data) =
+        database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
     let mut needs_review = false;
     if !database_path.is_file() {
         println!("database: missing (needs_review)");
@@ -296,7 +300,8 @@ pub async fn run_server_collect(
     if !transfer_approved {
         return Err("explicit_transfer_approval_required");
     }
-    let (database_path, app_data) = database_locations(database_path);
+    let (database_path, app_data) =
+        database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
     fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
     let database = Database::open(&database_path)
         .await
@@ -636,7 +641,8 @@ async fn hook_scan(
 ) -> Result<i32, &'static str> {
     let root = std::env::current_dir().map_err(|_| "project_path_invalid")?;
     if pre_push || pre_commit {
-        let (database_path, app_data) = database_locations(database_path);
+        let (database_path, app_data) =
+            database_locations(database_path).map_err(|_| "app_data_directory_unavailable")?;
         fs::create_dir_all(&app_data).map_err(|_| "storage_unavailable")?;
         super::hooks::scan_changed_inputs(&root, &database_path, &app_data, pre_push, fail_on).await
     } else {

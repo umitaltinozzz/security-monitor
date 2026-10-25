@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use security_monitor_agent_protocol::AgentInventory;
 use uuid::Uuid;
@@ -9,6 +13,17 @@ pub enum AppDataPlatform {
     MacOs,
     Xdg,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppDataDirError;
+
+impl fmt::Display for AppDataDirError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("application data directory is unavailable")
+    }
+}
+
+impl Error for AppDataDirError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerSnapshotError {
@@ -22,26 +37,32 @@ pub fn resolve_app_data_dir(
     app_data: Option<&Path>,
     xdg_data_home: Option<&Path>,
     home: Option<&Path>,
-    temporary: &Path,
-) -> PathBuf {
+) -> Result<PathBuf, AppDataDirError> {
+    let app_data = app_data.filter(|path| path.is_absolute());
+    let xdg_data_home = xdg_data_home.filter(|path| path.is_absolute());
+    let home = home.filter(|path| path.is_absolute());
     match platform {
         AppDataPlatform::Windows => app_data
-            .unwrap_or(temporary)
-            .join("org.securitymonitor.desktop"),
+            .map(Path::to_path_buf)
+            .or_else(|| home.map(|path| path.join("AppData").join("Roaming")))
+            .map(|path| path.join("org.securitymonitor.desktop"))
+            .ok_or(AppDataDirError),
         AppDataPlatform::MacOs => home
-            .unwrap_or(temporary)
-            .join("Library")
-            .join("Application Support")
-            .join("org.securitymonitor.desktop"),
+            .map(|path| {
+                path.join("Library")
+                    .join("Application Support")
+                    .join("org.securitymonitor.desktop")
+            })
+            .ok_or(AppDataDirError),
         AppDataPlatform::Xdg => xdg_data_home
             .map(Path::to_path_buf)
-            .unwrap_or_else(|| home.unwrap_or(temporary).join(".local").join("share"))
-            .join("org.securitymonitor.desktop"),
+            .or_else(|| home.map(|path| path.join(".local").join("share")))
+            .map(|path| path.join("org.securitymonitor.desktop"))
+            .ok_or(AppDataDirError),
     }
 }
 
-pub fn default_app_data_dir() -> PathBuf {
-    let temporary = std::env::temp_dir();
+pub fn default_app_data_dir() -> Result<PathBuf, AppDataDirError> {
     #[cfg(target_os = "windows")]
     let platform = AppDataPlatform::Windows;
     #[cfg(target_os = "macos")]
@@ -53,22 +74,35 @@ pub fn default_app_data_dir() -> PathBuf {
         platform,
         std::env::var_os("APPDATA").as_deref().map(Path::new),
         std::env::var_os("XDG_DATA_HOME").as_deref().map(Path::new),
+        #[cfg(target_os = "windows")]
+        std::env::var_os("USERPROFILE").as_deref().map(Path::new),
+        #[cfg(not(target_os = "windows"))]
         std::env::var_os("HOME").as_deref().map(Path::new),
-        &temporary,
     )
 }
 
-pub fn default_database_path() -> PathBuf {
-    default_app_data_dir().join("security-monitor.sqlite3")
+pub fn default_database_path() -> Result<PathBuf, AppDataDirError> {
+    Ok(default_app_data_dir()?.join("security-monitor.sqlite3"))
 }
 
-pub fn database_locations(database_path: Option<PathBuf>) -> (PathBuf, PathBuf) {
-    let database_path = database_path.unwrap_or_else(default_database_path);
-    let app_data = database_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(default_app_data_dir);
-    (database_path, app_data)
+pub fn database_locations(
+    database_path: Option<PathBuf>,
+) -> Result<(PathBuf, PathBuf), AppDataDirError> {
+    match database_path {
+        Some(database_path) => {
+            let app_data = database_path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(Path::to_path_buf)
+                .map(Ok)
+                .unwrap_or_else(|| std::env::current_dir().map_err(|_| AppDataDirError))?;
+            Ok((database_path, app_data))
+        }
+        None => {
+            let app_data = default_app_data_dir()?;
+            Ok((app_data.join("security-monitor.sqlite3"), app_data))
+        }
+    }
 }
 
 pub fn app_data_dir_for_build(app_data_dir: &Path, debug_build: bool) -> PathBuf {
@@ -114,35 +148,28 @@ mod tests {
 
     #[test]
     fn app_data_paths_preserve_platform_layout_and_build_isolation() {
+        let root = std::env::current_dir().unwrap();
+        let app_data = root.join("appdata");
+        let home = root.join("home");
         assert_eq!(
-            resolve_app_data_dir(
-                AppDataPlatform::Windows,
-                Some(Path::new("appdata")),
-                None,
-                None,
-                Path::new("temp"),
-            ),
-            Path::new("appdata/org.securitymonitor.desktop")
+            resolve_app_data_dir(AppDataPlatform::Windows, Some(&app_data), None, None,),
+            Ok(app_data.join("org.securitymonitor.desktop"))
         );
         assert_eq!(
-            resolve_app_data_dir(
-                AppDataPlatform::MacOs,
-                None,
-                None,
-                Some(Path::new("home")),
-                Path::new("temp"),
-            ),
-            Path::new("home/Library/Application Support/org.securitymonitor.desktop")
+            resolve_app_data_dir(AppDataPlatform::MacOs, None, None, Some(&home),),
+            Ok(home.join("Library/Application Support/org.securitymonitor.desktop"))
         );
         assert_eq!(
-            resolve_app_data_dir(
-                AppDataPlatform::Xdg,
-                None,
-                None,
-                Some(Path::new("home")),
-                Path::new("temp"),
-            ),
-            Path::new("home/.local/share/org.securitymonitor.desktop")
+            resolve_app_data_dir(AppDataPlatform::Xdg, None, None, Some(&home),),
+            Ok(home.join(".local/share/org.securitymonitor.desktop"))
+        );
+        assert_eq!(
+            resolve_app_data_dir(AppDataPlatform::Windows, None, None, Some(&home)),
+            Ok(home.join("AppData/Roaming/org.securitymonitor.desktop"))
+        );
+        assert_eq!(
+            resolve_app_data_dir(AppDataPlatform::Xdg, None, Some(&app_data), Some(&home)),
+            Ok(app_data.join("org.securitymonitor.desktop"))
         );
         assert_eq!(
             app_data_dir_for_build(Path::new("app-data"), true),
@@ -151,6 +178,31 @@ mod tests {
         assert_eq!(
             app_data_dir_for_build(Path::new("app-data"), false),
             Path::new("app-data")
+        );
+    }
+
+    #[test]
+    fn missing_or_relative_platform_directories_never_fall_back_to_temporary_storage() {
+        assert_eq!(
+            resolve_app_data_dir(AppDataPlatform::Windows, None, None, None),
+            Err(AppDataDirError)
+        );
+        assert_eq!(
+            resolve_app_data_dir(AppDataPlatform::MacOs, None, None, None),
+            Err(AppDataDirError)
+        );
+        assert_eq!(
+            resolve_app_data_dir(AppDataPlatform::Xdg, None, None, None),
+            Err(AppDataDirError)
+        );
+        assert_eq!(
+            resolve_app_data_dir(
+                AppDataPlatform::Xdg,
+                None,
+                Some(Path::new("relative-xdg")),
+                Some(Path::new("relative-home")),
+            ),
+            Err(AppDataDirError)
         );
     }
 

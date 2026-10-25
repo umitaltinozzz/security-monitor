@@ -229,7 +229,8 @@ async fn run_mcp(database: Option<PathBuf>, agent: &str) -> Result<(), &'static 
     {
         return Err("invalid_agent");
     }
-    let (database_path, _) = database_locations(database);
+    let (database_path, _) =
+        database_locations(database).map_err(|_| "app_data_directory_unavailable")?;
     let database_path = database_path
         .canonicalize()
         .map_err(|_| "database_unavailable")?;
