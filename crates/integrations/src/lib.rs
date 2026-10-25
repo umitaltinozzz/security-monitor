@@ -172,6 +172,7 @@ mod opencode;
 mod service;
 #[cfg(test)]
 mod tests;
+mod uninstall;
 
 pub(crate) use common::*;
 #[cfg(test)]

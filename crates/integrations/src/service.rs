@@ -1,3 +1,4 @@
+use super::uninstall::{ManagedRemoval, remove_managed_config};
 use super::*;
 
 pub struct IntegrationService<S: CredentialStore> {
@@ -155,46 +156,53 @@ impl<S: CredentialStore> IntegrationService<S> {
             return Err(IntegrationError::StateUnavailable);
         }
 
-        let mut current = Vec::with_capacity(manifest.entries.len());
+        let mut mutations = Vec::new();
         for entry in &manifest.entries {
             let contents = read_scoped(&root, &entry.relative_path)?;
-            let installed = contents
-                .as_deref()
-                .is_some_and(|value| sha256(value) == entry.installed_sha256);
-            let already_restored = match (contents.as_deref(), entry.original_sha256.as_deref()) {
-                (Some(value), Some(expected)) => sha256(value) == expected,
-                (None, None) => true,
-                _ => false,
-            };
-            if !installed && !already_restored {
-                return Err(IntegrationError::ModifiedAfterInstall);
+            match remove_managed_config(
+                agent,
+                scope,
+                &entry.relative_path,
+                contents.as_deref(),
+                entry.existed_before,
+            )? {
+                ManagedRemoval::Managed(desired) => {
+                    if contents != desired {
+                        mutations.push((entry, contents, desired));
+                    }
+                }
+                ManagedRemoval::NotManaged => {
+                    let installed = contents
+                        .as_deref()
+                        .is_some_and(|value| sha256(value) == entry.installed_sha256);
+                    let already_restored =
+                        match (contents.as_deref(), entry.original_sha256.as_deref()) {
+                            (Some(value), Some(expected)) => sha256(value) == expected,
+                            (None, None) => true,
+                            _ => false,
+                        };
+                    if installed {
+                        let original = if entry.existed_before {
+                            Some(load_backup(&self.credential_store, entry)?)
+                        } else {
+                            None
+                        };
+                        mutations.push((entry, contents, original));
+                    } else if !already_restored {
+                        return Err(IntegrationError::ModifiedAfterInstall);
+                    }
+                }
             }
-            current.push(contents);
         }
 
-        let mut restore = Vec::with_capacity(manifest.entries.len());
-        for (index, entry) in manifest.entries.iter().enumerate() {
-            if current[index]
-                .as_deref()
-                .is_some_and(|value| sha256(value) == entry.installed_sha256)
-            {
-                let original = if entry.existed_before {
-                    Some(load_backup(&self.credential_store, entry)?)
-                } else {
-                    None
-                };
-                restore.push((entry, original));
-            }
-        }
-
-        let mut restored = Vec::<(&ManifestEntry, Option<Vec<u8>>)>::new();
-        for (entry, original) in &restore {
-            let target_result = match original {
+        let mut applied = Vec::<(&ManifestEntry, Option<Vec<u8>>)>::new();
+        for (entry, previous, desired) in &mutations {
+            let target_result = match desired {
                 Some(contents) => write_scoped(&root, &entry.relative_path, contents),
                 None => remove_scoped(&root, &entry.relative_path),
             };
             if let Err(error) = target_result {
-                for (prior, previous) in restored.iter().rev() {
+                for (prior, previous) in applied.iter().rev() {
                     if let Some(previous) = previous {
                         let _ = write_scoped(&root, &prior.relative_path, previous);
                     } else {
@@ -203,12 +211,7 @@ impl<S: CredentialStore> IntegrationService<S> {
                 }
                 return Err(error);
             }
-            let old_current = manifest
-                .entries
-                .iter()
-                .position(|candidate| candidate.relative_path == entry.relative_path)
-                .and_then(|position| current[position].clone());
-            restored.push((entry, old_current));
+            applied.push((entry, previous.clone()));
         }
 
         for entry in &manifest.entries {

@@ -200,6 +200,38 @@ fn generated_agent_configs_match_vendor_supported_shapes() {
 }
 
 #[test]
+fn json_merge_preserves_existing_key_order() {
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        project.path().join(".mcp.json"),
+        br#"{"z":1,"mcpServers":{"other":{"command":"other"}},"a":2}"#,
+    )
+    .unwrap();
+    let service = IntegrationService::new(MemoryCredentialStore::default());
+
+    let plan = service
+        .plan(
+            Agent::ClaudeCode,
+            Scope::Project,
+            home.path(),
+            Some(project.path()),
+        )
+        .unwrap();
+    let merged = String::from_utf8(
+        plan.changes
+            .iter()
+            .find(|change| change.relative_path == Path::new(".mcp.json"))
+            .unwrap()
+            .after
+            .clone(),
+    )
+    .unwrap();
+    assert!(merged.find("\"z\"").unwrap() < merged.find("\"mcpServers\"").unwrap());
+    assert!(merged.find("\"mcpServers\"").unwrap() < merged.find("\"a\"").unwrap());
+}
+
+#[test]
 fn json_agent_hook_merge_does_not_duplicate_the_secmon_handler() {
     let handler = json!({
         "type": "command",
@@ -235,7 +267,7 @@ fn json_agent_hook_merge_does_not_duplicate_the_secmon_handler() {
 }
 
 #[test]
-fn install_and_remove_restore_existing_files_byte_for_byte_without_file_backup_secrets() {
+fn install_and_remove_preserve_existing_values_without_file_backup_secrets() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let project_root = project.path();
@@ -252,8 +284,6 @@ fn install_and_remove_restore_existing_files_byte_for_byte_without_file_backup_s
             "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"keep-me\"}]}]}}",
         )
         .unwrap();
-    let original_config = fs::read(&config_path).unwrap();
-    let original_hooks = fs::read(&hooks_path).unwrap();
     let store = MemoryCredentialStore::default();
     let service = IntegrationService::new(store.clone());
     let plan = service
@@ -293,14 +323,77 @@ fn install_and_remove_restore_existing_files_byte_for_byte_without_file_backup_s
             Some(project_root),
         )
         .unwrap();
-    assert_eq!(fs::read(config_path).unwrap(), original_config);
-    assert_eq!(fs::read(hooks_path).unwrap(), original_hooks);
+    let removed_config: toml::Value =
+        toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        removed_config["mcp_servers"]["other"]["command"].as_str(),
+        Some("other")
+    );
+    assert!(removed_config["mcp_servers"].get("secmon").is_none());
+    assert!(
+        fs::read_to_string(&config_path)
+            .unwrap()
+            .contains("keep formatting exactly on remove")
+    );
+    let removed_hooks: Value = serde_json::from_slice(&fs::read(&hooks_path).unwrap()).unwrap();
+    assert_eq!(
+        removed_hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "keep-me"
+    );
     assert!(!project_root.join(".agents/skills/secmon/SKILL.md").exists());
     assert!(store.values.lock().unwrap().is_empty());
 }
 
 #[test]
-fn large_claude_configuration_is_chunked_under_the_windows_keyring_limit_and_restored() {
+fn codex_uninstall_preserves_comments_and_values_added_after_install() {
+    use std::io::Write as _;
+
+    let home = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let config_path = project.path().join(".codex/config.toml");
+    fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+    fs::write(
+        &config_path,
+        "# keep this comment\n[mcp_servers.other]\ncommand = \"other\"\n",
+    )
+    .unwrap();
+    let service = IntegrationService::new(MemoryCredentialStore::default());
+    service
+        .install(
+            Agent::Codex,
+            Scope::Project,
+            home.path(),
+            Some(project.path()),
+        )
+        .unwrap();
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&config_path)
+        .unwrap()
+        .write_all(b"\n[custom]\nvalue = \"added after install\"\n")
+        .unwrap();
+
+    service
+        .remove(
+            Agent::Codex,
+            Scope::Project,
+            home.path(),
+            Some(project.path()),
+        )
+        .unwrap();
+
+    let after = fs::read_to_string(config_path).unwrap();
+    let parsed: toml::Value = toml::from_str(&after).unwrap();
+    assert!(parsed["mcp_servers"].get("secmon").is_none());
+    assert_eq!(
+        parsed["custom"]["value"].as_str(),
+        Some("added after install")
+    );
+    assert!(after.contains("keep this comment"));
+}
+
+#[test]
+fn large_claude_configuration_is_chunked_and_only_secmon_is_removed() {
     let home = tempfile::tempdir().unwrap();
     let config_path = home.path().join(".claude.json");
     let original = serde_json::to_vec(&json!({"other": {"value": "x".repeat(8192)}})).unwrap();
@@ -325,7 +418,9 @@ fn large_claude_configuration_is_chunked_under_the_windows_keyring_limit_and_res
     service
         .remove(Agent::ClaudeCode, Scope::User, home.path(), None)
         .unwrap();
-    assert_eq!(fs::read(config_path).unwrap(), original);
+    let after: Value = serde_json::from_slice(&fs::read(config_path).unwrap()).unwrap();
+    assert_eq!(after["other"]["value"], "x".repeat(8192));
+    assert!(after.get("mcpServers").is_none());
     assert!(store.values.lock().unwrap().is_empty());
 }
 
@@ -366,8 +461,39 @@ fn every_agent_restores_existing_config_bytes_after_remove() {
         service
             .remove(agent, Scope::Project, home.path(), Some(root))
             .unwrap();
-        assert_eq!(fs::read(root.join(mcp_path)).unwrap(), mcp_before);
-        assert_eq!(fs::read(root.join(hook_path)).unwrap(), hook_before);
+        let mcp_after = fs::read(root.join(&mcp_path)).unwrap();
+        match spec.mcp_format.as_str() {
+            "codex_toml" => {
+                let parsed: toml::Value =
+                    toml::from_str(std::str::from_utf8(&mcp_after).unwrap()).unwrap();
+                assert!(parsed["mcp_servers"].get("secmon").is_none());
+                assert!(
+                    String::from_utf8(mcp_after)
+                        .unwrap()
+                        .contains("preserve this comment")
+                );
+            }
+            _ => {
+                let parsed: Value = serde_json::from_slice(&mcp_after).unwrap();
+                let section = if spec.mcp_format == "claude_json" {
+                    "mcpServers"
+                } else {
+                    "mcp"
+                };
+                assert!(parsed[section].get("secmon").is_none());
+            }
+        }
+        if spec.hook_format == "opencode_plugin" {
+            assert_eq!(fs::read(root.join(&hook_path)).unwrap(), hook_before);
+        } else {
+            let hook_after: Value =
+                serde_json::from_slice(&fs::read(root.join(&hook_path)).unwrap()).unwrap();
+            assert!(
+                !hook_after
+                    .to_string()
+                    .contains("secmon hook run --agent-event")
+            );
+        }
         assert!(
             !root
                 .join(scoped_path(&spec, "skill", Scope::Project).unwrap())
@@ -390,8 +516,6 @@ fn remove_can_retry_after_credential_cleanup_partially_fails() {
     )
     .unwrap();
     fs::write(&hooks_path, br#"{"hooks":{"SessionStart":[]}}"#).unwrap();
-    let original_config = fs::read(&config_path).unwrap();
-    let original_hooks = fs::read(&hooks_path).unwrap();
     let store = MemoryCredentialStore::default();
     let service = IntegrationService::new(store.clone());
     service
@@ -413,8 +537,24 @@ fn remove_can_retry_after_credential_cleanup_partially_fails() {
         ),
         Err(IntegrationError::BackupUnavailable)
     ));
-    assert_eq!(fs::read(&config_path).unwrap(), original_config);
-    assert_eq!(fs::read(&hooks_path).unwrap(), original_hooks);
+    let config_after_first_remove: Value =
+        serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        config_after_first_remove["mcpServers"]["other"]["command"],
+        "other"
+    );
+    assert!(
+        config_after_first_remove["mcpServers"]
+            .get("secmon")
+            .is_none()
+    );
+    let hooks_after_first_remove: Value =
+        serde_json::from_slice(&fs::read(&hooks_path).unwrap()).unwrap();
+    assert!(
+        !hooks_after_first_remove
+            .to_string()
+            .contains("secmon hook run --agent-event")
+    );
 
     service
         .remove(
@@ -425,12 +565,23 @@ fn remove_can_retry_after_credential_cleanup_partially_fails() {
         )
         .unwrap();
     assert!(store.values.lock().unwrap().is_empty());
-    assert_eq!(fs::read(&config_path).unwrap(), original_config);
-    assert_eq!(fs::read(&hooks_path).unwrap(), original_hooks);
+    let config_after_retry: Value =
+        serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        config_after_retry["mcpServers"]["other"]["command"],
+        "other"
+    );
+    assert!(config_after_retry["mcpServers"].get("secmon").is_none());
+    let hooks_after_retry: Value = serde_json::from_slice(&fs::read(&hooks_path).unwrap()).unwrap();
+    assert!(
+        !hooks_after_retry
+            .to_string()
+            .contains("secmon hook run --agent-event")
+    );
 }
 
 #[test]
-fn remove_refuses_to_overwrite_user_edits_after_install() {
+fn remove_preserves_user_edits_and_removes_only_secmon_entries() {
     let home = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let service = IntegrationService::new(MemoryCredentialStore::default());
@@ -442,19 +593,41 @@ fn remove_refuses_to_overwrite_user_edits_after_install() {
             Some(project.path()),
         )
         .unwrap();
-    fs::write(project.path().join(".mcp.json"), "{\"user_edit\":true}").unwrap();
-    assert!(matches!(
-        service.remove(
+    let mcp_path = project.path().join(".mcp.json");
+    let mut mcp: Value = serde_json::from_slice(&fs::read(&mcp_path).unwrap()).unwrap();
+    mcp["user_edit"] = json!(true);
+    fs::write(&mcp_path, serde_json::to_vec_pretty(&mcp).unwrap()).unwrap();
+    let hook_path = project.path().join(".claude/settings.json");
+    let mut hooks: Value = serde_json::from_slice(&fs::read(&hook_path).unwrap()).unwrap();
+    hooks["hooks"]["SessionStart"] = json!([{"hooks":[{"type":"command","command":"keep-me"}]}]);
+    hooks["hooks"]["MalformedEvent"] = json!("preserve this user value");
+    fs::write(&hook_path, serde_json::to_vec_pretty(&hooks).unwrap()).unwrap();
+
+    service
+        .remove(
             Agent::ClaudeCode,
             Scope::Project,
             home.path(),
-            Some(project.path())
-        ),
-        Err(IntegrationError::ModifiedAfterInstall)
-    ));
+            Some(project.path()),
+        )
+        .unwrap();
+
+    let remaining_mcp: Value = serde_json::from_slice(&fs::read(mcp_path).unwrap()).unwrap();
+    assert_eq!(remaining_mcp["user_edit"], true);
+    assert!(remaining_mcp.get("mcpServers").is_none());
+    let remaining_hooks: Value = serde_json::from_slice(&fs::read(hook_path).unwrap()).unwrap();
     assert_eq!(
-        fs::read_to_string(project.path().join(".mcp.json")).unwrap(),
-        "{\"user_edit\":true}"
+        remaining_hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "keep-me"
+    );
+    assert_eq!(
+        remaining_hooks["hooks"]["MalformedEvent"],
+        "preserve this user value"
+    );
+    assert!(
+        !remaining_hooks
+            .to_string()
+            .contains("secmon hook run --agent-event")
     );
 }
 
