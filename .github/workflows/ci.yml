@@ -30,21 +30,20 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 10.27.0
 
       - name: Set up Windows Dev Drive
         if: runner.os == 'Windows'
-        uses: samypr100/setup-dev-drive@v4
+        uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4
         with:
           drive-size: 14GB
           env-mapping: |
@@ -61,20 +60,20 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "TMP=$testTemp"
 
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v2
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
         with:
           components: rustfmt, clippy
           cache: false
 
       - name: Cache Rust build artifacts
         if: runner.os != 'Windows'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: security-monitor-${{ runner.os }}
 
       - name: Cache Windows Rust build artifacts
         if: runner.os == 'Windows'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: security-monitor-Windows-devdrive-v2
           cache-targets: false
@@ -112,7 +111,7 @@ jobs:
         run: cargo clean --profile test
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2.87.31
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-deny@0.20.2
 
