@@ -1129,6 +1129,12 @@ async fn service_uses_local_caches_and_persists_one_enriched_finding_offline() {
             .iter()
             .any(|provider| provider.provider == "cve.now" && !provider.stale)
     );
+    assert!(
+        !report
+            .provider_freshness
+            .iter()
+            .any(|provider| provider.provider == "GitHub Advisory Database")
+    );
 }
 
 #[tokio::test]

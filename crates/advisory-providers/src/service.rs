@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -12,16 +12,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AdvisoryCache, AdvisoryFinding, AdvisoryMerger, CveNowProvider,
-    DEFAULT_CVE_POLL_INTERVAL_SECONDS, EpssProvider, GhsaProvider, HttpPolicy, KevProvider,
-    OsvDatabase, OsvDatabaseUpdater, ProviderError, PublicDataHttp, apply_epss, apply_kev,
-    ecosystem_slug, evaluate_inventory,
+    DEFAULT_CVE_POLL_INTERVAL_SECONDS, EpssProvider, HttpPolicy, KevProvider, OsvDatabase,
+    OsvDatabaseUpdater, ProviderError, PublicDataHttp, apply_epss, apply_kev, ecosystem_slug,
+    evaluate_inventory,
 };
 
 const KEV_REFRESH_INTERVAL: Duration = Duration::hours(24);
 const EPSS_REFRESH_INTERVAL: Duration = Duration::hours(24);
 const OSV_REFRESH_INTERVAL: Duration = Duration::hours(1);
 const CVE_SOURCE_MAX_AGE: Duration = Duration::hours(24);
-const MAX_GHSA_CROSS_CHECKS: usize = 10;
 static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,10 +160,6 @@ impl AdvisoryService {
         }
 
         let database_records = self.database.repository::<Advisory>().list().await?;
-        let existing_ids = database_records
-            .iter()
-            .map(|advisory| advisory.canonical_id.clone())
-            .collect::<BTreeSet<_>>();
         let mut merger = AdvisoryMerger::new(database_records);
         merger.extend(discovered.iter().cloned());
 
@@ -244,52 +239,6 @@ impl AdvisoryService {
             }
         }
 
-        let ghsa_provider = GhsaProvider::new(self.http.clone());
-        let mut ghsa_checks = 0;
-        let mut ghsa_succeeded = false;
-        let mut ghsa_failed = false;
-        let mut ghsa_pending = false;
-        for advisory in &discovered {
-            if existing_ids.contains(&advisory.canonical_id)
-                || advisory
-                    .source_urls
-                    .iter()
-                    .any(|url| url.contains("github.com/advisories/"))
-            {
-                continue;
-            }
-            for alias in &advisory.aliases {
-                if alias.starts_with("GHSA-") && ghsa_checks >= MAX_GHSA_CROSS_CHECKS {
-                    ghsa_pending = true;
-                    continue;
-                }
-                if alias.starts_with("GHSA-") {
-                    ghsa_checks += 1;
-                    match ghsa_provider.fetch_by_id(alias).await {
-                        Ok(ghsa) => {
-                            ghsa_succeeded = true;
-                            merger.merge(ghsa);
-                        }
-                        Err(_) => ghsa_failed = true,
-                    }
-                }
-            }
-        }
-        if ghsa_checks > 0 || ghsa_pending {
-            let incomplete = ghsa_failed || ghsa_pending;
-            freshness.push(ProviderFreshness {
-                provider: "GitHub Advisory Database".to_owned(),
-                updated_at: ghsa_succeeded.then_some(now),
-                stale: incomplete,
-                error: if ghsa_failed {
-                    Some("one or more GHSA cross-checks failed".to_owned())
-                } else if ghsa_pending {
-                    Some("GHSA cross-checks remain beyond the per-refresh request limit".to_owned())
-                } else {
-                    None
-                },
-            });
-        }
         let kev_path = self.cache_root.join("kev/catalog.json");
         let kev_provider = KevProvider::new(self.http.clone());
         let kev = match load_fresh_kev(&kev_path, now) {
