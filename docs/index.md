@@ -28,7 +28,7 @@ Security Monitor matches your dependencies against vulnerability advisories on y
 ## What it does
 
 - **Finds vulnerable dependencies locally** from lockfiles, offline OSV data, GHSA, CISA KEV and EPSS, with OSV-Scanner, Trivy and Semgrep adapters.
-- **Compares the repository with production.** A read-only Linux agent or agentless SSH reports installed packages, running kernels and processes that still use deleted libraries; linked projects show "fixed in repo, still running in production".
+- **Compares the repository with production.** A read-only Linux agent over pinned SSH reports installed packages, running kernels and processes that still use deleted libraries; linked projects show "fixed in repo, still running in production". Agentless collection is not available in the product.
 - **Warns before vulnerable code is pushed** with a Git hook that checks only changed lockfiles, offline.
 - **Works with coding agents** through a local MCP server and skills for Claude Code, Codex and OpenCode.
 - **Prepares fixes you approve** in an isolated Git worktree with network-disabled sandbox tests.

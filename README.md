@@ -32,7 +32,7 @@ No account. No cloud dashboard. Source code, lockfiles, and inventory stay on yo
 ## What it does
 
 - **Finds vulnerable dependencies locally.** Lockfile inventory, offline OSV data, GHSA, CISA KEV and EPSS, plus OSV-Scanner, Trivy, and Semgrep adapters.
-- **Compares the repo with production.** A read-only Linux agent (or agentless SSH) reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries.
+- **Compares the repo with production.** A read-only Linux agent over pinned SSH reports what is installed and running, including kernels that need a reboot and processes still using deleted libraries.
 - **Warns before vulnerable code is pushed.** `secmon hook` checks only the changed lockfiles, offline, in under three seconds.
 - **Works with your coding agent.** One command connects Claude Code, Codex, or OpenCode to a local MCP server and Security Monitor skills.
 - **Prepares fixes you approve.** A local coding-agent CLI works in an isolated Git worktree with a filtered environment; project agent configuration files are refused. Test commands run in a network-disabled sandbox, and no change is applied without your approval.
@@ -63,7 +63,7 @@ flowchart LR
     Store --> MCP["Local MCP server"]
     MCP --> Agents["Claude Code, Codex, OpenCode"]
   end
-  Server["Linux server: read-only agent or agentless SSH"] -- "approved, pinned SSH" --> Engine
+  Server["Linux server: read-only agent"] -- "approved, pinned SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "only with public downloads on" --> Engine
   Desktop -. "reviewed and approved request" .-> AI["Optional AI provider you choose"]
   Notify["Notification delivery is not available in this build"]

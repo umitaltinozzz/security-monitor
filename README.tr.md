@@ -32,7 +32,7 @@ Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli b
 ## Ne yapar
 
 - **Açıklı bağımlılıkları yerelde bulur.** Lockfile envanteri, çevrimdışı OSV verisi, GHSA, CISA KEV ve EPSS; ayrıca OSV-Scanner, Trivy ve Semgrep adaptörleri.
-- **Repoyu production ile karşılaştırır.** Salt okunur Linux ajanı (veya ajansız SSH) neyin kurulu olduğunu ve çalıştığını bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil.
+- **Repoyu production ile karşılaştırır.** Sabitlenmiş SSH üzerinden çalışan salt okunur Linux ajanı neyin kurulu olduğunu ve çalıştığını bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil.
 - **Açıklı kod push edilmeden önce uyarır.** `secmon hook` yalnızca değişen lockfile'lara, çevrimdışı ve üç saniyenin altında bakar.
 - **Kodlama ajanınla çalışır.** Tek komut Claude Code, Codex veya OpenCode'u yerel MCP sunucusuna ve Security Monitor skill'lerine bağlar.
 - **Onayladığın düzeltmeleri hazırlar.** Yerel kodlama ajanı filtrelenmiş ortamla izole bir Git worktree'de çalışır; projedeki ajan yapılandırmaları varsa çalışma reddedilir. Test komutları ağ erişimi kapalı sandbox'ta çalışır ve onayın olmadan hiçbir değişiklik uygulanmaz.
@@ -63,7 +63,7 @@ flowchart LR
     Store --> MCP["Yerel MCP sunucusu"]
     MCP --> Agents["Claude Code, Codex, OpenCode"]
   end
-  Server["Linux sunucu: salt okunur ajan veya ajansız SSH"] -- "onaylı, sabitlenmiş SSH" --> Engine
+  Server["Linux sunucu: salt okunur ajan"] -- "onaylı, sabitlenmiş SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "yalnızca genel indirmeler açıkken" --> Engine
   Desktop -. "incelenip onaylanan istek" .-> AI["Seçtiğin isteğe bağlı AI sağlayıcısı"]
   Notify["Bildirim gönderimi bu derlemede kullanılamıyor"]
