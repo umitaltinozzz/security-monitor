@@ -149,6 +149,7 @@
     "discoveryTitle": "Bir klasörün altındaki projeleri bul",
     "discoveryBody": "Adaylar incelemeniz için listelenir. Hiçbir proje otomatik eklenmez.",
     "scanCancelled": "Tarama iptal edildi",
+    "scanTimedOut": "Tarama 10 dakika içinde tamamlanmadı ve durduruldu.",
     "inventory": "Bağımlılıklar ve envanter",
     "scanHistory": "Tarama geçmişi",
     "scanDiagnostics": "Tarama kapsamı ve kontroller",

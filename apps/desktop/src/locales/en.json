@@ -149,6 +149,7 @@
     "discoveryTitle": "Find projects under a folder",
     "discoveryBody": "Candidates are listed for review. No project is added automatically.",
     "scanCancelled": "Scan cancelled",
+    "scanTimedOut": "The scan did not finish within 10 minutes and was stopped.",
     "inventory": "Dependencies and inventory",
     "scanHistory": "Scan history",
     "scanDiagnostics": "Scan coverage and checks",

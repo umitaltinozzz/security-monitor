@@ -20,6 +20,7 @@ import {
   type WorkspaceContextValue,
 } from "./WorkspaceContext";
 import { initialLanguage, readCopy, safeError } from "./utils";
+import { pollScanUntilDone } from "./scanPolling";
 import "./app.css";
 
 export function App() {
@@ -130,9 +131,28 @@ export function App() {
       cancelledScans.current.delete(scanId);
       setActiveScanIds((current) => ({ ...current, [project.id]: scanId }));
       setScanState((current) => ({ ...current, [project.id]: "running" }));
-      const poll = async () => {
-        const result = await api.scanResult(scanId);
-        if (!result) return false;
+      const outcome = await pollScanUntilDone(() => api.scanResult(scanId), {
+        timeoutMs: 10 * 60 * 1000,
+        intervalMs: 700,
+        isCancelled: () => cancelledScans.current.has(scanId),
+      });
+      if (outcome.kind === "cancelled") return;
+      if (outcome.kind === "timedOut") {
+        cancelledScans.current.add(scanId);
+        await api.cancelScan(scanId).catch(() => false);
+        setScanState((current) => ({ ...current, [project.id]: "failed" }));
+        setActiveScanIds((current) => {
+          const next = { ...current };
+          delete next[project.id];
+          return next;
+        });
+        setNotice({ message: t("projects.scanTimedOut"), kind: "error" });
+        requestRefresh();
+        return;
+      }
+
+      {
+        const result = outcome.result;
         setScanState((current) => ({ ...current, [project.id]: result.outcome }));
         setActiveScanIds((current) => {
           const next = { ...current };
@@ -148,12 +168,6 @@ export function App() {
           ),
           kind: result.outcome === "failed" ? "error" : "success",
         });
-        return true;
-      };
-      let finished = false;
-      while (!finished && !cancelledScans.current.has(scanId)) {
-        await new Promise((resolve) => window.setTimeout(resolve, 700));
-        finished = await poll();
       }
     } catch (error) {
       setScanState((current) => ({ ...current, [project.id]: "failed" }));
