@@ -17,6 +17,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.artifact }}
+    environment: release
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
