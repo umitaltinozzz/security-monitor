@@ -187,7 +187,7 @@ impl WorkspaceTools {
             }
             let component = component_by_id.get(&instance.component_id)?;
             let advisory = advisory_by_id.get(&finding.advisory_id)?;
-            Some(json!({"id":finding.id,"advisory_id":advisory.canonical_id,"title":advisory.title,
+            Some(json!({"id":finding.id,"advisory_id":advisory.canonical_id,"title":untrusted_text(advisory.title.clone()),
                 "component":component.name,"version":component.version,"purl":component.purl,
                 "status":finding.status,"severity":finding.severity,"priority_score":finding.priority_score,
                 "priority_reasons":finding.priority_reasons,"repo_status":finding.repo_status,
@@ -268,8 +268,8 @@ impl WorkspaceTools {
             Vec::new()
         };
         Ok(
-            json!({"finding_id":finding.id,"advisory":{"id":advisory.canonical_id,"title":advisory.title,
-                "description":advisory.description,"affected_ranges":advisory.affected_ranges},
+            json!({"finding_id":finding.id,"advisory":{"id":advisory.canonical_id,"title":untrusted_text(advisory.title),
+                "description":advisory.description.map(untrusted_text),"affected_ranges":advisory.affected_ranges},
             "component":{"name":component.name,"version":component.version,"purl":component.purl},
             "status":finding.status,"repo_status":finding.repo_status,"production_status":finding.production_status,
             "evidence":evidence.into_iter().map(|item| json!({"type":item.evidence_type,"path":item.file_path_redacted,

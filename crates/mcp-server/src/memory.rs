@@ -52,6 +52,9 @@ impl WorkspaceTools {
         if !self.memory_writes_enabled {
             return Err(McpError::PermissionDenied);
         }
+        if arguments.get("pinned").is_some() {
+            return Err(McpError::PermissionDenied);
+        }
         let scope = parse_memory_scope(arguments.get("scope").ok_or(McpError::InvalidArguments)?)?;
         let scope_id = optional_string(arguments, "scope_id")?;
         if scope_id.is_some() != (scope != MemoryScope::Global) {
@@ -93,10 +96,7 @@ impl WorkspaceTools {
             source_run_id: None,
             created_at: now,
             expires_at: Some(now + chrono::Duration::days(i64::from(self.memory_retention_days))),
-            pinned: arguments
-                .get("pinned")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            pinned: false,
             verified_at: None,
             verified_by: None,
         };
@@ -230,10 +230,10 @@ impl WorkspaceTools {
             .collect())
     }
 
-    fn memory_json(&self, mut memory: Memory) -> Value {
-        memory.content = redact_text_with_host_aliases(&memory.content, &self.host_aliases).text;
+    fn memory_json(&self, memory: Memory) -> Value {
+        let content = redact_text_with_host_aliases(&memory.content, &self.host_aliases).text;
         json!({"id":memory.id,"scope":memory.scope,"scope_id":memory.scope_id,
-            "kind":memory.kind,"content":memory.content,"author":memory.author,
+            "kind":memory.kind,"content":untrusted_text(content),"author":memory.author,
             "created_at":memory.created_at,"expires_at":memory.expires_at,
             "pinned":memory.pinned,"verified_at":memory.verified_at,
             "verified_by":memory.verified_by,"untrusted_data":true})

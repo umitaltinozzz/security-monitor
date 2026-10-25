@@ -7,7 +7,7 @@ description: How shared notes work across Security Monitor and supported coding 
 
 Security Monitor stores notes in the local SQLite database. Notes can be scoped globally, to a project, a server, or a finding. The desktop app lets the user create, edit, pin, review, and delete notes, and import or export a versioned JSON archive from AI settings.
 
-Notes are context, not evidence. The MCP `recall` tool marks returned notes as untrusted data. When enabled, `analyze_impact` adds a small set of global and matching project, server, or finding notes as untrusted context. Agents cannot set finding status, change priority, or create user decisions. An agent may delete only notes it authored.
+Notes are context, not evidence. MCP returns note text in an explicit `untrusted_text` envelope. `recall` without a scope returns only notes from the approved project set; an unscoped local CLI workspace returns global notes only. When enabled, `analyze_impact` adds only matching project, server, or finding notes. Agents cannot pin notes, set finding status, change priority, or create user decisions. An agent may delete only notes it authored.
 
 Agent-written notes are redacted before storage, have bounded size, and expire according to the configured retention period. Archive imports are re-authored as user notes, validated against existing project, server, and finding IDs, redacted, and assigned the current retention period. Exported note text is redacted again.
 

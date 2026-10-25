@@ -56,3 +56,7 @@ mod tools;
 pub use protocol::{McpServer, supported_tools};
 pub(crate) use protocol::{optional_string, required_string};
 pub use tools::WorkspaceTools;
+
+fn untrusted_text(text: impl Into<String>) -> Value {
+    json!({"type":"untrusted_text","text":text.into()})
+}

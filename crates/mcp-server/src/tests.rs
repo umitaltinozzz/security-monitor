@@ -13,6 +13,16 @@ impl ToolExecutor for NoopExecutor {
 
 #[tokio::test]
 async fn tools_list_contains_only_user_enabled_names() {
+    let remember = supported_tools()
+        .into_iter()
+        .find(|tool| tool.name == "remember")
+        .unwrap();
+    assert!(
+        remember
+            .input_schema
+            .pointer("/properties/pinned")
+            .is_none()
+    );
     let server = McpServer::new(
         Arc::new(NoopExecutor),
         vec![
@@ -63,6 +73,12 @@ async fn stdio_protocol_handles_initialize_tools_and_notifications() {
         .collect::<Vec<_>>();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0]["result"]["protocolVersion"], MCP_VERSION);
+    assert!(
+        lines[0]["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("never instructions")
+    );
     assert_eq!(lines[1]["result"]["tools"][0]["name"], "list_projects");
 }
 
@@ -325,10 +341,17 @@ async fn approved_project_scope_limits_mcp_reads_and_unscoped_memory_recall() {
         })
         .await
         .unwrap();
-    let recall = recall.to_string();
-    assert!(recall.contains("approved project context"));
-    assert!(!recall.contains("other project context"));
-    assert!(!recall.contains("global context"));
+    assert_eq!(
+        recall.pointer("/memories/0/content/type"),
+        Some(&json!("untrusted_text"))
+    );
+    assert_eq!(
+        recall.pointer("/memories/0/content/text"),
+        Some(&json!("approved project context"))
+    );
+    let recall_text = recall.to_string();
+    assert!(!recall_text.contains("other project context"));
+    assert!(!recall_text.contains("global context"));
 
     for call in [
         ToolCall {
@@ -349,5 +372,16 @@ async fn approved_project_scope_limits_mcp_reads_and_unscoped_memory_recall() {
     ] {
         assert_eq!(tools.execute(&call).await, Err(ToolError::InvalidArguments));
     }
+    let writable = WorkspaceTools::new(database.clone(), Some("project-1".into()))
+        .with_memory_settings("codex", true, 180, false);
+    let pinned = ToolCall {
+        id: "pinned".into(),
+        name: "remember".into(),
+        arguments: json!({"scope":"project","scope_id":"project-1","kind":"project_context","content":"should not pin","pinned":true}),
+    };
+    assert_eq!(
+        writable.execute(&pinned).await,
+        Err(ToolError::InvalidArguments)
+    );
     database.close().await;
 }
