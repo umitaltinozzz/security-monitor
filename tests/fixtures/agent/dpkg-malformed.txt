@@ -1,2 +1,2 @@
-valid-package	1.0.0	amd64
+valid-package	1.0.0	amd64	install ok installed
 malformed package output

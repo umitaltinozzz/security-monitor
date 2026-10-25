@@ -19,7 +19,7 @@ fn system_metadata_parsers_return_only_allowlisted_fields() {
     assert_eq!(osv_os_package_ecosystem(&os).as_deref(), Some("Debian:12"));
     assert_eq!(package_ecosystem(Some(&os), "deb"), "Debian:12");
     let packages = parse_package_output(
-        b"pkg\t1.2.3\tamd64\nmalformed\n",
+        b"pkg\t1.2.3\tamd64\tinstall ok installed\nmalformed\n",
         "deb",
         PackageSource::Dpkg,
     );
@@ -81,6 +81,12 @@ fn package_inventory_preserves_multiarch_esm_and_kernel_flavor_uncertainty() {
         record.name == "ubuntu-pro-client"
             && record.version.as_deref() == Some("1.2.3-0ubuntu0.22.04.1+esm1")
     }));
+    assert!(
+        !parsed
+            .records
+            .iter()
+            .any(|record| record.name == "orphaned-config")
+    );
     assert_eq!(
         newest_installed_kernel(&parsed.records).as_deref(),
         Some("6.1.0-21-amd64")

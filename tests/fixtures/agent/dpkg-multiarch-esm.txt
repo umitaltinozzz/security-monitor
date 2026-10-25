@@ -1,5 +1,6 @@
-libfixture:amd64	1.0.0-1	amd64
-libfixture:i386	1.0.0-1	i386
-ubuntu-pro-client	1.2.3-0ubuntu0.22.04.1+esm1	amd64
-linux-image-6.1.0-18-amd64	6.1.0-18.1	amd64
-linux-image-6.1.0-21-amd64	6.1.0-21.1	amd64
+libfixture:amd64	1.0.0-1	amd64	install ok installed
+libfixture:i386	1.0.0-1	i386	install ok installed
+ubuntu-pro-client	1.2.3-0ubuntu0.22.04.1+esm1	amd64	install ok installed
+linux-image-6.1.0-18-amd64	6.1.0-18.1	amd64	install ok installed
+linux-image-6.1.0-21-amd64	6.1.0-21.1	amd64	install ok installed
+orphaned-config	0.9.0	amd64	deinstall ok config-files

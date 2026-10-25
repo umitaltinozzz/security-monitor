@@ -94,7 +94,7 @@ impl HostCommand {
                 "/usr/bin/dpkg-query",
                 &[
                     "-W",
-                    "-f=${binary:Package}\\t${Version}\\t${Architecture}\\n",
+                    "-f=${binary:Package}\\t${Version}\\t${Architecture}\\t${Status}\\n",
                 ],
             ),
             Self::RpmPackages => (
@@ -246,6 +246,9 @@ mod tests {
                     .iter()
                     .any(|argument| argument.to_string_lossy().contains("$(`"))
             );
+            if command == HostCommand::DpkgPackages {
+                assert!(args[1].to_string_lossy().contains("${Status}"));
+            }
         }
         assert!(
             HostCommand::DockerInspect {

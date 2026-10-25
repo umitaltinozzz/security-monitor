@@ -121,10 +121,21 @@ fn parse_package_output_with_mode(
     let mut partial = false;
     let mut diagnostic = DiagnosticCode::InvalidOutput;
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
-        let record = if strict && source == PackageSource::Apk {
+        let record = if strict && source == PackageSource::Dpkg {
+            match parse_strict_tabbed_package(line, ecosystem, source) {
+                Ok(Some(record)) => Some(record),
+                Ok(None) => continue,
+                Err(()) => {
+                    partial = true;
+                    continue;
+                }
+            }
+        } else if strict && source == PackageSource::Apk {
             parse_apk_package(line, ecosystem)
         } else if strict {
             parse_strict_tabbed_package(line, ecosystem, source)
+                .ok()
+                .flatten()
         } else {
             parse_agentless_tabbed_package(line, ecosystem, source)
         };
@@ -150,14 +161,19 @@ fn parse_strict_tabbed_package(
     line: &str,
     ecosystem: &str,
     source: PackageSource,
-) -> Option<PackageRecord> {
+) -> Result<Option<PackageRecord>, ()> {
     let mut fields = line.split('\t');
-    let name = fields.next()?.trim();
-    let version = fields.next()?.trim();
+    let name = fields.next().ok_or(())?.trim();
+    let version = fields.next().ok_or(())?.trim();
     let architecture = fields
         .next()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    let status = if source == PackageSource::Dpkg {
+        Some(fields.next().ok_or(())?.trim())
+    } else {
+        None
+    };
     if fields.next().is_some()
         || name.is_empty()
         || version.is_empty()
@@ -166,15 +182,22 @@ fn parse_strict_tabbed_package(
             .chain(architecture)
             .any(|value| value.bytes().any(|byte| byte.is_ascii_control()))
     {
-        return None;
+        return Err(());
     }
-    Some(package_record(
+    if let Some(status) = status {
+        match dpkg_current_state(status).ok_or(())? {
+            "installed" => {}
+            "config-files" | "not-installed" => return Ok(None),
+            _ => return Err(()),
+        }
+    }
+    Ok(Some(package_record(
         name,
         version,
         architecture,
         ecosystem,
         source,
-    ))
+    )))
 }
 
 fn parse_agentless_tabbed_package(
@@ -192,6 +215,12 @@ fn parse_agentless_tabbed_package(
         .next()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    if source == PackageSource::Dpkg {
+        let status = fields.next()?.trim();
+        if fields.next().is_some() || dpkg_current_state(status)? != "installed" {
+            return None;
+        }
+    }
     Some(package_record(
         name,
         version,
@@ -199,6 +228,14 @@ fn parse_agentless_tabbed_package(
         ecosystem,
         source,
     ))
+}
+
+fn dpkg_current_state(status: &str) -> Option<&str> {
+    let mut fields = status.split_ascii_whitespace();
+    let _desired = fields.next()?;
+    let _error = fields.next()?;
+    let current = fields.next()?;
+    fields.next().is_none().then_some(current)
 }
 
 fn package_record(

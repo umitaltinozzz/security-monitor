@@ -143,7 +143,7 @@ impl AgentlessCommand {
         match self {
             Self::OsRelease => b"cat /etc/os-release",
             Self::DpkgPackages => {
-                b"dpkg-query -W -f='${binary:Package}\\t${Version}\\t${Architecture}\\n'"
+                b"dpkg-query -W -f='${binary:Package}\\t${Version}\\t${Architecture}\\t${Status}\\n'"
             }
             Self::RpmPackages => b"rpm -qa --qf '%{NAME}\\t%{VERSION}-%{RELEASE}\\t%{ARCH}\\n'",
             Self::ApkPackages => b"apk info -v",
@@ -944,6 +944,9 @@ mod tests {
                 .iter()
                 .all(|command| !command.command().contains(&b'\n'))
         );
+        assert!(
+            String::from_utf8_lossy(AgentlessCommand::DpkgPackages.command()).contains("${Status}")
+        );
     }
 
     #[test]
@@ -952,7 +955,7 @@ mod tests {
             .expect("OS should parse");
         assert_eq!(os.id.as_deref(), Some("debian"));
         let packages = parse_package_output(
-            "libssl3\t3.0.11\tamd64\ninvalid\n",
+            "libssl3\t3.0.11\tamd64\tinstall ok installed\nold-package\t1.0\tall\tdeinstall ok config-files\ninvalid\n",
             "deb",
             security_monitor_agent_protocol::PackageSource::Dpkg,
         );
