@@ -249,16 +249,28 @@ pub fn validate_safe_test(command: &SafeTestCommand) -> Result<(), RemediationEr
     {
         return Err(RemediationError::InvalidTestCommand);
     }
-    let digest = command
-        .image
-        .strip_prefix("sha256:")
-        .or_else(|| command.image.split_once("@sha256:").map(|(_, value)| value));
-    if !digest.is_some_and(|value| {
-        value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
-    }) {
+    if !valid_pinned_image(&command.image) {
         return Err(RemediationError::InvalidImage);
     }
     Ok(())
+}
+
+fn valid_pinned_image(image: &str) -> bool {
+    let valid_digest =
+        |value: &str| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if let Some(digest) = image.strip_prefix("sha256:") {
+        return valid_digest(digest);
+    }
+    let Some((name, digest)) = image.split_once("@sha256:") else {
+        return false;
+    };
+    !name.is_empty()
+        && !name.starts_with('-')
+        && !name.ends_with('/')
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+        && valid_digest(digest)
 }
 
 mod agent;

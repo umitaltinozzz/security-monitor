@@ -316,6 +316,13 @@ fn safe_tests_reject_shells_and_unpinned_images() {
         validate_safe_test(&command),
         Err(RemediationError::InvalidTestCommand | RemediationError::InvalidImage)
     ));
+    command.image = format!("--help@sha256:{}", "a".repeat(64));
+    assert!(matches!(
+        validate_safe_test(&command),
+        Err(RemediationError::InvalidImage)
+    ));
+    command.image = format!("registry.invalid/secmon/rust@sha256:{}", "a".repeat(64));
+    assert!(validate_safe_test(&command).is_ok());
 }
 
 #[test]
