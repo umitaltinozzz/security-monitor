@@ -572,10 +572,8 @@ pub async fn run_hook(
                 return Ok(0);
             }
             Err(error) => {
-                eprintln!(
-                    "warning: security check could not run ({error}); no threshold was confirmed"
-                );
-                return Ok(0);
+                eprintln!("blocked: hook input could not be verified ({error})");
+                return Ok(hook_input_error_exit_code(mode));
             }
         }
     } else if !pre_push && !pre_commit {
@@ -631,6 +629,13 @@ pub async fn run_hook(
 
 fn should_block_hook(mode: HookMode, result_code: i32) -> bool {
     matches!(mode, HookMode::Block) && result_code == super::hooks::THRESHOLD_BREACH_EXIT
+}
+
+fn hook_input_error_exit_code(mode: HookMode) -> i32 {
+    match mode {
+        HookMode::Warn => 0,
+        HookMode::Block => super::hooks::THRESHOLD_BREACH_EXIT,
+    }
 }
 
 async fn hook_scan(
@@ -935,7 +940,7 @@ fn fail_on_text(fail_on: FailOn) -> &'static str {
 
 #[cfg(test)]
 mod hook_mode_tests {
-    use super::{HookMode, should_block_hook};
+    use super::{HookMode, hook_input_error_exit_code, should_block_hook};
 
     #[test]
     fn block_mode_stops_only_on_a_threshold_breach() {
@@ -943,5 +948,11 @@ mod hook_mode_tests {
         assert!(!should_block_hook(HookMode::Block, 3));
         assert!(!should_block_hook(HookMode::Warn, 2));
         assert!(!should_block_hook(HookMode::Block, 0));
+    }
+
+    #[test]
+    fn invalid_agent_hook_input_blocks_only_in_block_mode() {
+        assert_eq!(hook_input_error_exit_code(HookMode::Warn), 0);
+        assert_eq!(hook_input_error_exit_code(HookMode::Block), 2);
     }
 }
