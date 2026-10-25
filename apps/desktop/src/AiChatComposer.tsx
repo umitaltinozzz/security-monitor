@@ -6,6 +6,45 @@ import { api } from "./api";
 type T = (key: string) => string;
 type Notice = { message: string; kind: "error" | "success" } | null;
 
+function toolOutputCategories(enabledTools: string[]): string[] {
+  const categories = new Set<string>();
+  for (const tool of enabledTools) {
+    switch (tool) {
+      case "list_projects":
+        categories.add("project_metadata");
+        break;
+      case "list_assets":
+        categories.add("server_inventory");
+        break;
+      case "list_findings":
+      case "get_finding_evidence":
+      case "compare_repo_deployment":
+        categories.add("finding_advisory_evidence");
+        break;
+      case "read_project_file":
+      case "search_project":
+        categories.add("project_files");
+        break;
+      case "analyze_impact":
+        categories.add("finding_advisory_evidence");
+        categories.add("shared_memory");
+        break;
+      case "recall":
+      case "remember":
+        categories.add("shared_memory");
+        break;
+      case "forget":
+      case "prepare_patch":
+      case "run_safe_tests":
+        categories.add("tool_status");
+        break;
+      default:
+        categories.add("other_tool_output");
+    }
+  }
+  return [...categories];
+}
+
 export function AiChatComposer({
   context,
   projectId,
@@ -28,6 +67,7 @@ export function AiChatComposer({
     null,
   );
   const [fallbackAvailable, setFallbackAvailable] = useState(false);
+  const outputCategories = estimate ? toolOutputCategories(estimate.enabled_tools) : [];
 
   useEffect(() => {
     let active = true;
@@ -234,6 +274,18 @@ export function AiChatComposer({
                 {estimate.enabled_tools.length
                   ? estimate.enabled_tools.map((name) => t(`ai.tools.${name}`)).join(", ")
                   : t("ai.noTools")}
+              </dd>
+              <dt>{t("ai.toolOutputData")}</dt>
+              <dd>
+                {outputCategories.length ? (
+                  <ul className="ai-tool-categories">
+                    {outputCategories.map((category) => (
+                      <li key={category}>{t(`ai.outputCategories.${category}`)}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  t("ai.noToolOutputData")
+                )}
               </dd>
               <dt>{t("ai.estimatedTokens")}</dt>
               <dd>
