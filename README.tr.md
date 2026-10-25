@@ -145,7 +145,7 @@ Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozz
 
 ## Katkı ve güvenlik
 
-Değişiklik yapmadan önce [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun. Hata, özellik isteği ve yanlış pozitif bildirimleri için issue formlarını kullanın. Güvenlik açıklarını herkese açık issue olarak değil, [SECURITY.md](SECURITY.md) belgesindeki özel yöntemle bildirin.
+Değişiklik yapmadan önce [CONTRIBUTING.md](CONTRIBUTING.md) dosyasını okuyun. Hata, özellik isteği ve yanlış pozitif bildirimleri için issue formlarını; sorular, kurulum deneyimleri ve fikirler için [Discussions](https://github.com/umitaltinozzz/security-monitor/discussions) bölümünü kullanın. Güvenlik açıklarını herkese açık issue olarak değil, [SECURITY.md](SECURITY.md) belgesindeki özel yöntemle bildirin.
 
 ## Lisans, veri ve sorumluluk reddi
 

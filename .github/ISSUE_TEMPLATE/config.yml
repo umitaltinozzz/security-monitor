@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/umitaltinozzz/security-monitor/discussions
+    about: Ask how something works, share setups, or suggest ideas in Discussions.
   - name: Security vulnerability report
     url: https://github.com/umitaltinozzz/security-monitor/security/advisories/new
     about: Use private reporting. Do not post vulnerability details publicly.

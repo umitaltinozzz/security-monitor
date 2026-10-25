@@ -145,7 +145,7 @@ Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitalt
 
 ## Contributing and security
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Use the issue forms for bugs, feature requests, and false-positive reports. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Use the issue forms for bugs, feature requests, and false-positive reports, and [Discussions](https://github.com/umitaltinozzz/security-monitor/discussions) for questions, setups, and ideas. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## License, data, and disclaimer
 
