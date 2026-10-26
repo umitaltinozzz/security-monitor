@@ -7,6 +7,151 @@ description: Build, install, and pair the read-only Linux inventory agent over S
 
 `secmon-agent` is a pull-based, read-only collector. It is not a daemon. The desktop connects over SSH and requests one versioned JSON inventory. The server does not open an inbound port, and the agent contains no general remote-command interface.
 
+Türkçe kurulum adımları: [agent-install.tr.md](https://github.com/umitaltinozzz/security-monitor/blob/main/docs/agent-install.tr.md).
+
+## Runbook: first install on a real server
+
+This walk-through was written for two Oracle Cloud free-tier hosts and applies to any comparable Linux server:
+
+| Host | Shape | OS | Default login | Agent binary |
+| --- | --- | --- | --- | --- |
+| A | Ampere A1, 2 OCPU / 12 GB | Oracle Linux 9 (`aarch64`) | `opc` | `secmon-agent-linux-aarch64` |
+| B | AMD micro, 1 GB | Ubuntu 24.04 (`x86_64`) | `ubuntu` | `secmon-agent-linux-x86_64` |
+
+There is no systemd unit and nothing to start: the agent runs only when the desktop opens an SSH session with the restricted pairing key, and exits after printing one inventory.
+
+### 1. Prepare network access
+
+- Reach the server over SSH with your own key. Oracle images ship with password login disabled; keep it that way.
+- In **Networking → Virtual Cloud Networks → your VCN → Security Lists**, allow ingress only on `22/tcp`, ideally restricted to your own address (`x.x.x.x/32`). If you use Tailscale, you can remove the public `22/tcp` rule after Tailscale SSH works and pair the desktop with the Tailscale address instead.
+- Oracle Linux uses `firewalld`, which allows SSH by default. Oracle's Ubuntu images ship their own `iptables` rules in `/etc/iptables/rules.v4`; do not replace them with `ufw` without first making sure SSH stays allowed, or you can lock yourself out.
+
+### 2. Get the agent binary (on your desktop)
+
+Before the first release, use the main-branch CI artifact. It is integrity-checked with its `.sha256` file, but it is **not** minisign-signed; your trust in it comes from your authenticated GitHub download. Released binaries also carry `.minisig` signatures (see [Signed releases](release.md#verify-a-download)).
+
+```sh
+gh run list -R umitaltinozzz/security-monitor -w CI -b main -s success -L 1
+gh run download <run-id> -R umitaltinozzz/security-monitor -n secmon-agent-linux-aarch64 -D agent-a
+gh run download <run-id> -R umitaltinozzz/security-monitor -n secmon-agent-linux-x86_64 -D agent-b
+```
+
+Copy the matching binary, its `.sha256` file, and `install.sh` from the repository root to each server:
+
+```sh
+scp agent-a/secmon-agent-linux-aarch64 agent-a/secmon-agent-linux-aarch64.sha256 install.sh opc@HOST_A:
+scp agent-b/secmon-agent-linux-x86_64 agent-b/secmon-agent-linux-x86_64.sha256 install.sh ubuntu@HOST_B:
+```
+
+### 3. Install (on each server)
+
+```sh
+uname -m                     # aarch64 on host A, x86_64 on host B
+case "$(uname -m)" in
+  x86_64) agent=secmon-agent-linux-x86_64 ;;
+  aarch64) agent=secmon-agent-linux-aarch64 ;;
+  *) echo "unsupported architecture" >&2; exit 1 ;;
+esac
+sha256sum -c "$agent.sha256"
+read -r agent_sha256 _ < "$agent.sha256"
+chmod +x install.sh
+sudo ./install.sh --binary "./$agent" --sha256 "$agent_sha256"
+```
+
+Expected output ends with `secmon-agent installed at /usr/local/bin/secmon-agent.` The installer creates the `secmon` system account (home `/var/lib/secmon`, no usable password), `/etc/secmon/agent.toml`, and `/etc/secmon/deployments.d`.
+
+Check the result without running a collection:
+
+```sh
+ls -l /usr/local/bin/secmon-agent          # root-owned, mode 0755
+getent passwd secmon                       # home /var/lib/secmon, shell /bin/sh
+sudo cat /etc/secmon/agent.toml            # empty until you add paths
+```
+
+### 4. Optional: let the agent see an application
+
+Dependency files and deployment identity are only read under paths you allow. For a demo application in `/srv/demo`:
+
+```sh
+sudo tee /etc/secmon/agent.toml >/dev/null <<'EOF'
+allowed_paths = ["/srv/demo"]
+docker_cli_approved = false
+max_processes = 4096
+EOF
+```
+
+Give the application a deployment identity so drift can be compared, either with `/srv/demo/.secmon-deploy.json` or `/etc/secmon/deployments.d/<service>.json` (format in [Deployment identity](deploy-id.md)). Leave `docker_cli_approved = false` unless you have reviewed that Docker access is root-equivalent.
+
+### 5. Pair from the desktop
+
+1. On the server, print the host-key fingerprints so you can compare them with the desktop:
+
+   ```sh
+   for key in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$key"; done
+   ```
+
+2. In the desktop, open **Servers → Pair a Linux server**. Enter an alias, the hostname or IP (or Tailscale address), SSH username `secmon`, port `22`, and the environment.
+3. Compare the observed SHA-256 fingerprint with the matching line from step 1. Tick the confirmation only if they are identical. If they differ, stop.
+4. Copy the restricted `authorized_keys` line the desktop shows, then install it on the server:
+
+   ```sh
+   sudo install -d -o secmon -g secmon -m 0700 /var/lib/secmon/.ssh
+   sudo tee /var/lib/secmon/.ssh/authorized_keys >/dev/null <<'EOF'
+   PASTE THE LINE FROM THE DESKTOP HERE
+   EOF
+   sudo chown secmon:secmon /var/lib/secmon/.ssh/authorized_keys
+   sudo chmod 0600 /var/lib/secmon/.ssh/authorized_keys
+   ```
+
+5. **Oracle Linux and other SELinux-enforcing systems:** OpenSSH may not read keys under `/var/lib` until they carry the SSH label. Run:
+
+   ```sh
+   getenforce
+   sudo semanage fcontext -a -t ssh_home_t '/var/lib/secmon/\.ssh(/.*)?'
+   sudo restorecon -Rv /var/lib/secmon/.ssh
+   ```
+
+   If `semanage` is missing, install `policycoreutils-python-utils`.
+6. Back in the desktop, approve one inventory transfer.
+
+### 6. Verification checklist
+
+Record each item as seen in the desktop:
+
+- [ ] The collection finishes as complete or partial, never as a silent success. Partial areas name a reason.
+- [ ] **Packages:** the list is populated. On host B (Ubuntu) OS packages are evaluated against fresh local OSV data. On host A (Oracle Linux) the status reads *Unverified — no OSV data source is available for this distribution*, not "no vulnerabilities".
+- [ ] **Kernel:** the running kernel is shown; if a newer kernel is installed, a restart notice appears.
+- [ ] **Services:** `sshd` and other running units are listed.
+- [ ] **Containers:** with `docker_cli_approved = false`, container inventory is reported as unavailable rather than empty.
+- [ ] **Deployment identity:** a service without deployment data is unknown or omitted; it is never marked verified.
+- [ ] **Drift:** link the server to a project (**Projects running here → Link a project**). Repository and production status then appear for that project; without a link, production status stays unverified.
+- [ ] A second collection after changing a package or the deploy ID shows the change.
+
+### 7. If something goes wrong
+
+All commands below only read state.
+
+| Symptom | Where to look |
+| --- | --- |
+| Desktop cannot connect | `sudo journalctl -u sshd -n 50 --no-pager` (Oracle Linux) or `sudo journalctl -u ssh -n 50 --no-pager` (Ubuntu) |
+| Key rejected | `sudo ls -laZ /var/lib/secmon/.ssh` (permissions `0700`/`0600`, owner `secmon`, SELinux type `ssh_home_t`); `sudo ausearch -m avc -ts recent` on SELinux systems |
+| Host-key mismatch | Do not accept the new key. Compare `ssh-keygen -lf` output again and find out why the key changed. |
+| Wrong architecture | `uname -m` and `file /usr/local/bin/secmon-agent` |
+| Collection partial | Read the reason shown for each area in the desktop; permission-denied areas stay partial by design. |
+| Port blocked | Security List ingress rules in the Oracle console; `sudo firewall-cmd --list-all` (Oracle Linux) or `sudo iptables -S` (Ubuntu) |
+
+The desktop's own log is in the application data directory under `logs/`; it is redacted and never contains private keys.
+
+### Remove the agent
+
+```sh
+sudo rm -f /usr/local/bin/secmon-agent /var/lib/secmon/.ssh/authorized_keys
+sudo userdel -r secmon
+sudo rm -rf /etc/secmon
+```
+
+Removing the `authorized_keys` line is what revokes access. The desktop does not yet have a command to unpair a server, so its pinned host key, inventory history, and the dedicated private key in the operating-system credential store remain on the device until that feature exists.
+
 ## Build and verify the binary
 
 The agent is available as static musl binaries for `x86_64` and `aarch64` (ARM64). Build the x86-64 binary on a Linux build machine:
