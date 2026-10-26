@@ -12,6 +12,7 @@ const MAX_REEVALUATED_SHELL_DEPTH: usize = 4;
 pub(super) enum GitOperation {
     Commit,
     Push,
+    Unknown,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +98,10 @@ fn collect_git_actions(
         match operation {
             GitOperation::Commit => actions.pre_commit = true,
             GitOperation::Push => actions.pre_push = true,
+            GitOperation::Unknown => {
+                actions.pre_commit = true;
+                actions.pre_push = true;
+            }
         }
         found_action = true;
     }
@@ -421,7 +426,9 @@ fn git_operation_in_segment(
         return git_operation_in_segment(&expanded_tokens, variables);
     }
     if is_dynamic_command_name(executable) {
-        return git_operation_after_executable(tokens, index);
+        return Some(
+            git_operation_after_executable(tokens, index).unwrap_or(GitOperation::Unknown),
+        );
     }
     if !is_git_executable(executable) {
         return None;
@@ -628,6 +635,13 @@ mod tests {
             ("bash -c 'echo git push'", GitHookActions::default()),
             (
                 "eval \"$COMMAND\"",
+                GitHookActions {
+                    pre_commit: true,
+                    pre_push: true,
+                },
+            ),
+            (
+                "CMD=\"$(printf 'git push origin main')\"; $CMD",
                 GitHookActions {
                     pre_commit: true,
                     pre_push: true,
