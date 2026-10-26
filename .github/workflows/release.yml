@@ -187,9 +187,10 @@ jobs:
             fi
           done
 
-      - name: Write Windows signing overlay
-        if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
-        run: node scripts/release/write-tauri-config.mjs windows target/tauri.release.json
+      - name: Write release Tauri config overlay
+        env:
+          SECMON_CODE_SIGNING: ${{ steps.signing.outputs.code_signing }}
+        run: node scripts/release/write-tauri-config.mjs ${{ matrix.platform }} target/tauri.release.json
 
       - name: Build signed desktop packages
         if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
@@ -197,7 +198,7 @@ jobs:
 
       - name: Build unsigned Windows desktop packages
         if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'unsigned'
-        run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
+        run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
       - name: Build desktop packages
         if: runner.os != 'Windows'
@@ -211,7 +212,7 @@ jobs:
             # Ad-hoc signing keeps Apple Silicon bundles launchable; it is not a Developer ID signature.
             export APPLE_SIGNING_IDENTITY=-
           fi
-          pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
+          pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
       - name: Stage release files
         env:

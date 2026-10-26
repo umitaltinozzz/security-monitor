@@ -22,18 +22,59 @@ function run(script, args, options = {}) {
   return result;
 }
 
-test('Windows release config accepts a certificate thumbprint without writing signing secrets', async () => {
+test('release config adds updater settings for every platform', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-config-'));
+  const publicKey = 'updater-public-fixture';
+  const endpoint = 'https://github.com/umitaltinozzz/security-monitor/releases/latest/download/latest.json';
+
+  for (const platform of ['windows', 'darwin', 'linux']) {
+    const output = join(root, platform, 'tauri.release.json');
+    const env = { SECMON_UPDATE_PUBLIC_KEY: publicKey };
+    if (platform === 'windows') {
+      env.SECMON_CODE_SIGNING = 'signed';
+      env.SECMON_WINDOWS_CERTIFICATE_THUMBPRINT = 'ab'.repeat(20);
+    }
+    const result = run('write-tauri-config.mjs', [platform, output], { cwd: root, env });
+    assert.equal(result.status, 0, result.stderr);
+    const config = JSON.parse(await readFile(output, 'utf8'));
+    assert.equal(config.plugins.updater.pubkey, publicKey);
+    assert.deepEqual(config.plugins.updater.endpoints, [endpoint]);
+    if (platform === 'windows') {
+      assert.equal(config.bundle.windows.digestAlgorithm, 'sha256');
+      assert.equal(config.bundle.windows.certificateThumbprint, 'ab'.repeat(20));
+    } else {
+      assert.equal(config.bundle, undefined);
+    }
+    assert.equal(JSON.stringify(config).includes('PASSWORD'), false);
+  }
+});
+
+test('unsigned Windows release config keeps updater settings without a code-signing overlay', async () => {
   const root = await mkdtemp(join(tmpdir(), 'secmon-release-config-'));
   const output = join(root, 'target', 'tauri.release.json');
   const result = run('write-tauri-config.mjs', ['windows', output], {
     cwd: root,
-    env: { SECMON_WINDOWS_CERTIFICATE_THUMBPRINT: 'ab'.repeat(20) },
+    env: { SECMON_UPDATE_PUBLIC_KEY: 'updater-public-fixture', SECMON_CODE_SIGNING: 'unsigned' },
   });
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(await readFile(output, 'utf8'));
-  assert.equal(config.bundle.windows.digestAlgorithm, 'sha256');
-  assert.equal(config.bundle.windows.certificateThumbprint, 'ab'.repeat(20));
-  assert.equal(JSON.stringify(config).includes('PASSWORD'), false);
+  assert.equal(config.plugins.updater.pubkey, 'updater-public-fixture');
+  assert.equal(config.bundle, undefined);
+});
+
+test('release config requires the updater public key and valid Windows signing status', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-config-'));
+  const output = join(root, 'target', 'tauri.release.json');
+  const missingKey = run('write-tauri-config.mjs', ['linux', output], { cwd: root, env: { SECMON_UPDATE_PUBLIC_KEY: '' } });
+  assert.notEqual(missingKey.status, 0);
+  assert.match(missingKey.stderr, /Tauri updater public key is missing/);
+
+  const invalidWindows = run('write-tauri-config.mjs', ['windows', output], {
+    cwd: root,
+    env: { SECMON_UPDATE_PUBLIC_KEY: 'updater-public-fixture', SECMON_CODE_SIGNING: 'signed' },
+  });
+  assert.notEqual(invalidWindows.status, 0);
+  assert.match(invalidWindows.stderr, /Windows signing certificate thumbprint is invalid/);
 });
 
 test('signed releases require minisign keys without echoing secret values', () => {
