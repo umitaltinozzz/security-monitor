@@ -1,9 +1,11 @@
 use super::update::AdvisoryUpdateStatus;
 use super::*;
+use tauri::Manager;
 
 #[tauri::command]
 pub async fn start_project_scan(
     state: State<'_, AppState>,
+    app: AppHandle,
     project_id: String,
     profile: String,
 ) -> Result<String, String> {
@@ -38,21 +40,22 @@ pub async fn start_project_scan(
     let scan_id = handle.id.clone();
     let returned_id = scan_id.clone();
     let result_store = Arc::clone(&state.scan_results);
-    let database = state.database.clone();
-    let app_data_dir = state.app_data_dir.clone();
+    let task_app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = match handle.wait().await {
             Ok(summary) => {
-                // Drift failures leave statuses unknown; they never fail the scan itself.
-                if let Err(error) = crate::drift_sync::refresh_project_drift(
-                    &database,
-                    &app_data_dir,
-                    &project_id,
-                    Utc::now(),
-                )
-                .await
-                {
-                    tracing::warn!(%error, "drift assessment after scan failed");
+                if let Some(state) = task_app.try_state::<AppState>() {
+                    if let Err(error) = crate::ipc::notifications::refresh_project_drift_and_notify(
+                        &state,
+                        &project_id,
+                        Utc::now(),
+                    )
+                    .await
+                    {
+                        tracing::warn!(%error, "drift assessment after scan failed");
+                    }
+                    crate::ipc::notifications::publish_new_high_findings(&state, Some(&project_id))
+                        .await;
                 }
                 ScanResult::from_summary(summary)
             }

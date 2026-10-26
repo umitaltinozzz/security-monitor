@@ -27,8 +27,10 @@ Parent-folder discovery returns canonical project candidates for user review. It
 
 ## Notifications
 
-Notification delivery is not available in the desktop build. The notification transport crate has no app channel setup or UI, so the app does not send desktop alerts, webhooks, Slack, Discord, or email. The Settings page states this directly; see the [feature status matrix](feature-status.md).
+The tray background sends a local OS notification for new critical/high findings, drift status changes, and server inventories that have not had a complete collection within 24 hours. OS notifications are enabled by default. The optional daily summary sends at most once per UTC date.
+
+Settings supports HTTPS webhooks, Slack, Discord, ntfy, and SMTP. External delivery is off by default; the user must enable outbound notifications and record approval for each destination. Complete URLs, ntfy tokens, and SMTP passwords are stored only through the OS credential store. The database keeps an opaque credential reference and the approved origin/host. The preview command does not send a request; test delivery is an explicit action. A delivered event fingerprint is suppressed permanently, while a new stale-snapshot period or changed drift state receives a new fingerprint.
 
 ## Verification fixtures
 
-Deterministic, offline fixtures are under `tests/fixtures/orchestration/`. Unit coverage includes three-second debounce precedence, changed-input hashing, nested Git-less discovery, startup scans for changed projects only, advisory re-correlation without another scan, bounded concurrency and cancellation, and a 50-project quick-scan batch. Notification transport tests exercise the library in isolation; they do not mean notification delivery is available in the desktop product.
+Deterministic, offline fixtures are under `tests/fixtures/orchestration/`. Unit coverage includes three-second debounce precedence, changed-input hashing, nested Git-less discovery, startup scans for changed projects only, advisory re-correlation without another scan, bounded concurrency and cancellation, a 50-project quick-scan batch, webhook delivery through wiremock, permanent fingerprint suppression, and keeping channel secrets out of database records.

@@ -5,8 +5,14 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::{Duration, TimeZone, Utc};
+use security_monitor_advisory_providers::PublicDataHttp;
 use security_monitor_core::{NotificationChannel, NotificationChannelKind};
 use security_monitor_database::Database;
+use serde_json::json;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{body_json, header, method, path},
+};
 
 use crate::{
     ChannelSecretConfig, ChannelTransport, CredentialError, CredentialStore, DeliveryStatus,
@@ -64,12 +70,15 @@ impl CredentialStore for MemoryCredentials {
 
 fn event() -> NotificationEvent {
     NotificationEvent {
+        kind: "finding".to_owned(),
         fingerprint: format!("sha256:{}", "a".repeat(64)),
         finding_id: format!("finding-{}", "b".repeat(64)),
         advisory_id: "CVE-2026-12345".to_owned(),
         asset_alias: Some("production-api".to_owned()),
         priority_score: 92,
         severity: "critical".to_owned(),
+        title: "Critical security finding".to_owned(),
+        message: "CVE-2026-12345 affects production-api.".to_owned(),
     }
 }
 
@@ -89,7 +98,7 @@ fn desktop_channel() -> NotificationChannel {
 }
 
 #[tokio::test]
-async fn notification_delivery_deduplicates_and_respects_persisted_snooze() {
+async fn notification_delivery_suppresses_a_fingerprint_permanently() {
     let database = Database::in_memory().await.unwrap();
     database
         .repository::<NotificationChannel>()
@@ -102,7 +111,7 @@ async fn notification_delivery_deduplicates_and_respects_persisted_snooze() {
         transport.clone(),
         NotificationSettings {
             outbound_notifications_enabled: false,
-            deduplication_window: Duration::minutes(15),
+            desktop_notifications_enabled: true,
         },
     );
     let now = Utc.with_ymd_and_hms(2026, 10, 24, 12, 0, 0).unwrap();
@@ -135,8 +144,13 @@ async fn notification_delivery_deduplicates_and_respects_persisted_snooze() {
         .publish_at(&alert, until + Duration::seconds(1))
         .await
         .unwrap();
-    assert_eq!(resumed[0].status, DeliveryStatus::Delivered);
-    assert_eq!(transport.deliveries.lock().unwrap().len(), 2);
+    assert_eq!(resumed[0].status, DeliveryStatus::Suppressed);
+    let much_later = service
+        .publish_at(&alert, now + Duration::days(31))
+        .await
+        .unwrap();
+    assert_eq!(much_later[0].status, DeliveryStatus::Suppressed);
+    assert_eq!(transport.deliveries.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -169,8 +183,8 @@ async fn global_privacy_setting_blocks_approved_external_delivery() {
     assert!(transport.deliveries.lock().unwrap().is_empty());
 }
 
-#[test]
-fn stored_external_configuration_uses_an_opaque_reference_and_approval_keeps_only_origin() {
+#[tokio::test]
+async fn stored_external_configuration_keeps_secrets_out_of_the_database_record() {
     let credentials = MemoryCredentials::default();
     let secret_url = "https://hooks.example.test/services/private-token";
     let reference = store_channel_config(
@@ -189,6 +203,37 @@ fn stored_external_configuration_uses_an_opaque_reference_and_approval_keeps_onl
         approved_http_destination(secret_url).unwrap(),
         "https://hooks.example.test"
     );
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc::now();
+    let channel = NotificationChannel {
+        id: "stored-webhook".to_owned(),
+        kind: NotificationChannelKind::Webhook,
+        config_ref: Some(reference.clone()),
+        min_priority: 70,
+        enabled: true,
+        network_approved_at: Some(now),
+        network_approved_destination: Some("https://hooks.example.test".to_owned()),
+        created_at: now,
+        updated_at: now,
+    };
+    database
+        .repository::<NotificationChannel>()
+        .create(&channel)
+        .await
+        .unwrap();
+    let stored = database
+        .repository::<NotificationChannel>()
+        .get(&channel.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let stored_json = serde_json::to_string(&stored).unwrap();
+    assert!(stored_json.contains(&reference));
+    assert!(!stored_json.contains(secret_url));
+    assert_eq!(
+        credentials.get(&reference).unwrap(),
+        serde_json::json!({ "kind": "webhook", "url": secret_url }).to_string()
+    );
     assert!(approved_http_destination("http://hooks.example.test/secret").is_err());
     assert_eq!(
         approved_smtp_destination("smtp.example.test", 465, SmtpTlsMode::ImplicitTls).unwrap(),
@@ -205,6 +250,102 @@ fn stored_external_configuration_uses_an_opaque_reference_and_approval_keeps_onl
     assert!(
         approved_smtp_destination("user@smtp.example.test", 465, SmtpTlsMode::ImplicitTls).is_err()
     );
+}
+
+#[tokio::test]
+async fn webhook_delivery_uses_approved_origin_and_sends_through_wiremock() {
+    let server = MockServer::start().await;
+    let url = format!("{}/hooks/private-token", server.uri());
+    let alert = event();
+    Mock::given(method("POST"))
+        .and(path("/hooks/private-token"))
+        .and(body_json(json!({
+            "event": "finding",
+            "kind": "finding",
+            "finding_id": alert.finding_id,
+            "advisory_id": alert.advisory_id,
+            "asset_alias": alert.asset_alias,
+            "priority": alert.priority_score,
+            "severity": alert.severity,
+            "title": alert.title,
+            "message": alert.message,
+        })))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let credentials = Arc::new(MemoryCredentials::default());
+    let config_ref =
+        store_channel_config(credentials.as_ref(), &ChannelSecretConfig::Webhook { url }).unwrap();
+    let now = Utc::now();
+    let channel = NotificationChannel {
+        id: "wiremock-webhook".to_owned(),
+        kind: NotificationChannelKind::Webhook,
+        config_ref: Some(config_ref),
+        min_priority: 0,
+        enabled: true,
+        network_approved_at: Some(now),
+        network_approved_destination: Some(server.uri()),
+        created_at: now,
+        updated_at: now,
+    };
+    let transport = crate::ConfiguredTransport::new(
+        PublicDataHttp::for_notification_tests().unwrap(),
+        credentials,
+    );
+
+    crate::ChannelTransport::deliver(&transport, &channel, &alert, true)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn ntfy_token_is_sent_only_as_bearer_authorization() {
+    let server = MockServer::start().await;
+    let token = "tk_secret_value";
+    Mock::given(method("POST"))
+        .and(path("/security"))
+        .and(header("authorization", format!("Bearer {token}")))
+        .and(body_json(json!({
+            "title": "Critical security finding",
+            "message": "CVE-2026-12345 affects production-api.",
+            "priority": 5,
+        })))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let credentials = Arc::new(MemoryCredentials::default());
+    let config_ref = store_channel_config(
+        credentials.as_ref(),
+        &ChannelSecretConfig::Ntfy {
+            url: format!("{}/security", server.uri()),
+            token: Some(token.to_owned()),
+        },
+    )
+    .unwrap();
+    let now = Utc::now();
+    let channel = NotificationChannel {
+        id: "wiremock-ntfy".to_owned(),
+        kind: NotificationChannelKind::Ntfy,
+        config_ref: Some(config_ref),
+        min_priority: 70,
+        enabled: true,
+        network_approved_at: Some(now),
+        network_approved_destination: Some(server.uri()),
+        created_at: now,
+        updated_at: now,
+    };
+    let transport = crate::ConfiguredTransport::new(
+        PublicDataHttp::for_notification_tests().unwrap(),
+        credentials,
+    );
+
+    crate::ChannelTransport::deliver(&transport, &channel, &event(), true)
+        .await
+        .unwrap();
 }
 
 #[test]

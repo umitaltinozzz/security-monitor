@@ -40,6 +40,10 @@ import type { ScannerAvailability } from "./generated/ScannerAvailability";
 import type { SshHostSummary } from "./generated/SshHostSummary";
 import type { SshTargetInput } from "./generated/SshTargetInput";
 import type { UpdateCheckResult } from "./generated/UpdateCheckResult";
+import type { NotificationChannelView } from "./generated/NotificationChannelView";
+import type { NotificationPreview } from "./generated/NotificationPreview";
+import type { SaveNotificationChannelInput } from "./generated/SaveNotificationChannelInput";
+import type { UpdateNotificationChannelInput } from "./generated/UpdateNotificationChannelInput";
 
 export type WorkspaceData = {
   settings: AppSettings;
@@ -76,6 +80,17 @@ export type WorkspaceSection = (typeof workspaceSections)[number];
 export const api = {
   settings: () => invoke<AppSettings>("get_app_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { settings }),
+  notificationChannels: () => invoke<NotificationChannelView[]>("list_notification_channels"),
+  saveNotificationChannel: (input: SaveNotificationChannelInput) =>
+    invoke<NotificationChannelView>("save_notification_channel", { input }),
+  updateNotificationChannel: (input: UpdateNotificationChannelInput) =>
+    invoke<NotificationChannelView>("update_notification_channel", { input }),
+  deleteNotificationChannel: (channelId: string) =>
+    invoke<void>("delete_notification_channel", { channelId }),
+  previewNotification: (input: SaveNotificationChannelInput) =>
+    invoke<NotificationPreview>("preview_notification", { input }),
+  sendTestNotification: (channelId: string) =>
+    invoke<void>("send_test_notification", { channelId }),
   aiConfiguration: () => invoke<AiConfigurationView>("get_ai_configuration"),
   saveAiSettings: (settings: AiSettings) => invoke<void>("save_ai_settings", { settings }),
   saveAiProvider: (input: AiProviderInput) => invoke<AiProvider>("save_ai_provider", { input }),

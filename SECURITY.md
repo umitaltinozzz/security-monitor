@@ -12,4 +12,4 @@ Include the affected commit or version, impact, and a minimal reproduction when 
 
 ## Security boundaries
 
-The desktop build provides local scans and approved Linux-agent collection over pinned SSH, within the limits listed in the feature status matrix. Debian and Ubuntu OS packages are evaluated only when package collection is complete and local OSV data is fresh; unsupported distributions are marked not evaluated. Missing, stale, or unsupported evidence must not be interpreted as a safe result. Notification delivery and agentless SSH collection are not available.
+The desktop build provides local scans, approved Linux-agent collection over pinned SSH, and local OS notifications, within the limits listed in the feature status matrix. OS package evaluation requires a supported distribution, complete package collection, and fresh local OSV data; unsupported distributions remain unverified. Missing, stale, or unsupported evidence must not be interpreted as a safe result. External notification channels require explicit user approval; agentless SSH collection is not available.

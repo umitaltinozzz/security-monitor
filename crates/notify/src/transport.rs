@@ -29,6 +29,10 @@ pub enum ChannelSecretConfig {
     Discord {
         url: String,
     },
+    Ntfy {
+        url: String,
+        token: Option<String>,
+    },
     Smtp {
         host: String,
         port: u16,
@@ -96,6 +100,7 @@ impl ChannelTransport for ConfiguredTransport {
             NotificationChannelKind::Webhook
             | NotificationChannelKind::Slack
             | NotificationChannelKind::Discord
+            | NotificationChannelKind::Ntfy
             | NotificationChannelKind::Smtp => {
                 if !outbound_notifications_enabled || channel.network_approved_at.is_none() {
                     return Err(NotificationError::ApprovalRequired);
@@ -141,6 +146,23 @@ impl ChannelTransport for ConfiguredTransport {
                             .await
                             .map_err(|_| NotificationError::DeliveryFailed)
                     }
+                    (NotificationChannelKind::Ntfy, ChannelSecretConfig::Ntfy { url, token }) => {
+                        let payload = json!({
+                            "title": event.title,
+                            "message": event.message,
+                            "priority": ntfy_priority(event.priority_score),
+                        });
+                        self.http
+                            .post_user_approved_json_with_bearer(
+                                &url,
+                                destination,
+                                &payload,
+                                token.as_deref(),
+                                outbound_notifications_enabled,
+                            )
+                            .await
+                            .map_err(|_| NotificationError::DeliveryFailed)
+                    }
                     (
                         NotificationChannelKind::Smtp,
                         ChannelSecretConfig::Smtp {
@@ -175,8 +197,8 @@ impl ChannelTransport for ConfiguredTransport {
 
 fn deliver_desktop(event: &NotificationEvent) -> Result<(), NotificationError> {
     notify_rust::Notification::new()
-        .summary("Security Monitor")
-        .body(&event_summary(event))
+        .summary(&event.title)
+        .body(&event.message)
         .show()
         .map(|_| ())
         .map_err(|_| NotificationError::DeliveryFailed)
@@ -184,21 +206,30 @@ fn deliver_desktop(event: &NotificationEvent) -> Result<(), NotificationError> {
 
 fn event_payload(event: &NotificationEvent) -> Value {
     json!({
-        "event": "security_finding",
+        "event": event.kind,
+        "kind": event.kind,
         "finding_id": event.finding_id,
         "advisory_id": event.advisory_id,
         "asset_alias": event.asset_alias,
         "priority": event.priority_score,
         "severity": event.severity,
+        "title": event.title,
+        "message": event.message,
     })
 }
 
 fn event_summary(event: &NotificationEvent) -> String {
-    let asset = event.asset_alias.as_deref().unwrap_or("local project");
-    format!(
-        "{} finding {} affects {} (priority {}/100).",
-        event.advisory_id, event.finding_id, asset, event.priority_score
-    )
+    event.message.clone()
+}
+
+fn ntfy_priority(priority_score: u8) -> u8 {
+    match priority_score {
+        90..=100 => 5,
+        70..=89 => 4,
+        40..=69 => 3,
+        1..=39 => 2,
+        _ => 1,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

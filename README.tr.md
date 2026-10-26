@@ -66,7 +66,7 @@ flowchart LR
   Server["Linux sunucu: salt okunur ajan"] -- "onaylı, sabitlenmiş SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "yalnızca genel indirmeler açıkken" --> Engine
   Desktop -. "incelenip onaylanan istek" .-> AI["Seçtiğin isteğe bağlı AI sağlayıcısı"]
-  Notify["Bildirim gönderimi bu derlemede kullanılamıyor"]
+  Notify["Yerel OS bildirimleri açık; harici kanallar onay ister"]
 ```
 
 Ajanda uzaktan komut çalıştırma özelliği yoktur: yalnızca derleme zamanında sabitlenmiş, salt okunur toplayıcıları çalıştırır ve root yetkisi istemez.

@@ -66,7 +66,7 @@ flowchart LR
   Server["Linux server: read-only agent"] -- "approved, pinned SSH" --> Engine
   Feeds["OSV, GHSA, CISA KEV, EPSS, cve.now, RSS/Atom"] -- "only with public downloads on" --> Engine
   Desktop -. "reviewed and approved request" .-> AI["Optional AI provider you choose"]
-  Notify["Notification delivery is not available in this build"]
+  Notify["Local OS alerts by default; external channels require approval"]
 ```
 
 The agent has no remote-command feature: it runs only a fixed, compile-time list of read-only collectors and never needs root.

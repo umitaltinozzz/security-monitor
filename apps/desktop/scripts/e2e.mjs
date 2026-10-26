@@ -137,6 +137,16 @@ try {
             return null;
           case "get_ai_configuration":
             return state.aiConfiguration;
+          case "list_notification_channels":
+            return [];
+          case "preview_notification":
+            return {
+              title: "Security Monitor test notification",
+              message: "Preview only",
+              destination: "https://hooks.example.test",
+            };
+          case "send_test_notification":
+            return null;
           case "save_ai_settings": {
             const previous = state.aiConfiguration.settings.mcp_source_access_projects ?? [];
             const next = args.settings.mcp_source_access_projects ?? [];
@@ -461,7 +471,7 @@ try {
     ["dark", "dark"],
   ]) {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
-    await page.locator("select").first().selectOption(themeValue);
+    await page.getByRole("combobox", { name: "Appearance" }).selectOption(themeValue);
     if (themeValue === "light") {
       const sourceAccess = page.getByRole("checkbox", { name: "Fixture Project" });
       await sourceAccess.check();

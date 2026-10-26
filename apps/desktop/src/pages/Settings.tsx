@@ -5,6 +5,7 @@ import type { AppSettings } from "../generated/AppSettings";
 import type { UpdateCheckResult } from "../generated/UpdateCheckResult";
 import { api } from "../api";
 import { AiSettingsPanel } from "../AiSettings";
+import { NotificationSettingsPanel } from "../NotificationSettingsPanel";
 import { PageHeading } from "../components";
 import { useWorkspace } from "../WorkspaceContext";
 import { safeError, safeExternalUrl } from "../utils";
@@ -160,12 +161,6 @@ export function Settings() {
             </button>
           </div>
         )}
-        <div className="setting-row">
-          <span>
-            <strong>{t("settings.notifications")}</strong>
-            <small>{t("settings.notificationsUnavailable")}</small>
-          </span>
-        </div>
         <label className="setting-row">
           <span>
             <strong>{t("settings.scanInterval")}</strong>
@@ -185,6 +180,12 @@ export function Settings() {
           </span>
         </label>
       </section>
+      <NotificationSettingsPanel
+        settings={settings}
+        saveSettings={saveSettings}
+        setNotice={setNotice}
+        t={t}
+      />
       <section className="panel settings-panel">
         <h2>{t("settings.applicationUpdates")}</h2>
         <p>{t("settings.applicationUpdatesHelp")}</p>

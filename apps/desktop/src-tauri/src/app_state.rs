@@ -275,13 +275,16 @@ mod tests {
     use std::{collections::HashMap, fs};
 
     #[test]
-    fn saved_settings_ignore_the_removed_notification_toggle() {
+    fn old_settings_default_to_local_notifications_only() {
         let settings: AppSettings =
             serde_json::from_str(r#"{"notifications_enabled":true,"scan_interval_hours":12}"#)
                 .expect("older settings remain readable");
 
         assert_eq!(settings.scan_interval_hours, 12);
         assert_eq!(settings.ecosystems, AppSettings::default().ecosystems);
+        assert!(settings.desktop_notifications_enabled);
+        assert!(!settings.outbound_notifications_enabled);
+        assert!(!settings.daily_summary_enabled);
     }
 
     #[test]

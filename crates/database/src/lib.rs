@@ -450,20 +450,18 @@ const FINDING_FILTER_FROM_WHERE: &str = "FROM findings f \
       ), lower(?4)) > 0)";
 
 impl Repository<NotificationDeliveryState> {
-    /// Reserves a delivery atomically. Existing snoozes, in-flight deliveries, and events inside
-    /// the deduplication window are not claimed.
+    /// Reserves a delivery atomically. A successfully delivered fingerprint is never claimed
+    /// again; snoozes and active delivery leases are also respected.
     pub async fn claim_delivery(
         &self,
         channel_id: &str,
         event_fingerprint: &str,
         now: chrono::DateTime<chrono::Utc>,
-        deduplication_window: chrono::Duration,
         lease_duration: chrono::Duration,
     ) -> Result<Option<String>, DatabaseError> {
         let id = notification_state_id(channel_id, event_fingerprint);
         let now_text = timestamp(now);
         let lease_until = timestamp(now + lease_duration);
-        let dedup_before = timestamp(now - deduplication_window);
         let state = NotificationDeliveryState {
             id: id.clone(),
             channel_id: channel_id.to_owned(),
@@ -490,8 +488,7 @@ impl Repository<NotificationDeliveryState> {
                     notification_delivery_states.snoozed_until <= excluded.updated_at) \
                AND (notification_delivery_states.lease_expires_at IS NULL OR \
                     notification_delivery_states.lease_expires_at <= excluded.updated_at) \
-               AND (notification_delivery_states.last_delivered_at IS NULL OR \
-                    notification_delivery_states.last_delivered_at <= ?7) \
+               AND notification_delivery_states.last_delivered_at IS NULL \
              RETURNING id",
         )
         .bind(id)
@@ -500,7 +497,6 @@ impl Repository<NotificationDeliveryState> {
         .bind(lease_until)
         .bind(now_text)
         .bind(json)
-        .bind(dedup_before)
         .fetch_optional(&self.pool)
         .await?;
         Ok(claimed)

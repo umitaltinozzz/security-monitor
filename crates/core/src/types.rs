@@ -134,6 +134,7 @@ pub enum NotificationChannelKind {
     Webhook,
     Slack,
     Discord,
+    Ntfy,
     Smtp,
 }
 

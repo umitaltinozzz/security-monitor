@@ -94,6 +94,16 @@ impl PublicDataHttp {
         Self::build(policy, false)
     }
 
+    #[cfg(feature = "test-support")]
+    pub fn for_notification_tests() -> Result<Self, ProviderError> {
+        Self::build(
+            HttpPolicy {
+                public_downloads_enabled: false,
+            },
+            true,
+        )
+    }
+
     fn build(policy: HttpPolicy, allow_loopback: bool) -> Result<Self, ProviderError> {
         ensure_rustls_crypto_provider()?;
         let redirect_loopback = allow_loopback;
@@ -312,6 +322,26 @@ impl PublicDataHttp {
         payload: &serde_json::Value,
         outbound_notifications_enabled: bool,
     ) -> Result<(), ProviderError> {
+        self.post_user_approved_json_with_bearer(
+            address,
+            approved_origin,
+            payload,
+            None,
+            outbound_notifications_enabled,
+        )
+        .await
+    }
+
+    /// Sends a small notification to an approved HTTPS origin. An optional bearer token remains
+    /// in memory and is sent only in the HTTP authorization header.
+    pub async fn post_user_approved_json_with_bearer(
+        &self,
+        address: &str,
+        approved_origin: &str,
+        payload: &serde_json::Value,
+        bearer_token: Option<&str>,
+        outbound_notifications_enabled: bool,
+    ) -> Result<(), ProviderError> {
         if !outbound_notifications_enabled {
             return Err(ProviderError::NetworkDisabled);
         }
@@ -335,9 +365,11 @@ impl PublicDataHttp {
         tracing::info!(destination_host = %host, "sending user-approved notification summary");
         let client =
             pinned_destination_client(&url, &host, loopback_http, Duration::from_secs(90)).await?;
-        let response = client
-            .post(url)
-            .json(payload)
+        let mut request = client.post(url).json(payload);
+        if let Some(token) = bearer_token.filter(|token| !token.is_empty()) {
+            request = request.bearer_auth(token);
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| ProviderError::Network { host: host.clone() })?;

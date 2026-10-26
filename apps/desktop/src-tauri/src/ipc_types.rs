@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use security_monitor_ai::AiSettings;
 use security_monitor_core::{
     AgentCliProduct, AiProviderKind, AiTier, Asset, Environment, Finding, FindingDispositionReason,
-    FindingStatus, ProviderCapabilities, ScanOutcome,
+    FindingStatus, NotificationChannelKind, ProviderCapabilities, ScanOutcome,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -43,6 +43,16 @@ pub struct AppSettings {
     pub public_downloads_enabled: bool,
     pub scan_interval_hours: u16,
     pub ecosystems: Vec<String>,
+    #[serde(default = "default_true")]
+    pub desktop_notifications_enabled: bool,
+    #[serde(default)]
+    pub outbound_notifications_enabled: bool,
+    #[serde(default)]
+    pub daily_summary_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -54,8 +64,83 @@ impl Default for AppSettings {
             public_downloads_enabled: false,
             scan_interval_hours: 24,
             ecosystems: vec!["npm".to_owned(), "pypi".to_owned(), "cargo".to_owned()],
+            desktop_notifications_enabled: true,
+            outbound_notifications_enabled: false,
+            daily_summary_enabled: false,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
+pub enum NotificationChannelSecretInput {
+    Webhook {
+        url: String,
+    },
+    Slack {
+        url: String,
+    },
+    Discord {
+        url: String,
+    },
+    Ntfy {
+        url: String,
+        token: Option<String>,
+    },
+    Smtp {
+        host: String,
+        port: u16,
+        tls: NotificationSmtpTlsMode,
+        username: Option<String>,
+        password: Option<String>,
+        from: String,
+        to: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum NotificationSmtpTlsMode {
+    ImplicitTls,
+    StartTls,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SaveNotificationChannelInput {
+    pub id: Option<String>,
+    pub config: NotificationChannelSecretInput,
+    pub enabled: bool,
+    pub min_priority: u8,
+    pub outbound_approved: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateNotificationChannelInput {
+    pub id: String,
+    pub enabled: bool,
+    pub min_priority: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NotificationChannelView {
+    pub id: String,
+    pub kind: NotificationChannelKind,
+    pub enabled: bool,
+    pub min_priority: u8,
+    pub approved_destination: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NotificationPreview {
+    pub title: String,
+    pub message: String,
+    pub destination: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

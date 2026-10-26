@@ -42,10 +42,25 @@ async fn run(app: AppHandle, cancellation: CancellationToken) {
     reconcile_watchers(&app, &cancellation, &mut watchers).await;
     run_startup_check(&app).await;
     let mut last_full_scan = Instant::now();
+    let mut last_summary_day = None;
+    let mut notification_tick = tokio::time::interval(Duration::from_secs(60 * 60));
 
     loop {
         tokio::select! {
             _ = cancellation.cancelled() => break,
+            _ = notification_tick.tick() => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let now = chrono::Utc::now();
+                    crate::ipc::notifications::publish_stale_server_snapshots(&state, now).await;
+                    if state.settings.read().await.daily_summary_enabled {
+                        let today = now.date_naive();
+                        if last_summary_day != Some(today) {
+                            crate::ipc::notifications::publish_daily_summary(&state, today).await;
+                            last_summary_day = Some(today);
+                        }
+                    }
+                }
+            }
             action = receiver.recv() => {
                 let Some(action) = action else { break };
                 match action {
@@ -121,12 +136,9 @@ async fn run_startup_check(app: &AppHandle) {
                 unverified = report.unverified_project_ids.len(),
                 "scheduled project check completed"
             );
-            let database = state.database.clone();
-            let app_data_dir = state.app_data_dir.clone();
             for project_id in report.scanned_project_ids {
-                if crate::drift_sync::refresh_project_drift(
-                    &database,
-                    &app_data_dir,
+                if crate::ipc::notifications::refresh_project_drift_and_notify(
+                    &state,
                     &project_id,
                     chrono::Utc::now(),
                 )
@@ -139,6 +151,8 @@ async fn run_startup_check(app: &AppHandle) {
         }
         Err(_) => tracing::warn!("scheduled project check did not complete"),
     }
+    crate::ipc::notifications::publish_new_high_findings(&state, None).await;
+    crate::ipc::notifications::publish_stale_server_snapshots(&state, chrono::Utc::now()).await;
 }
 
 async fn refresh_advisories(app: &AppHandle) {
@@ -148,7 +162,9 @@ async fn refresh_advisories(app: &AppHandle) {
     let queue = state.scans.read().await.queue.clone();
     if queue.refresh_advisories().await.is_err() {
         tracing::warn!("scheduled advisory refresh did not complete");
+        return;
     }
+    crate::ipc::notifications::publish_new_high_findings(&state, None).await;
 }
 
 async fn run_scheduled_full_scans(app: &AppHandle) {
@@ -160,8 +176,6 @@ async fn run_scheduled_full_scans(app: &AppHandle) {
         return;
     };
     let queue = state.scans.read().await.queue.clone();
-    let database = state.database.clone();
-    let app_data_dir = state.app_data_dir.clone();
 
     let mut handles = Vec::new();
     for project in projects {
@@ -189,9 +203,8 @@ async fn run_scheduled_full_scans(app: &AppHandle) {
             tracing::warn!("scheduled full scan did not complete");
             continue;
         }
-        if crate::drift_sync::refresh_project_drift(
-            &database,
-            &app_data_dir,
+        if crate::ipc::notifications::refresh_project_drift_and_notify(
+            &state,
             &project_id,
             chrono::Utc::now(),
         )
@@ -201,6 +214,7 @@ async fn run_scheduled_full_scans(app: &AppHandle) {
             tracing::warn!("scheduled project drift refresh failed");
         }
     }
+    crate::ipc::notifications::publish_new_high_findings(&state, None).await;
 }
 
 async fn reconcile_watchers(
@@ -290,11 +304,8 @@ async fn watch_project_changes(
             tracing::warn!("file-change scan did not complete");
             continue;
         }
-        let database = state.database.clone();
-        let app_data_dir = state.app_data_dir.clone();
-        if crate::drift_sync::refresh_project_drift(
-            &database,
-            &app_data_dir,
+        if crate::ipc::notifications::refresh_project_drift_and_notify(
+            &state,
             &project_id,
             chrono::Utc::now(),
         )
@@ -303,5 +314,6 @@ async fn watch_project_changes(
         {
             tracing::warn!("file-change drift refresh failed");
         }
+        crate::ipc::notifications::publish_new_high_findings(&state, Some(&project_id)).await;
     }
 }

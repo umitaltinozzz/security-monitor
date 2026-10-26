@@ -24,6 +24,7 @@ security-monitor-database = { version = "0.1.0", path = "../../../crates/databas
 security-monitor-drift = { version = "0.1.0", path = "../../../crates/drift" }
 security-monitor-inventory = { version = "0.1.0", path = "../../../crates/inventory" }
 security-monitor-mcp-server = { version = "0.1.0", path = "../../../crates/mcp-server" }
+security-monitor-notify = { version = "0.1.0", path = "../../../crates/notify" }
 security-monitor-remediation = { version = "0.1.0", path = "../../../crates/remediation" }
 security-monitor-scan-orchestrator = { version = "0.1.0", path = "../../../crates/scan-orchestrator" }
 security-monitor-scanner-adapters = { version = "0.1.0", path = "../../../crates/scanner-adapters" }

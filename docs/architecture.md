@@ -7,7 +7,7 @@ description: Current implementation, feature scope, and trust boundaries.
 
 ## Current implementation
 
-The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains the Tauri 2 + React application, and `apps/cli` contains the `secmon` binary for local scans, reports, advisory refresh, diagnostics, approved server collection, Git hooks, agent integrations, and the local MCP server. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local scan orchestration with tray scheduling and file watching, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). Notification delivery is not available in the desktop build. The desktop and CLI share a local SQLite memory store for untrusted notes across supported coding agents. See the [feature status matrix](feature-status.md) for maturity and limits.
+The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` contains the Tauri 2 + React application, and `apps/cli` contains the `secmon` binary for local scans, reports, advisory refresh, diagnostics, approved server collection, Git hooks, agent integrations, and the local MCP server. Rust libraries provide SQLite repositories and domain types (`core`, `database`), repository inventory (`inventory`), advisory ingestion and offline matching (`advisory-providers`), scanner process adapters (`scanner-adapters`), finding correlation (`correlation`), local scan orchestration with tray scheduling and file watching, and read-only Linux collection over pinned SSH (`agent-protocol`, `agent-transport`, `agents/linux`). The tray background routes finding, drift, and stale-server events through the notification crate; external channels are user-approved and their secrets stay in the OS credential store. The desktop and CLI share a local SQLite memory store for untrusted notes across supported coding agents. See the [feature status matrix](feature-status.md) for maturity and limits.
 
 | Component | Responsibility |
 | --- | --- |
@@ -36,7 +36,7 @@ flowchart TD
   DB --> AI[Optional approved AI workflow]
 ```
 
-The desktop implements project management and Linux-agent pairing over pinned SSH; each server inventory collection requires user approval. Network-capable components use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions. Notification delivery and agentless SSH collection are not available in the desktop product.
+The desktop implements project management and Linux-agent pairing over pinned SSH; each server inventory collection requires user approval. Network-capable components use the single HTTP client wrapper, record destination hosts, and honor privacy settings. Core must not depend on Tauri. All database access goes through `crates/database` repository functions. Agentless SSH collection is not available in the desktop product.
 
 ## Trust boundaries
 

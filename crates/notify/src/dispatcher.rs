@@ -12,26 +12,29 @@ const LEASE_DURATION: Duration = Duration::minutes(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotificationEvent {
+    pub kind: String,
     pub fingerprint: String,
     pub finding_id: String,
     pub advisory_id: String,
     pub asset_alias: Option<String>,
     pub priority_score: u8,
     pub severity: String,
+    pub title: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotificationSettings {
     /// Global privacy control. External channels require this and a timestamped channel approval.
     pub outbound_notifications_enabled: bool,
-    pub deduplication_window: Duration,
+    pub desktop_notifications_enabled: bool,
 }
 
 impl Default for NotificationSettings {
     fn default() -> Self {
         Self {
             outbound_notifications_enabled: false,
-            deduplication_window: Duration::minutes(15),
+            desktop_notifications_enabled: true,
         }
     }
 }
@@ -55,8 +58,6 @@ pub struct DeliveryResult {
 pub enum NotificationError {
     #[error("notification event is invalid")]
     InvalidEvent,
-    #[error("notification settings are invalid")]
-    InvalidSettings,
     #[error("external notification channel is missing recorded approval")]
     ApprovalRequired,
     #[error("notification destination configuration is invalid")]
@@ -112,11 +113,6 @@ where
         now: DateTime<Utc>,
     ) -> Result<Vec<DeliveryResult>, NotificationError> {
         validate_event(event)?;
-        if self.settings.deduplication_window < Duration::zero()
-            || self.settings.deduplication_window > Duration::days(30)
-        {
-            return Err(NotificationError::InvalidSettings);
-        }
         let channels = self
             .database
             .repository::<NotificationChannel>()
@@ -129,7 +125,13 @@ where
                 results.push(result(&channel, DeliveryStatus::Disabled));
                 continue;
             }
-            if event.priority_score < channel.min_priority {
+            if channel.kind == NotificationChannelKind::Desktop
+                && !self.settings.desktop_notifications_enabled
+            {
+                results.push(result(&channel, DeliveryStatus::Disabled));
+                continue;
+            }
+            if event.kind != "daily_summary" && event.priority_score < channel.min_priority {
                 results.push(result(&channel, DeliveryStatus::BelowThreshold));
                 continue;
             }
@@ -144,13 +146,7 @@ where
                 continue;
             }
             let Some(state_id) = states
-                .claim_delivery(
-                    &channel.id,
-                    &event.fingerprint,
-                    now,
-                    self.settings.deduplication_window,
-                    LEASE_DURATION,
-                )
+                .claim_delivery(&channel.id, &event.fingerprint, now, LEASE_DURATION)
                 .await?
             else {
                 results.push(result(&channel, DeliveryStatus::Suppressed));
@@ -178,6 +174,36 @@ where
         Ok(results)
     }
 
+    pub async fn test_channel(
+        &self,
+        channel_id: &str,
+        event: &NotificationEvent,
+    ) -> Result<(), NotificationError> {
+        validate_event(event)?;
+        let channel = self
+            .database
+            .repository::<NotificationChannel>()
+            .get(channel_id)
+            .await?
+            .ok_or(NotificationError::InvalidConfiguration)?;
+        let external = channel.kind != NotificationChannelKind::Desktop;
+        if external
+            && (!self.settings.outbound_notifications_enabled
+                || channel.network_approved_at.is_none()
+                || channel.network_approved_destination.is_none()
+                || channel.config_ref.is_none())
+        {
+            return Err(NotificationError::ApprovalRequired);
+        }
+        self.transport
+            .deliver(
+                &channel,
+                event,
+                self.settings.outbound_notifications_enabled,
+            )
+            .await
+    }
+
     pub async fn snooze(
         &self,
         channel_id: &str,
@@ -200,10 +226,15 @@ where
 pub(crate) fn validate_event(event: &NotificationEvent) -> Result<(), NotificationError> {
     validate_fingerprint(&event.fingerprint)?;
     if event.priority_score > 100
+        || !safe_identifier(&event.kind, 40)
         || !safe_identifier(&event.finding_id, 128)
         || !safe_advisory_id(&event.advisory_id)
         || event.severity.len() > 32
         || event.severity.chars().any(char::is_control)
+        || event.title.len() > 120
+        || event.title.chars().any(char::is_control)
+        || event.message.len() > 1000
+        || event.message.chars().any(char::is_control)
         || event.asset_alias.as_deref().is_some_and(|alias| {
             alias.len() > 120
                 || alias.chars().any(char::is_control)

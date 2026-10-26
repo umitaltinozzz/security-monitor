@@ -90,6 +90,10 @@ fn main() {
             let settings = load_settings(&app_data_dir);
             let database_path: PathBuf = app_data_dir.join("security-monitor.sqlite3");
             let database = tauri::async_runtime::block_on(Database::open(database_path))?;
+            tauri::async_runtime::block_on(crate::ipc::notifications::ensure_desktop_channel(
+                &database,
+            ))
+            .map_err(std::io::Error::other)?;
             let state = tauri::async_runtime::block_on(async {
                 AppState::new(database, app_data_dir, settings.clone())
             })
@@ -144,6 +148,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ipc::settings::get_app_settings,
             ipc::settings::save_app_settings,
+            ipc::notifications::list_notification_channels,
+            ipc::notifications::save_notification_channel,
+            ipc::notifications::update_notification_channel,
+            ipc::notifications::delete_notification_channel,
+            ipc::notifications::preview_notification,
+            ipc::notifications::send_test_notification,
             ipc::settings::get_ai_configuration,
             ipc::settings::save_ai_settings,
             ipc::ai::save_ai_provider,

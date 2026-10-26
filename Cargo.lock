@@ -5510,6 +5510,7 @@ dependencies = [
  "security-monitor-drift",
  "security-monitor-inventory",
  "security-monitor-mcp-server",
+ "security-monitor-notify",
  "security-monitor-remediation",
  "security-monitor-scan-orchestrator",
  "security-monitor-scanner-adapters",
@@ -5617,6 +5618,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

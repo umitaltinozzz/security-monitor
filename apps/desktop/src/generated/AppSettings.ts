@@ -2,4 +2,4 @@
 import type { ThemePreference } from "./ThemePreference";
 import type { UiLanguage } from "./UiLanguage";
 
-export type AppSettings = { language: UiLanguage, theme: ThemePreference, onboarding_completed: boolean, public_downloads_enabled: boolean, scan_interval_hours: number, ecosystems: Array<string>, };
+export type AppSettings = { language: UiLanguage, theme: ThemePreference, onboarding_completed: boolean, public_downloads_enabled: boolean, scan_interval_hours: number, ecosystems: Array<string>, desktop_notifications_enabled: boolean, outbound_notifications_enabled: boolean, daily_summary_enabled: boolean, };

@@ -289,25 +289,13 @@ async fn notification_delivery_claim_is_atomic_deduplicated_and_snoozable() {
     let fingerprint = format!("sha256:{}", "a".repeat(64));
 
     let reservation = states
-        .claim_delivery(
-            "channel-1",
-            &fingerprint,
-            now,
-            Duration::minutes(15),
-            Duration::minutes(2),
-        )
+        .claim_delivery("channel-1", &fingerprint, now, Duration::minutes(2))
         .await
         .unwrap()
         .unwrap();
     assert!(
         states
-            .claim_delivery(
-                "channel-1",
-                &fingerprint,
-                now,
-                Duration::minutes(15),
-                Duration::minutes(2),
-            )
+            .claim_delivery("channel-1", &fingerprint, now, Duration::minutes(2),)
             .await
             .unwrap()
             .is_none()
@@ -322,7 +310,6 @@ async fn notification_delivery_claim_is_atomic_deduplicated_and_snoozable() {
                 "channel-1",
                 &fingerprint,
                 now + Duration::minutes(5),
-                Duration::minutes(15),
                 Duration::minutes(2),
             )
             .await
@@ -341,7 +328,6 @@ async fn notification_delivery_claim_is_atomic_deduplicated_and_snoozable() {
                 "channel-1",
                 &fingerprint,
                 now + Duration::minutes(30),
-                Duration::minutes(15),
                 Duration::minutes(2),
             )
             .await
@@ -354,12 +340,11 @@ async fn notification_delivery_claim_is_atomic_deduplicated_and_snoozable() {
                 "channel-1",
                 &fingerprint,
                 snoozed_until + Duration::seconds(1),
-                Duration::minutes(15),
                 Duration::minutes(2),
             )
             .await
             .unwrap()
-            .is_some()
+            .is_none()
     );
 }
 
