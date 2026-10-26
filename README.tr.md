@@ -125,6 +125,27 @@ secmon integrate remove <claude-code|codex|opencode>
 
 Bu komut yerel MCP sunucusunu, Security Monitor skill'lerini ve destekleniyorsa ajan push etmeden önce `secmon hook run` çalıştıran bir hook ekler. `--dry-run` tam diff'i gösterir, `remove` önceki dosyaları geri yükler. Ajanlar bulguları okuyup not bırakabilir; bir bulgunun durumunu veya önceliğini değiştiremez. Bkz. [Kodlama ajanı entegrasyonları](docs/integrations.md).
 
+## Yol haritası
+
+0.1 temel sürüm. Aşağıdaki plan 1.0'a giden yolu gösteriyor. 0.1'den sonraki her şey planlanan özelliklerdir, henüz yayınlanmadı; sıra kullanıcı geri bildirimine göre değişebilir. İlkeler değişmez: yerel öncelikli, uzaktan komut çalıştırmayan salt okunur ajan, onayın olmadan cihazından hiçbir şey çıkmaz ve eksik veri asla güvenli gösterilmez.
+
+| Sürüm | Tema | Öne çıkanlar |
+| --- | --- | --- |
+| **0.1** (şimdi) | Temel | Bağımlılıkların güvenlik duyurularıyla yerelde eşleştirilmesi, SSH üzerinden salt okunur Linux ajanı, repo ile production arasındaki fark (drift), masaüstü uygulaması, CLI, Git hook'ları, kodlama ajanı entegrasyonları |
+| **0.2** | Boşlukları kapat | Destek bitişi (EoL) ve runtime güncelliği, SLA, istisna ve metriklerle risk sahipliği, sunucu yapılandırma denetimi (CIS-lite), CI/CD ve repo kontrolleri, yaygın zayıflık sınıfları için rehberli düzeltme skill'leri, yeni ekosistemler, resmî CI entegrasyonları, self-hosted PaaS için ajansız drift (Dokploy, Coolify, Openship, CapRover, Dokku, Kamal) |
+| **0.3** | Bağlantılar ve hizmetler | GitHub, Cloudflare ve bulut firewall bağlantıları, telafi edici kontrol kanıtı, issue takip entegrasyonu, olay takibiyle üçüncü taraf hizmet envanteri, bağımlılık güncelleme asistanı |
+| **0.4** | Önle ve saldırı yüzeyi | Varlık keşfi, sahip olduğun varlıkların dış saldırı yüzeyi, threat intel zenginleştirme, pull request güvenlik incelemesi, zararlı paket tespiti, bağımlılık politikası |
+| **0.5** | Fark et ve müdahale et | Açığa özel ele geçirilme kontrolleri, hafif dosya bütünlüğü izleme, yerel olay özetleri, canary token'lar, müdahale rehberleri, secret envanteri ve rotasyon takibi |
+| **0.6** | Platformlar | Windows Server ve macOS ajanları, self-hosted relay ile push tabanlı ajan, Kubernetes ve container registry'leri, hosting panelleri ve CMS'ler, ağ cihazları ve appliance'lar |
+| **0.7** | Ekip ve uyumluluk | Roller ve SSO ile self-hosted ekip paneli, uyumluluk kanıt raporları, blue team araçlarına dışa aktarım |
+| **1.0** | Derin analiz | Erişilebilirlik (reachability) analizi, tedarik zinciri kanıtı (SLSA, Sigstore), açıklanabilir güvenlik durumu puanı, sandbox'lı eklentilerle plugin SDK, kendi test ortamına karşı DAST, bulut ve Kubernetes güvenlik durumu |
+
+**1.0 sonrası: küçük ekipler için mini SOC.** Taahhüt değil, araştırma yönü: ele geçirilme değerlendirmesi ("biri girdi mi?"), hafif kimlik ve erişim olay tespiti, KPI'larla savunma kapsama haritası, kontrollerin uyumluluk çerçevelerine eşlenmesi, SIEM'ler için OCSF çıktısı, bulut ve SaaS güvenlik durumu, Security Monitor'ün çalıştığı makinenin sıkılaştırılması, sürekli dış yüzey izleme, opsiyonel ağ sensörü, şüpheli dosyaların statik ön incelemesi ve öz test için laboratuvar ortamı.
+
+**Asla kapsamda olmayacaklar:** sahibi olmadığın sistemleri test etmek veya taramak, production'a otomatik yama veya deploy, ajanda genel komut kanalı, telemetri, yönetilen SaaS.
+
+Her maddenin ayrıntısı: **[Yol haritası](docs/roadmap.tr.md)**.
+
 ## Ekran görüntüleri
 
 <p align="center">
@@ -150,7 +171,7 @@ Ekran görüntüleri gerçek bir taramadan veya sunucudan değil, deterministik 
 
 Tüm belgeler: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Kullanım: [Özellik durumu](docs/feature-status.md) · [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
+- Kullanım: [Özellik durumu](docs/feature-status.md) · [Yol haritası](docs/roadmap.tr.md) · [Başlarken](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux ajan kurulumu](docs/agent-install.md) · [Kodlama ajanı entegrasyonları](docs/integrations.md) · [AI sağlayıcıları](docs/ai-providers.md) · [Yerel MCP](docs/local-mcp.md) · [Paylaşılan yerel hafıza](docs/shared-memory.md)
 - Nasıl çalışır: [Mimari](docs/architecture.md) · [Tarayıcı adaptörleri](docs/scanners.md) · [Bulgu korelasyonu](docs/correlation.md) · [Repo-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Tarama orkestrasyonu](docs/orchestration.md)
 - Güven: [Gizlilik](docs/privacy.md) · [Tehdit modeli](docs/threat-model.md) · [Veri kaynakları](docs/data-sources.md) · [İmzalı sürümler ve güncellemeler](docs/release.md) · [Performans bütçeleri](docs/performance.md)
 

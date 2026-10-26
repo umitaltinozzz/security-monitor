@@ -125,6 +125,27 @@ secmon integrate remove <claude-code|codex|opencode>
 
 This adds the local MCP server, the Security Monitor skills, and, where supported, a hook that runs `secmon hook run` before the agent pushes. `--dry-run` shows the exact diff, and `remove` restores the previous files. Agents can read findings and leave notes; they cannot change a finding's status or priority. See [Coding-agent integrations](docs/integrations.md).
 
+## Roadmap
+
+0.1 is the foundation. The plan below is how it grows into 1.0. Everything listed after 0.1 is planned, not shipped, and the order may change with user feedback. The principles do not change: local-first, a read-only agent with no remote commands, nothing leaves your device without your approval, and missing data is never shown as safe.
+
+| Version | Theme | Highlights |
+| --- | --- | --- |
+| **0.1** (now) | Foundation | Local dependency matching against advisories, read-only Linux agent over SSH, repository-to-production drift, desktop app, CLI, Git hooks, coding-agent integrations |
+| **0.2** | Close the gaps | End-of-life and runtime freshness, risk ownership with SLAs, exceptions and metrics, server configuration audit (CIS-lite), CI/CD and repository checks, guided fix skills for common weakness classes, more ecosystems, official CI integrations, agentless drift for self-hosted PaaS (Dokploy, Coolify, Openship, CapRover, Dokku, Kamal) |
+| **0.3** | Connectors and services | GitHub, Cloudflare and cloud-firewall connectors, compensating-control evidence, issue tracker integration, third-party service inventory with incident tracking, dependency update assistant |
+| **0.4** | Prevent and attack surface | Asset discovery, external attack surface of assets you own, threat-intel enrichment, pull request security review, malicious package detection, dependency policy |
+| **0.5** | Detect and respond | Vulnerability-specific compromise checks, lightweight file integrity monitoring, local event summaries, canary tokens, response playbooks, secret inventory and rotation tracking |
+| **0.6** | Platforms | Windows Server and macOS agents, push-based agent with a self-hosted relay, Kubernetes and container registries, hosting panels and CMS, network devices and appliances |
+| **0.7** | Teams and compliance | Self-hosted team panel with roles and SSO, compliance evidence reports, exports to blue-team tools |
+| **1.0** | Deep analysis | Reachability analysis, supply-chain provenance (SLSA, Sigstore), an explainable security posture score, a plugin SDK with sandboxed extensions, DAST against your own test environments, cloud and Kubernetes posture |
+
+**Beyond 1.0: a mini SOC for small teams.** Research direction, not a commitment: compromise assessment ("did someone get in?"), lightweight identity and access event detection, a defense coverage map with KPIs, control-to-framework mapping, OCSF output for SIEMs, cloud and SaaS posture, hardening of the machine Security Monitor runs on, continuous external surface monitoring, an optional network sensor, static triage of suspicious files, and a lab for self-testing.
+
+**Never in scope:** testing or scanning systems you do not own, automatic patching or deploys to production, a general command channel in the agent, telemetry, or a managed SaaS.
+
+Every item in detail: **[Roadmap](docs/roadmap.md)**.
+
 ## Screenshots
 
 <p align="center">
@@ -150,7 +171,7 @@ Screenshots come from the deterministic test fixture, not a real scan or server.
 
 Full documentation: **[umitaltinozzz.github.io/security-monitor](https://umitaltinozzz.github.io/security-monitor/)**
 
-- Using it: [Feature status](docs/feature-status.md) · [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
+- Using it: [Feature status](docs/feature-status.md) · [Roadmap](docs/roadmap.md) · [Getting started](docs/getting-started.md) · [CLI](docs/cli.md) · [Linux agent installation](docs/agent-install.md) · [Coding-agent integrations](docs/integrations.md) · [AI providers](docs/ai-providers.md) · [Local MCP](docs/local-mcp.md) · [Shared local memory](docs/shared-memory.md)
 - How it works: [Architecture](docs/architecture.md) · [Scanner adapters](docs/scanners.md) · [Finding correlation](docs/correlation.md) · [Repository-to-production drift](docs/drift.md) · [Deploy ID](docs/deploy-id.md) · [Scan orchestration](docs/orchestration.md)
 - Trust: [Privacy](docs/privacy.md) · [Threat model](docs/threat-model.md) · [Data sources](docs/data-sources.md) · [Signed releases and updates](docs/release.md) · [Performance budgets](docs/performance.md)
 
