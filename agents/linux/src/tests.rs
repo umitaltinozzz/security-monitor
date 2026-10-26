@@ -211,6 +211,36 @@ fn kernel_comparison_uses_installed_package_release_and_manual_products_are_clos
         evidence_path: None,
     };
     assert_eq!(newest_installed_kernel(&[meta_package]), None);
+
+    let uek = parse_package_output(
+        include_bytes!("../../../tests/fixtures/agent/rpm-kernel-uek.txt"),
+        "rpm",
+        PackageSource::Rpm,
+    );
+    assert!(!uek.partial);
+    assert_eq!(
+        newest_installed_kernel(&uek.records).as_deref(),
+        Some("6.12.0-204.92.4.2.el9uek")
+    );
+    assert_eq!(
+        kernel_restart_required(
+            "6.12.0-204.92.4.2.el9uek.x86_64",
+            "6.12.0-204.92.4.2.el9uek"
+        ),
+        Some(false)
+    );
+    assert_eq!(
+        kernel_restart_required(
+            "6.12.0-203.76.7.1.el9uek.x86_64",
+            "6.12.0-204.92.4.2.el9uek"
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        kernel_restart_required("5.14.0-570.5.1.el9.x86_64", "5.14.0-570.5.1.el9"),
+        Some(false)
+    );
+
     assert_eq!(manual_product_name("nginx"), Some("nginx"));
     assert_eq!(manual_product_name("node"), Some("nodejs"));
     assert_eq!(manual_product_name("unknown-bin"), None);

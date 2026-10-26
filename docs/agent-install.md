@@ -61,7 +61,7 @@ The agent resolves each path before scanning, rejects duplicate or invalid roots
 
 ## Host restart and manual-install evidence
 
-The collector compares the running kernel release from `/proc/sys/kernel/osrelease` with the newest installed kernel package when both values can be read and parsed. A proven difference is restart evidence; it is not proof that a vulnerability is fixed in production. Unknown or unsupported version formats stay partial and unverified.
+The collector compares the running kernel release from `/proc/sys/kernel/osrelease` with the newest installed kernel package when both values can be read and parsed. This includes RPM `kernel-core` and Oracle UEK `kernel-uek`/`kernel-uek-core` packages; known architecture suffixes such as `.x86_64` are ignored for the version comparison. A proven difference is restart evidence; it is not proof that a vulnerability is fixed in production. Unknown or unsupported version formats stay partial and unverified.
 
 For processes whose `/proc/<pid>/maps` files are readable, the collector records bounded deleted shared-library basenames. It does not record library contents or restart services. Permission-denied process maps make the process check partial. The collector also checks a closed product allowlist beneath canonical `/opt` and `/usr/local` roots, using fixed per-product `--version` argument vectors. Those records have low confidence and `source_type=manual`; binaries outside the allowlist or roots are ignored. No arbitrary command can be requested remotely.
 

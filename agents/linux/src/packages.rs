@@ -213,7 +213,13 @@ pub(super) fn newest_installed_kernel(packages: &[PackageRecord]) -> Option<Stri
             Some(release)
         } else if matches!(
             package.name.as_str(),
-            "kernel-core" | "kernel" | "linux-lts"
+            "kernel-core"
+                | "kernel"
+                | "kernel-uek"
+                | "kernel-uek-core"
+                | "kernel-uek64k"
+                | "kernel-uek64k-core"
+                | "linux-lts"
         ) {
             package.version.as_deref()
         } else {
@@ -237,6 +243,8 @@ pub(super) fn newest_installed_kernel(packages: &[PackageRecord]) -> Option<Stri
 }
 
 pub(super) fn kernel_restart_required(running: &str, installed: &str) -> Option<bool> {
+    let running = without_kernel_architecture(running);
+    let installed = without_kernel_architecture(installed);
     let running_key = numeric_release_key(running)?;
     let installed_key = numeric_release_key(installed)?;
     match installed_key.cmp(&running_key) {
@@ -245,6 +253,18 @@ pub(super) fn kernel_restart_required(running: &str, installed: &str) -> Option<
         std::cmp::Ordering::Equal if installed == running => Some(false),
         std::cmp::Ordering::Equal => None,
     }
+}
+
+fn without_kernel_architecture(value: &str) -> &str {
+    let Some((release, architecture)) = value.rsplit_once('.') else {
+        return value;
+    };
+    matches!(
+        architecture,
+        "x86_64" | "aarch64" | "i686" | "i386" | "ppc64le" | "s390x" | "armv7hl" | "riscv64"
+    )
+    .then_some(release)
+    .unwrap_or(value)
 }
 
 fn numeric_release_key(value: &str) -> Option<Vec<u64>> {
