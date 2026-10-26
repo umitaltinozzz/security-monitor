@@ -6,6 +6,9 @@ const valid = new Set(['windows-x86_64', 'macos-x86_64', 'macos-aarch64', 'linux
 if (!valid.has(artifact) || !target || !['windows', 'darwin', 'linux'].includes(platform) || !['x86_64', 'aarch64'].includes(arch)) {
   throw new Error('Release target metadata is invalid.');
 }
+const codeSigning = process.env.SECMON_CODE_SIGNING;
+const allowedCodeSigning = platform === 'linux' ? ['not_applicable'] : ['signed', 'unsigned'];
+if (!allowedCodeSigning.includes(codeSigning)) throw new Error('Release code-signing status is invalid.');
 
 const root = resolve('.');
 const output = join(root, 'target', 'release-out', artifact);
@@ -70,6 +73,8 @@ if (platform === 'linux') {
 }
 
 await writeFile(join(output, `${artifact}.updater.json`), `${JSON.stringify(updaterTargets, null, 2)}\n`, { flag: 'wx' });
+// The publish job reads this to warn in the release notes; it is not uploaded as an asset.
+await writeFile(join(output, `${artifact}.signing.json`), `${JSON.stringify({ codeSigning })}\n`, { flag: 'wx' });
 const names = await readdir(output);
 const paths = await Promise.all(names.map(async (name) => relative(root, join(output, name))));
 if (paths.some((path) => path.startsWith('..'))) throw new Error('Staged release path escaped the repository.');

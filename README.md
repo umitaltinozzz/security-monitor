@@ -104,6 +104,17 @@ cargo run -p secmon -- integrate claude-code --dry-run
 
 Linux agent: build the static binary, verify its checksum, and install it with the provided script. Confirm the SSH host-key fingerprint independently before pairing. See [Linux agent installation](docs/agent-install.md).
 
+### Verifying a download
+
+Each release ships `SHA256SUMS` signed with minisign, plus a `.minisig` for every CLI and agent binary. Early installers may not carry a Windows or macOS code signature; the release notes say so when that is the case. Check the signature, then the hash, before running anything:
+
+```text
+minisign -Vm SHA256SUMS -P <public key from docs/release.md>
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+See [Signed releases](docs/release.md#verify-a-download) for Windows and macOS steps.
+
 ## With coding agents
 
 ```text

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { signReleaseBinaries, signReleaseChecksums } from './sign-binaries.mjs';
+import { collectRelease, releaseArgs } from './publish.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const scripts = join(repositoryRoot, 'scripts', 'release');
@@ -142,6 +143,7 @@ test('release manifest requires all signed targets and writes offline checksums'
       mapped[target] = { asset, signature: `signature:${target}` };
     }
     await writeFile(join(directory, `${artifact}.updater.json`), JSON.stringify(mapped));
+    await writeFile(join(directory, `${artifact}.signing.json`), JSON.stringify({ codeSigning: 'unsigned' }));
     if (artifact === 'linux-x86_64') {
       await writeFile(join(directory, 'secmon-linux-x86_64'), 'CLI binary');
       await writeFile(join(directory, 'secmon-linux-x86_64.minisig'), 'CLI Minisign signature');
@@ -165,6 +167,9 @@ test('release manifest requires all signed targets and writes offline checksums'
   assert.match(sums, /secmon-linux-x86_64\.minisig/);
   assert.match(sums, /secmon-agent-linux-x86_64\.minisig/);
   assert.match(sums, /secmon-agent-linux-aarch64\.minisig/);
+  assert.doesNotMatch(sums, /\.signing\.json/);
+  assert.match(sums, /^[0-9a-f]{64}  secmon-agent-linux-aarch64$/m);
+  assert.doesNotMatch(sums, /release-linux-x86_64\//);
 });
 
 test('release manifest rejects an incomplete platform matrix', async () => {
@@ -225,7 +230,10 @@ test('asset staging rejects Tauri ZIP updater bundles', async () => {
   await writeFile(join(bundle, 'security-monitor-setup.nsis.zip.sig'), 'signature');
   await writeFile(join(root, 'target', target, 'release', 'secmon.exe'), 'cli');
 
-  const result = run('stage-assets.mjs', [target, 'windows-x86_64', 'windows', 'x86_64'], { cwd: root });
+  const result = run('stage-assets.mjs', [target, 'windows-x86_64', 'windows', 'x86_64'], {
+    cwd: root,
+    env: { SECMON_CODE_SIGNING: 'unsigned' },
+  });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /ZIP updater bundles are outside the supported release formats/);
 });
@@ -244,9 +252,94 @@ test('Linux asset staging includes x86_64 and aarch64 agent binaries', async () 
   await writeFile(join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent'), 'x86 agent');
   await writeFile(join(root, 'target', 'aarch64-unknown-linux-musl', 'release', 'secmon-agent'), 'ARM agent');
 
-  const result = run('stage-assets.mjs', [target, 'linux-x86_64', 'linux', 'x86_64'], { cwd: root });
+  const result = run('stage-assets.mjs', [target, 'linux-x86_64', 'linux', 'x86_64'], {
+    cwd: root,
+    env: { SECMON_CODE_SIGNING: 'not_applicable' },
+  });
   assert.equal(result.status, 0, result.stderr);
   const output = join(root, 'target', 'release-out', 'linux-x86_64');
   assert.equal(await readFile(join(output, 'secmon-agent-linux-x86_64'), 'utf8'), 'x86 agent');
   assert.equal(await readFile(join(output, 'secmon-agent-linux-aarch64'), 'utf8'), 'ARM agent');
+  const signing = JSON.parse(await readFile(join(output, 'linux-x86_64.signing.json'), 'utf8'));
+  assert.equal(signing.codeSigning, 'not_applicable');
+});
+
+test('asset staging requires a code-signing status that fits the platform', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-stage-signing-'));
+  const target = 'x86_64-pc-windows-msvc';
+  for (const codeSigning of ['', 'not_applicable', 'signed-ish']) {
+    const result = run('stage-assets.mjs', [target, 'windows-x86_64', 'windows', 'x86_64'], {
+      cwd: root,
+      env: { SECMON_CODE_SIGNING: codeSigning },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /code-signing status is invalid/);
+  }
+});
+
+const releaseKeys = {
+  SECMON_UPDATE_PUBLIC_KEY: 'updater-public-fixture',
+  TAURI_SIGNING_PRIVATE_KEY: 'updater-private-fixture',
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: 'updater-password-fixture',
+  MINISIGN_PRIVATE_KEY: 'minisign-private-fixture',
+  MINISIGN_PUBLIC_KEY: 'minisign-public-fixture',
+};
+const windowsCertificate = {
+  WINDOWS_CERTIFICATE: 'certificate-fixture',
+  WINDOWS_CERTIFICATE_PASSWORD: 'certificate-password-fixture',
+  SECMON_WINDOWS_CERTIFICATE_THUMBPRINT: 'ab'.repeat(20),
+};
+
+test('a platform without a code-signing certificate builds unsigned and reports it', async () => {
+  const output = join(await mkdtemp(join(tmpdir(), 'secmon-release-output-')), 'github-output');
+  const env = { ...releaseKeys, GITHUB_OUTPUT: output };
+  for (const name of Object.keys(windowsCertificate)) env[name] = '';
+  const result = run('verify-config.mjs', ['windows'], { env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /::warning::/);
+  assert.equal(await readFile(output, 'utf8'), 'code_signing=unsigned\n');
+});
+
+test('a complete certificate reports a signed platform', async () => {
+  const output = join(await mkdtemp(join(tmpdir(), 'secmon-release-output-')), 'github-output');
+  const result = run('verify-config.mjs', ['windows'], {
+    env: { ...releaseKeys, ...windowsCertificate, GITHUB_OUTPUT: output },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(output, 'utf8'), 'code_signing=signed\n');
+});
+
+test('a partial code-signing configuration fails instead of building unsigned', () => {
+  const result = run('verify-config.mjs', ['windows'], {
+    env: { ...releaseKeys, ...windowsCertificate, WINDOWS_CERTIFICATE_PASSWORD: '', GITHUB_OUTPUT: '' },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Incomplete windows code-signing configuration: WINDOWS_CERTIFICATE_PASSWORD/);
+  assert.equal(result.stderr.includes('fixture'), false);
+});
+
+test('pre-releases stay out of the updater feed and unsigned packages are disclosed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-publish-'));
+  const records = { 'windows-x86_64': 'unsigned', 'macos-aarch64': 'signed', 'linux-x86_64': 'not_applicable' };
+  for (const [artifact, codeSigning] of Object.entries(records)) {
+    const directory = join(root, `release-${artifact}`);
+    await mkdir(directory);
+    await writeFile(join(directory, `${artifact}.signing.json`), JSON.stringify({ codeSigning }));
+    await writeFile(join(directory, `${artifact}.updater.json`), '{}');
+    await writeFile(join(directory, `secmon-${artifact}`), 'binary');
+  }
+
+  const release = await collectRelease(root, 'v0.1.0-1');
+  assert.equal(release.prerelease, true);
+  assert.ok(release.assets.every((asset) => !/\.(signing|updater)\.json$/.test(asset)));
+  assert.ok(release.assets.some((asset) => asset.endsWith('latest.json')));
+  assert.match(release.notes, /Unsigned packages:\*\* Windows x86_64\./);
+  assert.doesNotMatch(release.notes, /macOS aarch64|Linux x86_64/);
+  const args = releaseArgs('v0.1.0-1', release);
+  assert.ok(args.includes('--prerelease'));
+  assert.ok(args.includes('--latest=false'));
+
+  const stable = releaseArgs('v0.1.0', await collectRelease(root, 'v0.1.0'));
+  assert.equal(stable.includes('--prerelease'), false);
+  await assert.rejects(collectRelease(root, '0.1.0'), /semantic version/);
 });

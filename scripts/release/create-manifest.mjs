@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 const [, , artifactRootArg, tag] = process.argv;
 if (!artifactRootArg || !/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag ?? '')) {
@@ -80,11 +80,16 @@ const manifest = {
 };
 await writeFile(join(root, 'latest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
 
+// GitHub release assets are flat, so checksum lines use bare names that `sha256sum -c` can find.
 const sums = [];
+const checksumNames = new Set();
 for (const path of files) {
-  if (path.endsWith('.updater.json')) continue;
+  if (path.endsWith('.updater.json') || path.endsWith('.signing.json')) continue;
+  const name = basename(path);
+  if (checksumNames.has(name)) throw new Error(`Duplicate release asset name: ${name}`);
+  checksumNames.add(name);
   const digest = createHash('sha256').update(await readFile(path)).digest('hex');
-  sums.push(`${digest}  ${relative(root, path).replaceAll('\\', '/')}`);
+  sums.push(`${digest}  ${name}`);
 }
 sums.push(`${createHash('sha256').update(await readFile(join(root, 'latest.json'))).digest('hex')}  latest.json`);
 await writeFile(join(root, 'SHA256SUMS'), `${sums.sort().join('\n')}\n`, { flag: 'wx' });

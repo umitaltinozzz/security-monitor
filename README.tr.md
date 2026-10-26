@@ -104,6 +104,17 @@ cargo run -p secmon -- integrate claude-code --dry-run
 
 Linux ajanı: statik binary'yi derleyin, checksum'ını doğrulayın ve verilen betikle kurun. Eşleştirmeden önce SSH host-key parmak izini bağımsız olarak doğrulayın. Bkz. [Linux ajan kurulumu](docs/agent-install.md).
 
+### İndirilen dosyayı doğrulama
+
+Her sürümde minisign ile imzalanmış bir `SHA256SUMS` dosyası ve her CLI ile ajan binary'si için bir `.minisig` bulunur. İlk kurulum paketlerinde Windows veya macOS kod imzası olmayabilir; bu durumda sürüm notları bunu açıkça belirtir. Herhangi bir şeyi çalıştırmadan önce önce imzayı, sonra hash'i doğrulayın:
+
+```text
+minisign -Vm SHA256SUMS -P <docs/release.md içindeki açık anahtar>
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+Windows ve macOS adımları için bkz. [İmzalı sürümler](docs/release.md#verify-a-download).
+
 ## Kodlama ajanlarıyla
 
 ```text

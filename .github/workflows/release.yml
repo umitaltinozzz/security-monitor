@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing semantic version tag to build and publish
-        required: true
+        description: Existing semantic version tag to build (leave empty for a dry run of the selected branch)
+        required: false
         type: string
+      dry_run:
+        description: Build, sign, and verify every artifact without publishing a GitHub release
+        required: true
+        default: true
+        type: boolean
 
 # Read-only by default; only the publish job is granted write access to create the release.
 permissions:
@@ -90,6 +95,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Verify release signing configuration
+        id: signing
         run: node scripts/release/verify-config.mjs ${{ matrix.platform }}
 
       - name: Install minisign on Windows
@@ -105,7 +111,7 @@ jobs:
         run: sudo apt-get install -y minisign
 
       - name: Import Windows signing certificate
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
         shell: pwsh
         run: |
           $certificateDirectory = Join-Path $env:RUNNER_TEMP 'security-monitor-signing'
@@ -119,7 +125,7 @@ jobs:
           Remove-Item -LiteralPath $certificateDirectory -Recurse -Force
 
       - name: Import Apple signing certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.signing.outputs.code_signing == 'signed'
         shell: bash
         run: |
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/security-monitor.p12"
@@ -182,18 +188,34 @@ jobs:
           done
 
       - name: Write Windows signing overlay
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
         run: node scripts/release/write-tauri-config.mjs windows target/tauri.release.json
 
       - name: Build signed desktop packages
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
-      - name: Build signed desktop packages
-        if: runner.os != 'Windows'
+      - name: Build unsigned Windows desktop packages
+        if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'unsigned'
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
 
+      - name: Build desktop packages
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          CODE_SIGNING: ${{ steps.signing.outputs.code_signing }}
+        run: |
+          if [ "$CODE_SIGNING" = unsigned ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+              APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_CONTENT APPLE_API_KEY_PATH
+            # Ad-hoc signing keeps Apple Silicon bundles launchable; it is not a Developer ID signature.
+            export APPLE_SIGNING_IDENTITY=-
+          fi
+          pnpm -C apps/desktop tauri build --target ${{ matrix.target }}
+
       - name: Stage release files
+        env:
+          SECMON_CODE_SIGNING: ${{ steps.signing.outputs.code_signing }}
         run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }}
 
       - name: Sign and verify CLI and agent binaries
@@ -208,7 +230,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Publish signed release
+    name: ${{ inputs.dry_run && 'Verify release (dry run)' || 'Publish signed release' }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -237,16 +259,42 @@ jobs:
           pattern: release-*
           path: target/release-assets
 
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          elif [ "$DRY_RUN" = true ]; then
+            tag="v$(node -p "require('./apps/desktop/package.json').version")"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          printf 'value=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
       - name: Create signed updater manifest and checksums
         env:
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ steps.tag.outputs.value }}
         run: node scripts/release/create-manifest.mjs target/release-assets "$RELEASE_TAG"
 
       - name: Sign and verify release checksums
         run: node scripts/release/sign-binaries.mjs target/release-assets --checksums
 
+      - name: Upload dry-run release files
+        if: inputs.dry_run == true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dry-run
+          path: target/release-assets
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish GitHub release
+        if: inputs.dry_run != true
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ steps.tag.outputs.value }}
         run: node scripts/release/publish.mjs target/release-assets "$RELEASE_TAG"
