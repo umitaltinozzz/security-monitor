@@ -573,7 +573,7 @@ pub async fn run_hook(
             }
             Err(error) => {
                 eprintln!("blocked: hook input could not be verified ({error})");
-                return Ok(hook_input_error_exit_code(mode));
+                return unverified_agent_event_result(mode);
             }
         }
     } else if !pre_push && !pre_commit {
@@ -592,6 +592,10 @@ pub async fn run_hook(
     for (pre_push, selected) in [(false, actions.pre_commit), (true, actions.pre_push)] {
         if !selected {
             continue;
+        }
+        if let Some(result) = agent_push_missing_ref_result(agent_event, pre_push, mode) {
+            eprintln!("blocked: an agent push event has no verified ref-update input");
+            return result;
         }
         code = match hook_scan(database_path.clone(), fail_on, pre_push, !pre_push).await {
             Ok(next_code) => code.max(next_code),
@@ -631,11 +635,19 @@ fn should_block_hook(mode: HookMode, result_code: i32) -> bool {
     matches!(mode, HookMode::Block) && result_code == super::hooks::THRESHOLD_BREACH_EXIT
 }
 
-fn hook_input_error_exit_code(mode: HookMode) -> i32 {
+fn unverified_agent_event_result(mode: HookMode) -> Result<i32, &'static str> {
     match mode {
-        HookMode::Warn => 0,
-        HookMode::Block => super::hooks::THRESHOLD_BREACH_EXIT,
+        HookMode::Warn => Ok(0),
+        HookMode::Block => Err("hook_input_unavailable"),
     }
+}
+
+fn agent_push_missing_ref_result(
+    agent_event: bool,
+    pre_push: bool,
+    mode: HookMode,
+) -> Option<Result<i32, &'static str>> {
+    (agent_event && pre_push).then(|| unverified_agent_event_result(mode))
 }
 
 async fn hook_scan(
@@ -940,7 +952,9 @@ fn fail_on_text(fail_on: FailOn) -> &'static str {
 
 #[cfg(test)]
 mod hook_mode_tests {
-    use super::{HookMode, hook_input_error_exit_code, should_block_hook};
+    use super::{
+        HookMode, agent_push_missing_ref_result, should_block_hook, unverified_agent_event_result,
+    };
 
     #[test]
     fn block_mode_stops_only_on_a_threshold_breach() {
@@ -952,7 +966,26 @@ mod hook_mode_tests {
 
     #[test]
     fn invalid_agent_hook_input_blocks_only_in_block_mode() {
-        assert_eq!(hook_input_error_exit_code(HookMode::Warn), 0);
-        assert_eq!(hook_input_error_exit_code(HookMode::Block), 2);
+        assert_eq!(unverified_agent_event_result(HookMode::Warn), Ok(0));
+        assert_eq!(
+            unverified_agent_event_result(HookMode::Block),
+            Err("hook_input_unavailable")
+        );
+    }
+
+    #[test]
+    fn agent_push_without_ref_updates_is_unverified() {
+        assert_eq!(
+            agent_push_missing_ref_result(true, true, HookMode::Warn),
+            Some(Ok(0))
+        );
+        assert_eq!(
+            agent_push_missing_ref_result(true, true, HookMode::Block),
+            Some(Err("hook_input_unavailable"))
+        );
+        assert_eq!(
+            agent_push_missing_ref_result(false, true, HookMode::Block),
+            None
+        );
     }
 }

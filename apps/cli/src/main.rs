@@ -125,7 +125,7 @@ enum HookCommand {
         pre_push: bool,
         #[arg(long, group = "hook_kind")]
         pre_commit: bool,
-        /// Read an agent PreToolUse JSON event from stdin and scan only Git commit/push commands.
+        /// Read an agent PreToolUse event; scan commit/push and unresolved commands fail-closed.
         #[arg(long)]
         agent_event: bool,
     },

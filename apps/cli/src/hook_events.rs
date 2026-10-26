@@ -75,17 +75,20 @@ fn collect_git_actions(
     let mut found_action = false;
     for tokens in shell_segments(command) {
         record_literal_assignments(&tokens, variables);
+        if contains_command_substitution(&tokens) {
+            mark_unknown_operation(actions);
+            found_action = true;
+            continue;
+        }
         if let Some(nested_command) = reevaluated_shell_command(&tokens) {
             if depth >= MAX_REEVALUATED_SHELL_DEPTH {
-                actions.pre_commit = true;
-                actions.pre_push = true;
+                mark_unknown_operation(actions);
                 found_action = true;
                 continue;
             }
             let nested_action = collect_git_actions(&nested_command, variables, actions, depth + 1);
             if !nested_action && contains_shell_expansion(&nested_command) {
-                actions.pre_commit = true;
-                actions.pre_push = true;
+                mark_unknown_operation(actions);
                 found_action = true;
             } else {
                 found_action |= nested_action;
@@ -98,14 +101,22 @@ fn collect_git_actions(
         match operation {
             GitOperation::Commit => actions.pre_commit = true,
             GitOperation::Push => actions.pre_push = true,
-            GitOperation::Unknown => {
-                actions.pre_commit = true;
-                actions.pre_push = true;
-            }
+            GitOperation::Unknown => mark_unknown_operation(actions),
         }
         found_action = true;
     }
     found_action
+}
+
+fn mark_unknown_operation(actions: &mut GitHookActions) {
+    actions.pre_commit = true;
+    actions.pre_push = true;
+}
+
+fn contains_command_substitution(tokens: &[String]) -> bool {
+    tokens
+        .iter()
+        .any(|token| token.contains("$(") || token.contains('`'))
 }
 
 fn reevaluated_shell_command(tokens: &[String]) -> Option<String> {
@@ -426,12 +437,14 @@ fn git_operation_in_segment(
         return git_operation_in_segment(&expanded_tokens, variables);
     }
     if is_dynamic_command_name(executable) {
-        return Some(
-            git_operation_after_executable(tokens, index).unwrap_or(GitOperation::Unknown),
-        );
+        return Some(GitOperation::Unknown);
     }
     if !is_git_executable(executable) {
-        return None;
+        return if is_known_non_git_executable(executable) {
+            None
+        } else {
+            Some(GitOperation::Unknown)
+        };
     }
     git_operation_after_executable(tokens, index)
 }
@@ -455,6 +468,63 @@ fn is_git_executable(executable: &str) -> bool {
     matches!(
         executable_name.to_ascii_lowercase().as_str(),
         "git" | "git.exe"
+    )
+}
+
+fn is_known_non_git_executable(executable: &str) -> bool {
+    let executable_name = executable
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(executable)
+        .to_ascii_lowercase();
+    let executable_name = executable_name
+        .strip_suffix(".exe")
+        .unwrap_or(&executable_name);
+    matches!(
+        executable_name,
+        ":" | "["
+            | "[["
+            | "alias"
+            | "awk"
+            | "basename"
+            | "cat"
+            | "cd"
+            | "chmod"
+            | "chown"
+            | "cp"
+            | "cut"
+            | "date"
+            | "dirname"
+            | "echo"
+            | "export"
+            | "false"
+            | "file"
+            | "find"
+            | "grep"
+            | "head"
+            | "id"
+            | "ls"
+            | "mkdir"
+            | "mv"
+            | "printf"
+            | "pwd"
+            | "read"
+            | "realpath"
+            | "rm"
+            | "sed"
+            | "sort"
+            | "stat"
+            | "tail"
+            | "test"
+            | "touch"
+            | "tr"
+            | "true"
+            | "uname"
+            | "uniq"
+            | "unset"
+            | "wc"
+            | "which"
+            | "whoami"
     )
 }
 
@@ -490,8 +560,27 @@ fn git_operation_after_executable(
     match tokens.get(index).map(String::as_str) {
         Some("commit") => Some(GitOperation::Commit),
         Some("push") => Some(GitOperation::Push),
-        _ => None,
+        Some(command) if is_known_non_commit_push_git_subcommand(command) => None,
+        _ => Some(GitOperation::Unknown),
     }
+}
+
+fn is_known_non_commit_push_git_subcommand(command: &str) -> bool {
+    matches!(
+        command,
+        "branch"
+            | "config"
+            | "diff"
+            | "fetch"
+            | "help"
+            | "log"
+            | "ls-files"
+            | "ls-remote"
+            | "remote"
+            | "rev-parse"
+            | "show"
+            | "status"
+    )
 }
 
 #[cfg(test)]
@@ -574,20 +663,6 @@ mod tests {
                 pre_push: false,
             })
         );
-        assert_eq!(
-            actions_from_event(&event("$(printf git) commit -m ready")),
-            Ok(GitHookActions {
-                pre_commit: true,
-                pre_push: false,
-            })
-        );
-        assert_eq!(
-            actions_from_event(&event("`printf git` push origin main")),
-            Ok(GitHookActions {
-                pre_commit: false,
-                pre_push: true,
-            })
-        );
     }
 
     #[test]
@@ -609,64 +684,40 @@ mod tests {
     }
 
     #[test]
-    fn detects_git_actions_re_evaluated_by_shells() {
-        for (command, expected) in [
-            (
-                "eval 'git push origin main'",
-                GitHookActions {
-                    pre_commit: false,
-                    pre_push: true,
-                },
-            ),
-            (
-                "bash -c 'git push origin main'",
-                GitHookActions {
-                    pre_commit: false,
-                    pre_push: true,
-                },
-            ),
-            (
-                "sh -c 'git commit -m ready'",
-                GitHookActions {
-                    pre_commit: true,
-                    pre_push: false,
-                },
-            ),
-            ("bash -c 'echo git push'", GitHookActions::default()),
-            (
-                "eval \"$COMMAND\"",
-                GitHookActions {
-                    pre_commit: true,
-                    pre_push: true,
-                },
-            ),
-            (
-                "CMD=\"$(printf 'git push origin main')\"; $CMD",
-                GitHookActions {
-                    pre_commit: true,
-                    pre_push: true,
-                },
-            ),
+    fn unresolved_commands_fail_closed_for_both_hook_checks() {
+        let run_both = GitHookActions {
+            pre_commit: true,
+            pre_push: true,
+        };
+        for command in [
+            "eval \"$COMMAND\"",
+            "bash -c \"$COMMAND\"",
+            "GIT=echo; read -r GIT <<<git; \"$GIT\" push origin main",
+            "alias publish='git push origin main'; publish",
+            "git ship",
+            "echo \"$(git push origin main)\"",
+            "$(printf git) commit -m ready",
+            "`printf git` push origin main",
+            "CMD=\"$(printf 'git push origin main')\"; $CMD",
+            "unknown-command --git-action",
         ] {
             assert_eq!(
                 actions_from_event(&event(command)),
-                Ok(expected),
+                Ok(run_both),
                 "{command}"
             );
         }
-    }
-
-    #[test]
-    fn read_builtin_invalidates_tracked_command_aliases() {
-        assert_eq!(
-            actions_from_event(&event(
-                "GIT=echo; read -r GIT <<<git; \"$GIT\" push origin main"
-            )),
-            Ok(GitHookActions {
-                pre_commit: false,
-                pre_push: true,
-            })
-        );
+        for command in [
+            "git status",
+            "git config alias.ship '!git push'",
+            "echo done",
+        ] {
+            assert_eq!(
+                actions_from_event(&event(command)),
+                Ok(GitHookActions::default()),
+                "{command}"
+            );
+        }
     }
 
     #[test]
