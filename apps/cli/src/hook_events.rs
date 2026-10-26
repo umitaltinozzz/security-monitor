@@ -410,11 +410,15 @@ fn git_operation_in_segment(
     }
     let executable = tokens.get(index)?;
     if let Some(value) = simple_variable_value(executable, variables) {
-        return if is_git_executable(value) || is_dynamic_command_name(value) {
-            git_operation_after_executable(tokens, index)
-        } else {
-            None
-        };
+        let mut expanded_tokens = value
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if expanded_tokens.is_empty() {
+            return None;
+        }
+        expanded_tokens.extend_from_slice(&tokens[index + 1..]);
+        return git_operation_in_segment(&expanded_tokens, variables);
     }
     if is_dynamic_command_name(executable) {
         return git_operation_after_executable(tokens, index);
@@ -541,6 +545,20 @@ mod tests {
             })
         );
         assert_eq!(
+            actions_from_event(&event("CMD='git push origin main'; $CMD")),
+            Ok(GitHookActions {
+                pre_commit: false,
+                pre_push: true,
+            })
+        );
+        assert_eq!(
+            actions_from_event(&event("CMD='git commit -m ready'; $CMD")),
+            Ok(GitHookActions {
+                pre_commit: true,
+                pre_push: false,
+            })
+        );
+        assert_eq!(
             actions_from_event(&event(
                 "OTHER=echo; export OTHER=git; \"$OTHER\" commit -m ready"
             )),
@@ -574,6 +592,7 @@ mod tests {
             "GIT=git; \"$GIT\" status",
             "echo \"$GIT push\"",
             "OTHER=echo; \"$OTHER\" commit -m ready",
+            "CMD='echo git push origin main'; $CMD",
         ] {
             assert_eq!(
                 actions_from_event(&event(command)),
