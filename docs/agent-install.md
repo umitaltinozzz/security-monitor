@@ -150,7 +150,7 @@ sudo userdel -r secmon
 sudo rm -rf /etc/secmon
 ```
 
-Removing the `authorized_keys` line is what revokes access. The desktop does not yet have a command to unpair a server, so its pinned host key, inventory history, and the dedicated private key in the operating-system credential store remain on the device until that feature exists.
+In the desktop app, open **Servers** and choose **Remove pairing**. The default keeps local inventory history and marks the server as removed; you can instead delete that history and its approval records. The desktop removes its pinned host key and dedicated SSH credential. This does not remove the `authorized_keys` line from the server. To revoke access, run `sudo rm /var/lib/secmon/.ssh/authorized_keys` on the server.
 
 ## Build and verify the binary
 

@@ -48,6 +48,7 @@ const APP_COMMANDS: &[&str] = &[
     "list_ssh_config_hosts",
     "inspect_server_host_key",
     "pair_server",
+    "unpair_server",
     "collect_server_inventory",
     "get_server_inventory_summary",
     "list_project_server_links",

@@ -141,4 +141,4 @@ sudo userdel -r secmon
 sudo rm -rf /etc/secmon
 ```
 
-Erişimi asıl kapatan, `authorized_keys` satırını silmektir. Masaüstünde henüz sunucu eşlemesini kaldırma komutu yok; bu yüzden sabitlenmiş host key, envanter geçmişi ve işletim sistemi kimlik deposundaki özel anahtar o özellik gelene kadar cihazda kalır.
+Masaüstü uygulamasında **Sunucular** bölümünü açıp **Eşlemeyi kaldır** seçeneğini kullanın. Varsayılan olarak yerel envanter geçmişi saklanır ve sunucu kaldırıldı olarak işaretlenir; isterseniz geçmişi ve onay kayıtlarını silebilirsiniz. Masaüstü sabitlenmiş host key'i ve özel SSH kimlik bilgisini siler. Bu işlem sunucudaki `authorized_keys` satırını silmez. Erişimi kapatmak için sunucuda `sudo rm /var/lib/secmon/.ssh/authorized_keys` komutunu çalıştırın.

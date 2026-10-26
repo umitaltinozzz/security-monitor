@@ -5491,6 +5491,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -5530,6 +5531,7 @@ dependencies = [
  "url",
  "uuid",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

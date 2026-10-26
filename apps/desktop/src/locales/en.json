@@ -221,7 +221,18 @@
     "confirmLink": "I confirm this server runs deployments of this project.",
     "linkExplanation": "Production status is compared only for linked projects, using the deploy ID and packages from the latest approved collection.",
     "linkCreated": "Project linked. Repository and production status were reassessed.",
-    "linkRemoved": "Project link removed. Production status is unverified again."
+    "linkRemoved": "Project link removed. Production status is unverified again.",
+    "unpair": "Remove pairing",
+    "unpairTitle": "Remove this server pairing?",
+    "unpairAuthorizedKeysWarning": "This does not delete the authorized_keys line on the server. To fully revoke access, run this command on the server: sudo rm /var/lib/secmon/.ssh/authorized_keys",
+    "historyChoice": "Server inventory history",
+    "keepHistory": "Keep history (mark the server as removed)",
+    "deleteHistory": "Delete history and approval records",
+    "confirmUnpair": "Remove pairing",
+    "removed": "Server removed",
+    "unpairSuccess": "Server pairing removed.",
+    "credentialCleanupWarning": "The server was removed, but its SSH credential could not be deleted from the operating-system credential store.",
+    "snapshotCleanupWarning": "The server was removed, but its local inventory file could not be deleted."
   },
   "findings": {
     "title": "Vulnerabilities",

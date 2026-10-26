@@ -9,7 +9,9 @@ pub use association::{
     AssociationMatch, LocalProjectIdentity, ProjectAssociationSuggestion,
     suggest_project_associations,
 };
-pub use credentials::{CredentialError, CredentialStore, OsCredentialStore};
+pub use credentials::{
+    CredentialDeleteOutcome, CredentialError, CredentialStore, OsCredentialStore,
+};
 pub use host::{SshTarget, TargetError, validate_fingerprint};
 pub use pairing::{PairingInstructions, create_pairing_instructions};
 pub use ssh_config::{

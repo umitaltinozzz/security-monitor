@@ -142,6 +142,44 @@ pub fn persist_server_snapshot(
     })
 }
 
+pub fn remove_server_snapshot(
+    app_data_dir: &Path,
+    asset_id: &str,
+) -> Result<bool, ServerSnapshotError> {
+    let asset_id = Uuid::parse_str(asset_id).map_err(|_| ServerSnapshotError::InvalidAssetId)?;
+    let canonical_app_data = match app_data_dir.canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(ServerSnapshotError::Storage),
+    };
+    let directory = canonical_app_data.join("server-inventory");
+    let canonical_directory = match directory.canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(ServerSnapshotError::Storage),
+    };
+    if !canonical_directory.starts_with(&canonical_app_data) {
+        return Err(ServerSnapshotError::Storage);
+    }
+    let path = canonical_directory.join(format!("{asset_id}.json"));
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(_) => return Err(ServerSnapshotError::Storage),
+    };
+    if !metadata.file_type().is_file() {
+        return Err(ServerSnapshotError::Storage);
+    }
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|_| ServerSnapshotError::Storage)?;
+    if !canonical_path.starts_with(&canonical_directory) {
+        return Err(ServerSnapshotError::Storage);
+    }
+    std::fs::remove_file(canonical_path).map_err(|_| ServerSnapshotError::Storage)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +278,28 @@ mod tests {
         assert_eq!(
             persist_server_snapshot(temp.path(), "../outside", &inventory),
             Err(ServerSnapshotError::InvalidAssetId)
+        );
+    }
+
+    #[test]
+    fn snapshot_removal_deletes_only_the_server_inventory_file() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let inventory = security_monitor_agent_protocol::decode_inventory(include_bytes!(
+            "../../../tests/fixtures/agent/stale-inventory.json"
+        ))
+        .expect("valid inventory fixture");
+        let asset_id = Uuid::new_v4();
+        persist_server_snapshot(temp.path(), &asset_id.to_string(), &inventory)
+            .expect("snapshot should persist");
+
+        assert!(remove_server_snapshot(temp.path(), &asset_id.to_string()).unwrap());
+        assert!(!remove_server_snapshot(temp.path(), &asset_id.to_string()).unwrap());
+        assert!(
+            !temp
+                .path()
+                .join("server-inventory")
+                .join(format!("{asset_id}.json"))
+                .exists()
         );
     }
 }

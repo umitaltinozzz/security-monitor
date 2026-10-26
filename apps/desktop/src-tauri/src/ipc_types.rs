@@ -218,6 +218,14 @@ pub struct PairingInstructionsView {
     pub authorized_keys_line: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UnpairServerResult {
+    pub history_deleted: bool,
+    pub credential_cleanup_warning: bool,
+    pub snapshot_cleanup_warning: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CollectionSummary {

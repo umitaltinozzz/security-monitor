@@ -44,6 +44,7 @@ import type { NotificationChannelView } from "./generated/NotificationChannelVie
 import type { NotificationPreview } from "./generated/NotificationPreview";
 import type { SaveNotificationChannelInput } from "./generated/SaveNotificationChannelInput";
 import type { UpdateNotificationChannelInput } from "./generated/UpdateNotificationChannelInput";
+import type { UnpairServerResult } from "./generated/UnpairServerResult";
 
 export type WorkspaceData = {
   settings: AppSettings;
@@ -201,6 +202,8 @@ export const api = {
       fingerprintConfirmed,
       deviceLabel,
     }),
+  unpairServer: (serverId: string, deleteHistory: boolean) =>
+    invoke<UnpairServerResult>("unpair_server", { serverId, deleteHistory }),
   collectServer: (assetId: string, transferApproved: boolean) =>
     invoke<CollectionSummary>("collect_server_inventory", { assetId, transferApproved }),
   serverInventory: (assetId: string) =>

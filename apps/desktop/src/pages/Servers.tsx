@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { Empty, Field, PageHeading, ServerProjectLinks, StatusTag } from "../components";
+import {
+  Empty,
+  Field,
+  PageHeading,
+  ServerProjectLinks,
+  ServerUnpairControl,
+  StatusTag,
+} from "../components";
 import { MemoryNotes } from "../MemoryNotes";
 import { useWorkspace } from "../WorkspaceContext";
 import { date, isFresh, safeError } from "../utils";
@@ -75,6 +82,25 @@ export function Servers() {
       refresh(["assets", "findings", "audit"]);
     } catch (error) {
       setNotice({ kind: "error", message: safeError(error, t) });
+    }
+  }
+  async function unpair(assetId: string, deleteHistory: boolean): Promise<boolean> {
+    try {
+      const result = await api.unpairServer(assetId, deleteHistory);
+      setApprovedAsset(null);
+      refresh(["assets", "links", "findings", "audit"]);
+      const warnings = [
+        result.credential_cleanup_warning ? t("servers.credentialCleanupWarning") : null,
+        result.snapshot_cleanup_warning ? t("servers.snapshotCleanupWarning") : null,
+      ].filter((message): message is string => message !== null);
+      setNotice({
+        kind: warnings.length > 0 ? "error" : "success",
+        message: warnings.length > 0 ? warnings.join(" ") : t("servers.unpairSuccess"),
+      });
+      return true;
+    } catch (error) {
+      setNotice({ kind: "error", message: safeError(error, t) });
+      return false;
     }
   }
   return (
@@ -219,6 +245,7 @@ export function Servers() {
           <section className="server-list">
             {data.assets.map((asset) => {
               const summary = summaries[asset.id];
+              const removed = Boolean(asset.removed_at);
               const status = !summary
                 ? "unverified"
                 : !isFresh(summary.approved_at, data.settings.scan_interval_hours)
@@ -238,7 +265,11 @@ export function Servers() {
                         )}
                       </p>
                     </div>
-                    <StatusTag value={status} t={t} />
+                    {removed ? (
+                      <p className="unverified-line">{t("servers.removed")}</p>
+                    ) : (
+                      <StatusTag value={status} t={t} />
+                    )}
                   </div>
                   <div className="project-meta">
                     <span>
@@ -318,21 +349,33 @@ export function Servers() {
                       )}
                     </div>
                   )}
-                  <ServerProjectLinks asset={asset} />
-                  {approvedAsset === asset.id ? (
-                    <div className="approval-box">
-                      <p>{t("servers.transferWarning")}</p>
-                      <button className="button primary" onClick={() => void collect(asset.id)}>
-                        {t("actions.approveAndCollect")}
-                      </button>
-                      <button className="button quiet" onClick={() => setApprovedAsset(null)}>
-                        {t("actions.cancel")}
-                      </button>
-                    </div>
-                  ) : (
-                    <button className="button secondary" onClick={() => setApprovedAsset(asset.id)}>
-                      {t("actions.collect")}
-                    </button>
+                  {!removed && (
+                    <>
+                      <ServerProjectLinks asset={asset} />
+                      {approvedAsset === asset.id ? (
+                        <div className="approval-box">
+                          <p>{t("servers.transferWarning")}</p>
+                          <button className="button primary" onClick={() => void collect(asset.id)}>
+                            {t("actions.approveAndCollect")}
+                          </button>
+                          <button className="button quiet" onClick={() => setApprovedAsset(null)}>
+                            {t("actions.cancel")}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="button secondary"
+                          onClick={() => setApprovedAsset(asset.id)}
+                        >
+                          {t("actions.collect")}
+                        </button>
+                      )}
+                      <ServerUnpairControl
+                        asset={asset}
+                        t={t}
+                        onConfirm={(deleteHistory) => unpair(asset.id, deleteHistory)}
+                      />
+                    </>
                   )}
                 </article>
               );

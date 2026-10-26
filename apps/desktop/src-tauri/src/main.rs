@@ -201,6 +201,7 @@ fn main() {
             ipc::servers::list_ssh_config_hosts,
             ipc::servers::inspect_server_host_key,
             ipc::servers::pair_server,
+            ipc::servers::unpair_server,
             ipc::servers::collect_server_inventory,
             ipc::drift::get_server_inventory_summary,
             ipc::drift::list_project_server_links,

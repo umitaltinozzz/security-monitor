@@ -14,10 +14,27 @@ pub enum CredentialError {
     StoreUnavailable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialDeleteOutcome {
+    Deleted,
+    Missing,
+}
+
 pub trait CredentialStore: Send + Sync {
     fn put(&self, secret: &[u8]) -> Result<String, CredentialError>;
     fn get(&self, reference: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError>;
+    fn get_optional(&self, reference: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialError> {
+        self.get(reference).map(Some)
+    }
     fn delete(&self, reference: &str) -> Result<(), CredentialError>;
+
+    fn delete_with_outcome(
+        &self,
+        reference: &str,
+    ) -> Result<CredentialDeleteOutcome, CredentialError> {
+        self.delete(reference)?;
+        Ok(CredentialDeleteOutcome::Deleted)
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -35,21 +52,35 @@ impl CredentialStore for OsCredentialStore {
     }
 
     fn get(&self, reference: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
+        self.get_optional(reference)?
+            .ok_or(CredentialError::StoreUnavailable)
+    }
+
+    fn get_optional(&self, reference: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialError> {
         validate_reference(reference)?;
         let entry =
             Entry::new(SERVICE, reference).map_err(|_| CredentialError::StoreUnavailable)?;
-        let value = entry
-            .get_secret()
-            .map_err(|_| CredentialError::StoreUnavailable)?;
-        Ok(Zeroizing::new(value))
+        match entry.get_secret() {
+            Ok(value) => Ok(Some(Zeroizing::new(value))),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(CredentialError::StoreUnavailable),
+        }
     }
 
     fn delete(&self, reference: &str) -> Result<(), CredentialError> {
+        self.delete_with_outcome(reference).map(|_| ())
+    }
+
+    fn delete_with_outcome(
+        &self,
+        reference: &str,
+    ) -> Result<CredentialDeleteOutcome, CredentialError> {
         validate_reference(reference)?;
         let entry =
             Entry::new(SERVICE, reference).map_err(|_| CredentialError::StoreUnavailable)?;
         match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) => Ok(CredentialDeleteOutcome::Deleted),
+            Err(keyring::Error::NoEntry) => Ok(CredentialDeleteOutcome::Missing),
             Err(_) => Err(CredentialError::StoreUnavailable),
         }
     }

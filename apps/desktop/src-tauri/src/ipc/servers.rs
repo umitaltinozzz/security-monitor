@@ -82,6 +82,7 @@ pub async fn pair_server(
         host_key_fingerprint: Some(confirmed_fingerprint.clone()),
         last_seen_at: Some(now),
         last_success_at: None,
+        removed_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -113,6 +114,112 @@ pub async fn pair_server(
 }
 
 #[tauri::command]
+pub async fn unpair_server(
+    state: State<'_, AppState>,
+    server_id: String,
+    delete_history: bool,
+) -> Result<UnpairServerResult, String> {
+    unpair_server_with_store(
+        &state.database,
+        &state.app_data_dir,
+        &server_id,
+        delete_history,
+        &OsCredentialStore,
+    )
+    .await
+}
+
+async fn unpair_server_with_store(
+    database: &Database,
+    app_data_dir: &Path,
+    server_id: &str,
+    delete_history: bool,
+    store: &dyn CredentialStore,
+) -> Result<UnpairServerResult, String> {
+    let record = database
+        .repository::<Asset>()
+        .unpair_server(server_id, delete_history, Utc::now())
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?
+        .ok_or_else(|| "server_not_found".to_owned())?;
+
+    let mut credential_cleanup_warning = false;
+    if let Some(target_ref) = record.ssh_target_ref {
+        let (private_key_ref, target_entry_present) = match store.get_optional(&target_ref) {
+            Ok(Some(bytes)) => match serde_json::from_slice::<StoredSshTarget>(&bytes) {
+                Ok(stored) => (Some(stored.private_key_ref), true),
+                Err(error) => {
+                    tracing::warn!(
+                        error = %redact_text(&format!("{error:?}" )).text,
+                        "could not read SSH private-key reference during server unpair"
+                    );
+                    credential_cleanup_warning = true;
+                    (None, true)
+                }
+            },
+            Ok(None) => {
+                tracing::warn!(
+                    "SSH target credential was already absent; private-key cleanup could not be confirmed"
+                );
+                credential_cleanup_warning = true;
+                (None, false)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error = %redact_text(&format!("{error:?}" )).text,
+                    "could not read SSH credential during server unpair"
+                );
+                credential_cleanup_warning = true;
+                (None, true)
+            }
+        };
+        if let Some(private_key_ref) = private_key_ref {
+            credential_cleanup_warning |=
+                !delete_credential(store, &private_key_ref, "ssh_private_key");
+        }
+        if target_entry_present {
+            credential_cleanup_warning |= !delete_credential(store, &target_ref, "ssh_target");
+        }
+    }
+
+    let snapshot_cleanup_warning =
+        delete_history && delete_server_snapshot(app_data_dir, server_id).is_err();
+    if snapshot_cleanup_warning {
+        tracing::warn!("could not remove server inventory snapshot after unpair");
+    }
+    Ok(UnpairServerResult {
+        history_deleted: record.history_deleted,
+        credential_cleanup_warning,
+        snapshot_cleanup_warning,
+    })
+}
+
+fn delete_credential(store: &dyn CredentialStore, reference: &str, credential_kind: &str) -> bool {
+    match store.delete_with_outcome(reference) {
+        Ok(CredentialDeleteOutcome::Deleted) => true,
+        Ok(CredentialDeleteOutcome::Missing) => {
+            tracing::info!(
+                credential_kind,
+                "credential was already absent during server unpair"
+            );
+            true
+        }
+        Err(error) => {
+            tracing::warn!(
+                credential_kind,
+                error = %redact_text(&format!("{error:?}" )).text,
+                "could not remove credential after server unpair"
+            );
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "servers_tests.rs"]
+mod tests;
+
+#[tauri::command]
 pub async fn collect_server_inventory(
     state: State<'_, AppState>,
     asset_id: String,
@@ -128,6 +235,9 @@ pub async fn collect_server_inventory(
         .await
         .map_err(|error| opaque(error, "storage_unavailable"))?
         .ok_or_else(|| "server_not_found".to_owned())?;
+    if asset.removed_at.is_some() {
+        return Err("server_not_found".to_owned());
+    }
     let target_ref = asset
         .ssh_target_ref
         .as_deref()

@@ -221,7 +221,18 @@
     "confirmLink": "Bu sunucunun bu projenin deploy'larını çalıştırdığını onaylıyorum.",
     "linkExplanation": "Production durumu yalnızca bağlı projeler için, son onaylı toplamadaki deploy kimliği ve paketlerle karşılaştırılır.",
     "linkCreated": "Proje bağlandı. Repo ve production durumu yeniden değerlendirildi.",
-    "linkRemoved": "Proje bağlantısı kaldırıldı. Production durumu yeniden doğrulanamaz durumda."
+    "linkRemoved": "Proje bağlantısı kaldırıldı. Production durumu yeniden doğrulanamaz durumda.",
+    "unpair": "Eşlemeyi kaldır",
+    "unpairTitle": "Bu sunucunun eşlemesi kaldırılsın mı?",
+    "unpairAuthorizedKeysWarning": "Bu işlem sunucudaki authorized_keys satırını silmez. Erişimi tamamen kapatmak için sunucuda şu komutu çalıştır: sudo rm /var/lib/secmon/.ssh/authorized_keys",
+    "historyChoice": "Sunucu envanter geçmişi",
+    "keepHistory": "Geçmişi sakla (sunucu kaldırıldı olarak işaretli)",
+    "deleteHistory": "Geçmişi ve onay kayıtlarını sil",
+    "confirmUnpair": "Eşlemeyi kaldır",
+    "removed": "Sunucu kaldırıldı",
+    "unpairSuccess": "Sunucu eşlemesi kaldırıldı.",
+    "credentialCleanupWarning": "Sunucu kaldırıldı ancak SSH kimlik bilgisi işletim sistemi kimlik deposundan silinemedi.",
+    "snapshotCleanupWarning": "Sunucu kaldırıldı ancak yerel envanter dosyası silinemedi."
   },
   "findings": {
     "title": "Güvenlik açıkları",

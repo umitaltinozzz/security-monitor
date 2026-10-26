@@ -1,8 +1,9 @@
 use chrono::{Duration, TimeZone, Utc};
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
-    ComponentInstance, Deployment, Finding, FindingEvidence, Memory, MemoryKind, MemoryScope,
-    NotificationChannel, NotificationDeliveryState, Project, Remediation, ScanRun, Service,
+    ComponentInstance, Deployment, Finding, FindingEvidence, FindingStatus, Memory, MemoryKind,
+    MemoryScope, NotificationChannel, NotificationDeliveryState, ProductionStatus, Project,
+    ProjectServerLink, Remediation, ScanRun, Service,
 };
 use serde::Deserialize;
 use sqlx::Row;
@@ -11,7 +12,7 @@ use crate::{Database, DatabaseError, Entity, FindingPageFilter, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
-    let migrations: [&[u8]; 10] = [
+    let migrations: [&[u8]; 12] = [
         include_bytes!("../migrations/0001_initial.sql"),
         include_bytes!("../migrations/0002_advisory_metadata.sql"),
         include_bytes!("../migrations/0003_finding_disposition.sql"),
@@ -22,6 +23,8 @@ fn migration_sources_use_platform_independent_lf_line_endings() {
         include_bytes!("../migrations/0008_news_signals.sql"),
         include_bytes!("../migrations/0009_memories.sql"),
         include_bytes!("../migrations/0010_project_server_links.sql"),
+        include_bytes!("../migrations/0011_unique_project_root_path.sql"),
+        include_bytes!("../migrations/0012_server_unpair_history.sql"),
     ];
 
     assert!(
@@ -62,7 +65,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 10);
+    assert_eq!(database.schema_version().await.unwrap(), 12);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -78,6 +81,225 @@ async fn migration_installs_all_tables_into_an_empty_database() {
     .try_get("count")
     .unwrap();
     assert_eq!(count, 20);
+}
+
+#[tokio::test]
+async fn unpair_removes_links_and_invalidates_production_without_deleting_kept_history() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    let mut instance = fixture.component_instance.clone();
+    instance.asset_id = None;
+    instance.service_id = None;
+    instance.deployment_id = None;
+    let mut finding = fixture.finding.clone();
+    finding.status = FindingStatus::FixedInProduction;
+    finding.production_status = ProductionStatus::FixedInProduction;
+    let link = ProjectServerLink {
+        id: "link-1".to_owned(),
+        project_id: fixture.project.id.clone(),
+        asset_id: fixture.asset.id.clone(),
+        confirmed_at: Utc::now(),
+    };
+    let mut approval = fixture.audit_event.clone();
+    approval.action = "server_inventory_collection_approved".to_owned();
+    approval.scope.resource_type = "asset".to_owned();
+    approval.scope.resource_id = Some(fixture.asset.id.clone());
+
+    database
+        .repository::<Project>()
+        .create(&fixture.project)
+        .await
+        .unwrap();
+    database
+        .repository::<Asset>()
+        .create(&fixture.asset)
+        .await
+        .unwrap();
+    database
+        .repository::<Component>()
+        .create(&fixture.component)
+        .await
+        .unwrap();
+    database
+        .repository::<ComponentInstance>()
+        .create(&instance)
+        .await
+        .unwrap();
+    database
+        .repository::<Advisory>()
+        .create(&fixture.advisory)
+        .await
+        .unwrap();
+    database
+        .repository::<Finding>()
+        .create(&finding)
+        .await
+        .unwrap();
+    database
+        .repository::<ProjectServerLink>()
+        .create(&link)
+        .await
+        .unwrap();
+    database
+        .repository::<AuditEvent>()
+        .create(&approval)
+        .await
+        .unwrap();
+
+    let result = database
+        .repository::<Asset>()
+        .unpair_server(&fixture.asset.id, false, Utc::now())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.linked_project_ids, vec![fixture.project.id.clone()]);
+    assert!(!result.history_deleted);
+    assert!(
+        database
+            .repository::<ProjectServerLink>()
+            .list()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let removed_asset = database
+        .repository::<Asset>()
+        .get(&fixture.asset.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(removed_asset.removed_at.is_some());
+    assert!(removed_asset.host_key_fingerprint.is_none());
+    assert!(removed_asset.ssh_target_ref.is_none());
+    let updated_finding = database
+        .repository::<Finding>()
+        .get(&finding.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated_finding.production_status, ProductionStatus::Unknown);
+    assert_eq!(updated_finding.status, FindingStatus::NeedsReview);
+    assert!(
+        database
+            .repository::<AuditEvent>()
+            .get(&approval.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn unpair_delete_history_removes_server_and_collection_approvals() {
+    let database = Database::in_memory().await.unwrap();
+    let fixture = records();
+    let mut instance = fixture.component_instance.clone();
+    instance.asset_id = None;
+    instance.service_id = None;
+    instance.deployment_id = None;
+    let link = ProjectServerLink {
+        id: "link-1".to_owned(),
+        project_id: fixture.project.id.clone(),
+        asset_id: fixture.asset.id.clone(),
+        confirmed_at: Utc::now(),
+    };
+    let mut approval = fixture.audit_event.clone();
+    approval.action = "server_inventory_collection_approved".to_owned();
+    approval.scope.resource_type = "asset".to_owned();
+    approval.scope.resource_id = Some(fixture.asset.id.clone());
+
+    database
+        .repository::<Project>()
+        .create(&fixture.project)
+        .await
+        .unwrap();
+    database
+        .repository::<Asset>()
+        .create(&fixture.asset)
+        .await
+        .unwrap();
+    database
+        .repository::<Component>()
+        .create(&fixture.component)
+        .await
+        .unwrap();
+    database
+        .repository::<ComponentInstance>()
+        .create(&instance)
+        .await
+        .unwrap();
+    database
+        .repository::<Advisory>()
+        .create(&fixture.advisory)
+        .await
+        .unwrap();
+    database
+        .repository::<Finding>()
+        .create(&fixture.finding)
+        .await
+        .unwrap();
+    database
+        .repository::<ProjectServerLink>()
+        .create(&link)
+        .await
+        .unwrap();
+    database
+        .repository::<AuditEvent>()
+        .create(&approval)
+        .await
+        .unwrap();
+
+    let result = database
+        .repository::<Asset>()
+        .unpair_server(&fixture.asset.id, true, Utc::now())
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(result.history_deleted);
+    assert!(
+        database
+            .repository::<Asset>()
+            .get(&fixture.asset.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        database
+            .repository::<ProjectServerLink>()
+            .list()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        database
+            .repository::<AuditEvent>()
+            .get(&approval.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let updated_finding = database
+        .repository::<Finding>()
+        .get(&fixture.finding.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated_finding.production_status, ProductionStatus::Unknown);
+    assert_eq!(
+        database
+            .repository::<AuditEvent>()
+            .list()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|event| event.action == "server_unpaired")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -196,7 +418,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 10);
+    assert_eq!(readonly.schema_version().await.unwrap(), 12);
     assert_eq!(
         readonly
             .repository::<Project>()

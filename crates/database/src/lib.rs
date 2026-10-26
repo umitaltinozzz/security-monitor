@@ -3,13 +3,13 @@ use std::{marker::PhantomData, path::Path, time::Duration};
 use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
     ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
-    NotificationChannel, NotificationDeliveryState, Project, ProjectScanCheckpoint,
-    ProjectServerLink, Remediation, ScanRun, Service,
+    NotificationChannel, NotificationDeliveryState, ProductionStatus, Project,
+    ProjectScanCheckpoint, ProjectServerLink, Remediation, ScanRun, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use sqlx::{
-    Row, SqlitePool,
+    Row, Sqlite, SqlitePool, Transaction,
     migrate::Migrator,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
@@ -263,6 +263,13 @@ pub struct RepositoryPage<T> {
     pub limit: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerUnpairRecord {
+    pub ssh_target_ref: Option<String>,
+    pub linked_project_ids: Vec<String>,
+    pub history_deleted: bool,
+}
+
 #[derive(Default)]
 pub struct FindingPageFilter<'a> {
     pub status: Option<&'a str>,
@@ -385,6 +392,107 @@ impl<T: Entity> Repository<T> {
         );
         let result = sqlx::query(&sql).bind(id).execute(&self.pool).await?;
         Ok(result.rows_affected() == 1)
+    }
+}
+
+impl Repository<Asset> {
+    /// Removes a server's project links and invalidates production evidence in one transaction.
+    /// Kept history is represented by an asset tombstone without its pinned host key or credential.
+    pub async fn unpair_server(
+        &self,
+        server_id: &str,
+        delete_history: bool,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<ServerUnpairRecord>, DatabaseError> {
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let asset_json =
+            sqlx::query_scalar::<_, String>("SELECT record_json FROM assets WHERE id = ?1")
+                .bind(server_id)
+                .fetch_optional(&mut *transaction)
+                .await?;
+        let Some(asset_json) = asset_json else {
+            transaction.rollback().await?;
+            return Ok(None);
+        };
+        let mut asset: Asset = decode_record(asset_json)?;
+        let linked_project_ids = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT project_id FROM project_server_links WHERE asset_id = ?1 ORDER BY project_id",
+        )
+        .bind(server_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        sqlx::query("DELETE FROM project_server_links WHERE asset_id = ?1")
+            .bind(server_id)
+            .execute(&mut *transaction)
+            .await?;
+
+        for project_id in &linked_project_ids {
+            let findings = sqlx::query_scalar::<_, String>(
+                "SELECT f.record_json FROM findings f \
+                 INNER JOIN component_instances ci ON ci.id = f.component_instance_id \
+                 WHERE ci.project_id = ?1 ORDER BY f.id",
+            )
+            .bind(project_id)
+            .fetch_all(&mut *transaction)
+            .await?
+            .into_iter()
+            .map(decode_record::<Finding>)
+            .collect::<Result<Vec<_>, _>>()?;
+            for mut finding in findings {
+                if finding.production_status == ProductionStatus::Unknown {
+                    continue;
+                }
+                finding.production_status = ProductionStatus::Unknown;
+                if matches!(
+                    finding.status,
+                    security_monitor_core::FindingStatus::FixedInProduction
+                ) {
+                    finding.status = security_monitor_core::FindingStatus::NeedsReview;
+                }
+                finding.updated_at = now;
+                update_in_transaction(&mut transaction, &finding).await?;
+            }
+        }
+
+        let ssh_target_ref = asset.ssh_target_ref.take();
+        asset.host_key_fingerprint = None;
+        if delete_history {
+            sqlx::query(
+                "DELETE FROM audit_events WHERE action = 'server_inventory_collection_approved' \
+                 AND json_extract(scope_json, '$.resource_id') = ?1",
+            )
+            .bind(server_id)
+            .execute(&mut *transaction)
+            .await?;
+            sqlx::query("DELETE FROM assets WHERE id = ?1")
+                .bind(server_id)
+                .execute(&mut *transaction)
+                .await?;
+        } else {
+            asset.removed_at = Some(now);
+            asset.updated_at = now;
+            update_in_transaction(&mut transaction, &asset).await?;
+        }
+
+        let event = AuditEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: now,
+            actor: "user".to_owned(),
+            action: "server_unpaired".to_owned(),
+            scope: security_monitor_core::AuditScope {
+                resource_type: "asset".to_owned(),
+                resource_id: Some(server_id.to_owned()),
+            },
+            result: security_monitor_core::AuditResult::Succeeded,
+        };
+        insert_in_transaction(&mut transaction, &event).await?;
+        transaction.commit().await?;
+
+        Ok(Some(ServerUnpairRecord {
+            ssh_target_ref,
+            linked_project_ids,
+            history_deleted: delete_history,
+        }))
     }
 }
 
@@ -650,6 +758,60 @@ fn quote_identifier(identifier: &str) -> String {
     format!("\"{identifier}\"")
 }
 
+async fn update_in_transaction<T: Entity>(
+    transaction: &mut Transaction<'_, Sqlite>,
+    entity: &T,
+) -> Result<(), DatabaseError> {
+    entity.validate()?;
+    let json = serde_json::to_string(entity)?;
+    validate_record(T::TABLE, &json)?;
+    let assignments = T::COLUMNS
+        .iter()
+        .map(|(column, path)| format!("{} = json_extract(?1, '{path}')", quote_identifier(column)))
+        .chain(std::iter::once("record_json = ?1".to_owned()))
+        .collect::<Vec<_>>();
+    let sql = format!(
+        "UPDATE {} SET {} WHERE {} = ?2",
+        quote_identifier(T::TABLE),
+        assignments.join(", "),
+        quote_identifier(T::KEY_COLUMN)
+    );
+    sqlx::query(&sql)
+        .bind(json)
+        .bind(T::key(entity))
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+async fn insert_in_transaction<T: Entity>(
+    transaction: &mut Transaction<'_, Sqlite>,
+    entity: &T,
+) -> Result<(), DatabaseError> {
+    entity.validate()?;
+    let json = serde_json::to_string(entity)?;
+    validate_record(T::TABLE, &json)?;
+    let columns = T::COLUMNS
+        .iter()
+        .map(|(column, _)| quote_identifier(column))
+        .collect::<Vec<_>>();
+    let values = T::COLUMNS
+        .iter()
+        .map(|(_, path)| format!("json_extract(?1, '{path}')"))
+        .collect::<Vec<_>>();
+    let sql = format!(
+        "INSERT INTO {} ({}, record_json) SELECT {}, ?1",
+        quote_identifier(T::TABLE),
+        columns.join(", "),
+        values.join(", ")
+    );
+    sqlx::query(&sql)
+        .bind(json)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
 fn decode_record<T: DeserializeOwned>(json: String) -> Result<T, DatabaseError> {
     Ok(serde_json::from_str(&json)?)
 }
@@ -835,6 +997,7 @@ entity!(
         ("host_key_fingerprint", "$.host_key_fingerprint"),
         ("last_seen_at", "$.last_seen_at"),
         ("last_success_at", "$.last_success_at"),
+        ("removed_at", "$.removed_at"),
         ("created_at", "$.created_at"),
         ("updated_at", "$.updated_at"),
     ]

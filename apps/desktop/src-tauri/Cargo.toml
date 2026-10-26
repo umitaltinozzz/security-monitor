@@ -51,3 +51,4 @@ tauri-plugin-updater = { version = "=2.14.0", default-features = false, features
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
 tempfile = "3"
+zeroize.workspace = true

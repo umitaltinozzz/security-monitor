@@ -2,4 +2,4 @@
 import type { AssetType } from "./AssetType";
 import type { Environment } from "./Environment";
 
-export type Asset = { id: string, asset_type: AssetType, hostname_alias: string, environment: Environment, ssh_target_ref: string | null, host_key_fingerprint: string | null, last_seen_at: string | null, last_success_at: string | null, created_at: string, updated_at: string, };
+export type Asset = { id: string, asset_type: AssetType, hostname_alias: string, environment: Environment, ssh_target_ref: string | null, host_key_fingerprint: string | null, last_seen_at: string | null, last_success_at: string | null, removed_at: string | null, created_at: string, updated_at: string, };

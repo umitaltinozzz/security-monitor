@@ -489,6 +489,12 @@
           "markdownDescription": "Enables the unlink_project_server command without any pre-configured scope."
         },
         {
+          "description": "Enables the unpair_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-unpair-server",
+          "markdownDescription": "Enables the unpair_server command without any pre-configured scope."
+        },
+        {
           "description": "Enables the update_advisory_data command without any pre-configured scope.",
           "type": "string",
           "const": "allow-update-advisory-data",
@@ -811,6 +817,12 @@
           "type": "string",
           "const": "deny-unlink-project-server",
           "markdownDescription": "Denies the unlink_project_server command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the unpair_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-unpair-server",
+          "markdownDescription": "Denies the unpair_server command without any pre-configured scope."
         },
         {
           "description": "Denies the update_advisory_data command without any pre-configured scope.",

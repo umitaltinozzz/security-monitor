@@ -33,14 +33,14 @@ pub async fn link_project_server(
     {
         return Err("project_not_found".to_owned());
     }
-    if state
+    let asset = state
         .database
         .repository::<Asset>()
         .get(&asset_id)
         .await
         .map_err(|error| opaque(error, "storage_unavailable"))?
-        .is_none()
-    {
+        .ok_or_else(|| "server_not_found".to_owned())?;
+    if asset.removed_at.is_some() {
         return Err("server_not_found".to_owned());
     }
     let links = state.database.repository::<ProjectServerLink>();

@@ -12,4 +12,5 @@ export {
   StatusTag,
 } from "./Shared";
 export { ServerProjectLinks } from "./ServerProjectLinks";
+export { ServerUnpairControl } from "./ServerUnpairControl";
 export { StatusDialog } from "./StatusDialog";

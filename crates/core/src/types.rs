@@ -164,6 +164,8 @@ pub struct Asset {
     pub host_key_fingerprint: Option<String>,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub last_success_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub removed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

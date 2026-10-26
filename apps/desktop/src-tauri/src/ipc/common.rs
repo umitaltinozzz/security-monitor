@@ -5,8 +5,9 @@ pub(super) use security_monitor_advisory_providers::{
 };
 pub(super) use security_monitor_agent_protocol::AgentInventory;
 pub(super) use security_monitor_agent_transport::{
-    CredentialStore, InventoryCollectionApproval, OsCredentialStore, SshIdentity, SshTarget,
-    collect_agent, create_pairing_instructions, inspect_host_key, load_user_ssh_hosts,
+    CredentialDeleteOutcome, CredentialStore, InventoryCollectionApproval, OsCredentialStore,
+    SshIdentity, SshTarget, collect_agent, create_pairing_instructions, inspect_host_key,
+    load_user_ssh_hosts,
 };
 pub(super) use security_monitor_ai::{
     AiRequest, AiSettings, DataCategory, HttpAiTransport, MAX_OUTPUT_TOKENS_PER_CALL,
@@ -15,7 +16,10 @@ pub(super) use security_monitor_ai::{
     validate_provider_config,
 };
 pub(super) use security_monitor_app_services::ServerSnapshotError;
-pub(super) use security_monitor_app_services::persist_server_snapshot as write_server_snapshot;
+pub(super) use security_monitor_app_services::{
+    persist_server_snapshot as write_server_snapshot,
+    remove_server_snapshot as delete_server_snapshot,
+};
 pub(super) use security_monitor_core::{
     Advisory, AgentCliProduct, AiDataTransferApproval, AiProvider, AiProviderKind, AiRun, AiTier,
     ApprovalState, Asset, AssetType, AuditEvent, AuditResult, AuditScope, Component,
