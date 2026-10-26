@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import en from "./locales/en.json";
 import tr from "./locales/tr.json";
 
-const sources = import.meta.glob("./*.tsx", {
+const sources = import.meta.glob("./**/*.tsx", {
   query: "?raw",
   import: "default",
   eager: true,
