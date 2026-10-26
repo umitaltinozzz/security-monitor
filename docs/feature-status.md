@@ -16,13 +16,13 @@ Security Monitor is pre-release, version **0.1.0**. This page is the source of t
 | Optional full-scan adapters | Experimental | OSV-Scanner, Trivy, and Semgrep run only when available and configured. Missing engines or incomplete results do not produce a clean state. |
 | Public advisory downloads | Experimental | Downloads are off by default and require the public-download setting. Requests use the local ecosystem selection; package inventories are not uploaded. |
 | Linux server pairing and inventory | Experimental | Requires the read-only Linux agent, pinned SSH, and user approval for each collection. Linux distributions and host configurations still need broader real-server validation. |
-| Linux OS package advisory evaluation | Experimental | Debian and Ubuntu packages are evaluated against fresh local OSV data when package collection is complete. RPM, APK, and other unsupported distributions are shown as not evaluated. |
+| Linux OS package advisory evaluation | Experimental | Debian, Ubuntu, AlmaLinux, Rocky Linux, Red Hat, and Alpine packages are checked against fresh local OSV data when package collection is complete. Red Hat package matches need review because the inventory does not record repository origin; Oracle Linux has no OSV source and remains unverified. |
 | Repository-to-production drift | Experimental | Requires a verified project reference and a recent approved Linux server inventory linked by the user. Missing evidence stays unknown or needs review. |
 | Desktop startup checks, scheduler, and file watcher | Experimental | Runs while the desktop tray process is open. Project checks and file changes can queue scans; scheduled full scans use the interval in Settings. |
 | Coding-agent integrations and local MCP | Experimental | Claude Code, Codex, and OpenCode integrations operate on local data. Remediation prepares edits in a separate worktree for manual review and application; discarding or seven-day expiry removes its worktree and branch. Agent configuration and hooks remain subject to the boundaries in the integration guide. |
 | AI analysis and approved data transfers | Experimental | Transfers require a reviewed approval. Provider, budget, and data-category controls apply; provider retention is outside this product's control. |
 | Agentless SSH collection | Planned | Not available in the desktop or CLI product. Server collection requires the Linux agent. |
-| OS package evaluation for RPM, APK, and other distributions | Planned | These packages are collected where supported but are not evaluated for OSV findings. |
-| Desktop, webhook, Slack, Discord, and email notifications | Planned | Notification delivery is not wired into the desktop product and has no channel-management UI. |
+| Other Linux OS package distributions | Planned | Distributions without an explicitly mapped OSV ecosystem remain unverified; package-manager similarity is never used to infer a data source. |
+| Desktop, webhook, Slack, Discord, ntfy, and email notifications | Experimental | Local desktop notifications are on by default. External channels are opt-in, require a recorded destination approval, and keep URLs and credentials in the OS credential store. |
 | Signed desktop installers and application updates | Planned | Version 0.1.0 has no published signed installers. |
 

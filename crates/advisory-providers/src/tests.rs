@@ -440,6 +440,13 @@ fn debian_and_ubuntu_osv_fixtures_use_the_distro_ecosystem_and_dpkg_ordering() {
     }
     assert_eq!(crate::ecosystem_slug("Debian:12"), Some("Debian"));
     assert_eq!(crate::ecosystem_slug("Ubuntu:22.04:LTS"), Some("Ubuntu"));
+    assert_eq!(crate::ecosystem_slug("AlmaLinux:9"), Some("AlmaLinux"));
+    assert_eq!(crate::ecosystem_slug("Rocky Linux:9"), Some("Rocky Linux"));
+    assert_eq!(
+        crate::ecosystem_slug("Red Hat:enterprise_linux:9::appstream"),
+        Some("Red Hat")
+    );
+    assert_eq!(crate::ecosystem_slug("Alpine:v3.20"), Some("Alpine"));
     assert_eq!(crate::ecosystem_slug("rpm"), None);
     assert_eq!(crate::ecosystem_slug("apk"), None);
 }

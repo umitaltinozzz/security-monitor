@@ -17,7 +17,7 @@ use processes::collect_processes;
 use security_monitor_agent_protocol::{
     AgentInventory, CheckKind, CheckStatus, CollectionCheck, ContainerRecord, DeploymentIdentity,
     DeploymentSource, DiagnosticCode, OperatingSystem, PackageRecord, PackageSource, RuntimeRecord,
-    osv_os_package_ecosystem,
+    osv_os_package_ecosystems,
 };
 pub(crate) use security_monitor_agent_protocol::{
     normalize_commit, parse_package_output, valid_container_id,

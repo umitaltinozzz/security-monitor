@@ -27,7 +27,7 @@ Security Monitor matches your dependencies against vulnerability advisories on y
 
 ## What it does
 
-- **Finds vulnerable dependencies locally** from supported lockfiles and local advisory data, with optional OSV-Scanner, Trivy and Semgrep adapters. Server OS packages are evaluated only for Debian and Ubuntu when collection is complete and local OSV data is fresh; other distributions are marked not evaluated.
+- **Finds vulnerable dependencies locally** from supported lockfiles and local advisory data, with optional OSV-Scanner, Trivy and Semgrep adapters. Server OS packages are checked for Debian, Ubuntu, AlmaLinux, Rocky Linux, Red Hat and Alpine against fresh local OSV data. Red Hat matches require review when repository origin is unknown; Oracle Linux remains unverified because no OSV data source is configured.
 - **Compares the repository with production.** A read-only Linux agent over pinned SSH reports installed packages, running kernels and processes that still use deleted libraries; linked projects show "fixed in repo, still running in production". Agentless collection is not available in the product.
 - **Warns before vulnerable code is pushed** with a Git hook that checks only changed lockfiles, offline.
 - **Works with coding agents** through a local MCP server and skills for Claude Code, Codex and OpenCode.

@@ -50,9 +50,9 @@ pub struct OperatingSystem {
     pub architecture: String,
 }
 
-/// Returns the OSV ecosystem identifier for Debian and Ubuntu releases supported by the
-/// Debian-compatible package version comparator.
-pub fn osv_os_package_ecosystem(os: &OperatingSystem) -> Option<String> {
+/// Returns exact OSV package ecosystem identifiers available for the reported `os-release` ID.
+/// Red Hat 8/9 have separate package scopes but inventory does not preserve repository origin.
+pub fn osv_os_package_ecosystems(os: &OperatingSystem) -> Option<Vec<String>> {
     let version_id = os.version_id.as_deref()?;
     let parts = version_id.split('.').collect::<Vec<_>>();
     if parts.is_empty()
@@ -63,17 +63,44 @@ pub fn osv_os_package_ecosystem(os: &OperatingSystem) -> Option<String> {
     {
         return None;
     }
-    match os.id.as_deref()? {
-        id if id.eq_ignore_ascii_case("debian") => Some(format!("Debian:{}", parts[0])),
+    let ecosystems = match os.id.as_deref()? {
+        id if id.eq_ignore_ascii_case("debian") => vec![format!("Debian:{}", parts[0])],
         id if id.eq_ignore_ascii_case("ubuntu") && parts.len() >= 2 => {
             let release = format!("{}.{}", parts[0], parts[1]);
             let major = parts[0].parse::<u16>().ok()?;
             let minor = parts[1].parse::<u16>().ok()?;
             let lts = major.is_multiple_of(2) && minor == 4;
-            Some(format!("Ubuntu:{release}{}", if lts { ":LTS" } else { "" }))
+            vec![format!("Ubuntu:{release}{}", if lts { ":LTS" } else { "" })]
         }
-        _ => None,
-    }
+        id if id.eq_ignore_ascii_case("almalinux") => {
+            vec![format!("AlmaLinux:{}", parts[0])]
+        }
+        id if id.eq_ignore_ascii_case("rocky") => {
+            vec![format!("Rocky Linux:{}", parts[0])]
+        }
+        id if id.eq_ignore_ascii_case("alpine") && parts.len() >= 2 => {
+            vec![format!("Alpine:v{}.{}", parts[0], parts[1])]
+        }
+        id if id.eq_ignore_ascii_case("rhel") || id.eq_ignore_ascii_case("redhat") => {
+            match parts[0] {
+                "8" | "9" => ["baseos", "appstream", "crb"]
+                    .into_iter()
+                    .map(|repository| {
+                        format!("Red Hat:enterprise_linux:{}::{repository}", parts[0])
+                    })
+                    .collect(),
+                "10" if parts.len() >= 2 => {
+                    vec![format!(
+                        "Red Hat:enterprise_linux:{}.{}",
+                        parts[0], parts[1]
+                    )]
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    Some(ecosystems)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -627,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn os_package_ecosystems_are_mapped_only_for_versioned_debian_and_ubuntu() {
+    fn os_package_ecosystems_follow_os_release_ids_and_leave_unknowns_unmapped() {
         let operating_system = |id: &str, version_id: &str| super::OperatingSystem {
             id: Some(id.to_owned()),
             name: None,
@@ -640,27 +667,51 @@ mod tests {
         };
 
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("debian", "12")),
-            Some("Debian:12".to_owned())
+            super::osv_os_package_ecosystems(&operating_system("debian", "12")),
+            Some(vec!["Debian:12".to_owned()])
         );
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("ubuntu", "22.04.5")),
-            Some("Ubuntu:22.04:LTS".to_owned())
+            super::osv_os_package_ecosystems(&operating_system("ubuntu", "22.04.5")),
+            Some(vec!["Ubuntu:22.04:LTS".to_owned()])
         );
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("ubuntu", "12.04")),
-            Some("Ubuntu:12.04:LTS".to_owned())
+            super::osv_os_package_ecosystems(&operating_system("ubuntu", "12.04")),
+            Some(vec!["Ubuntu:12.04:LTS".to_owned()])
         );
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("ubuntu", "22.10")),
-            Some("Ubuntu:22.10".to_owned())
+            super::osv_os_package_ecosystems(&operating_system("ubuntu", "22.10")),
+            Some(vec!["Ubuntu:22.10".to_owned()])
         );
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("rocky", "9.5")),
+            super::osv_os_package_ecosystems(&operating_system("almalinux", "9.5")),
+            Some(vec!["AlmaLinux:9".to_owned()])
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystems(&operating_system("rocky", "9.5")),
+            Some(vec!["Rocky Linux:9".to_owned()])
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystems(&operating_system("alpine", "3.20.3")),
+            Some(vec!["Alpine:v3.20".to_owned()])
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystems(&operating_system("rhel", "9.5")),
+            Some(vec![
+                "Red Hat:enterprise_linux:9::baseos".to_owned(),
+                "Red Hat:enterprise_linux:9::appstream".to_owned(),
+                "Red Hat:enterprise_linux:9::crb".to_owned(),
+            ])
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystems(&operating_system("rhel", "10.0")),
+            Some(vec!["Red Hat:enterprise_linux:10.0".to_owned()])
+        );
+        assert_eq!(
+            super::osv_os_package_ecosystems(&operating_system("ol", "9.5")),
             None
         );
         assert_eq!(
-            super::osv_os_package_ecosystem(&operating_system("ubuntu", "rolling")),
+            super::osv_os_package_ecosystems(&operating_system("ubuntu", "rolling")),
             None
         );
     }

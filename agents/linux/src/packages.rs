@@ -49,7 +49,9 @@ pub(super) async fn collect_os_packages(os: Option<&OperatingSystem>) -> Package
 }
 
 pub(super) fn package_ecosystem(os: Option<&OperatingSystem>, fallback: &str) -> String {
-    os.and_then(osv_os_package_ecosystem)
+    os.and_then(osv_os_package_ecosystems)
+        .filter(|ecosystems| ecosystems.len() == 1)
+        .and_then(|ecosystems| ecosystems.into_iter().next())
         .unwrap_or_else(|| fallback.to_owned())
 }
 

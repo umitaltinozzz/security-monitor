@@ -31,7 +31,7 @@ No account. No cloud dashboard. Source code, lockfiles, and inventory stay on yo
 
 ## What it does
 
-- **Finds vulnerable dependencies locally.** Supported lockfile inventory is matched on-device against local advisory data, with optional OSV-Scanner, Trivy, and Semgrep adapters. Server OS packages are evaluated only for Debian and Ubuntu when collection is complete and local OSV data is fresh; other distributions are marked not evaluated.
+- **Finds vulnerable dependencies locally.** Supported lockfile inventory is matched on-device against local advisory data, with optional OSV-Scanner, Trivy, and Semgrep adapters. Server OS packages are checked against fresh local OSV data for Debian, Ubuntu, AlmaLinux, Rocky Linux, Red Hat, and Alpine when collection is complete. Red Hat matches need review because repository origin is not collected; Oracle Linux has no OSV data source and remains unverified.
 - **Compares the repo with production.** A static Linux agent for `x86_64` and `aarch64` (ARM64) uses pinned SSH to report what is installed and running, including kernels that need a reboot and processes still using deleted libraries. Each collection requires user approval.
 - **Warns before vulnerable code is pushed.** `secmon hook` checks only the changed lockfiles, offline, in under three seconds.
 - **Works with your coding agent.** One command connects Claude Code, Codex, or OpenCode to a local MCP server and Security Monitor skills.

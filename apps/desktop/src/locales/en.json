@@ -184,8 +184,10 @@
     "deletedSharedLibraries": "deleted shared libraries are still mapped",
     "mapsUnverified": "{count} processes could not be verified",
     "osPackageEvaluation": {
-      "evaluated": "Debian or Ubuntu OS packages were evaluated using fresh local OSV data.",
+      "evaluated": "Supported OS packages were evaluated using fresh local OSV data.",
       "unverified": "OS package advisories could not be verified from fresh local OSV data.",
+      "unverified_scope": "Red Hat OSV data is split by repository, and this inventory does not record repository origin. Matches need review.",
+      "no_data_source": "Unverified — no OSV data source is available for this distribution.",
       "not_evaluated": "OS packages are not evaluated for this distribution."
     },
     "osPackageFindings": "OS package findings",

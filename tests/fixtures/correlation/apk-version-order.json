@@ -1,0 +1,9 @@
+[
+  {"left":"3.20.0-r0","right":"3.20.0-r1","ordering":"less"},
+  {"left":"3.20.0_alpha1","right":"3.20.0_beta1","ordering":"less"},
+  {"left":"3.20.0_rc1","right":"3.20.0","ordering":"less"},
+  {"left":"3.20.0","right":"3.20.0_cvs1","ordering":"less"},
+  {"left":"3.20.0~abcdef","right":"3.20.0-r0","ordering":"greater"},
+  {"left":"3.20.01","right":"3.20.1","ordering":"less"},
+  {"left":"03.20","right":"3.20","ordering":"equal"}
+]

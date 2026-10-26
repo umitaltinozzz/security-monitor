@@ -208,12 +208,12 @@ pub async fn update_advisory_data(
             let Ok(Some(inventory)) = load_server_snapshot(&state.app_data_dir, &asset.id) else {
                 continue;
             };
-            if let Some(ecosystem) = inventory
+            if let Some(osv_ecosystems) = inventory
                 .operating_system
                 .as_ref()
-                .and_then(security_monitor_agent_protocol::osv_os_package_ecosystem)
+                .and_then(security_monitor_agent_protocol::osv_os_package_ecosystems)
             {
-                ecosystems.push(ecosystem);
+                ecosystems.extend(osv_ecosystems);
             }
         }
     }

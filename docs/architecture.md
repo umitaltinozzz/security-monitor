@@ -13,7 +13,7 @@ The repository is a Rust Cargo workspace and pnpm workspace. `apps/desktop` cont
 | --- | --- |
 | `crates/agent-protocol` | Versioned bounded inventory document and generated JSON Schema. |
 | `crates/agent-transport` | Pinned SSH connections, dedicated key pairing, SSH config parsing, and local project association suggestions. Agentless collection is not available in the product. |
-| `agents/linux` | Root-free Linux collection for OS packages, runtimes, processes, services, containers, selected lockfiles, and deployment identity. The desktop evaluates OS packages only for Debian and Ubuntu; other distributions are not evaluated. |
+| `agents/linux` | Root-free Linux collection for OS packages, runtimes, processes, services, containers, selected lockfiles, and deployment identity. The desktop evaluates mapped Debian, Ubuntu, AlmaLinux, Rocky Linux, Red Hat, and Alpine OSV ecosystems; ambiguous or missing source data stays unverified. |
 
 ## Current data flow
 

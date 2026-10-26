@@ -1,0 +1,9 @@
+[
+  {"left":"1:1.0-1","right":"0:99.0-99","ordering":"greater"},
+  {"left":"0:1.0-1","right":"0:1.0-2","ordering":"less"},
+  {"left":"1.0~rc1-1","right":"1.0-1","ordering":"less"},
+  {"left":"1.0^git1-1","right":"1.0-1","ordering":"greater"},
+  {"left":"1.0^git1-1","right":"1.0.1-1","ordering":"less"},
+  {"left":"1.01-1","right":"1.1-1","ordering":"equal"},
+  {"left":"1.0-1.el9_1","right":"1.0-1.el9_2","ordering":"less"}
+]

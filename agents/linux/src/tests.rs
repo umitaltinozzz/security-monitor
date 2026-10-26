@@ -8,7 +8,7 @@ use super::{
 };
 use security_monitor_agent_protocol::{
     CheckKind, CheckStatus, DeploymentSource, DiagnosticCode, MapsStatus, PackageSource,
-    ProcessRecord, osv_os_package_ecosystem,
+    ProcessRecord, osv_os_package_ecosystems,
 };
 
 #[test]
@@ -40,7 +40,10 @@ fn system_metadata_parsers_return_only_allowlisted_fields() {
     let os = parse_os_release("ID=debian\nNAME=Debian\nVERSION_ID=12\nSECRET=value\n").expect("OS");
     assert_eq!(os.id.as_deref(), Some("debian"));
     assert_eq!(os.name.as_deref(), Some("Debian"));
-    assert_eq!(osv_os_package_ecosystem(&os).as_deref(), Some("Debian:12"));
+    assert_eq!(
+        osv_os_package_ecosystems(&os).as_deref(),
+        Some(["Debian:12".to_owned()].as_slice())
+    );
     assert_eq!(package_ecosystem(Some(&os), "deb"), "Debian:12");
     let packages = parse_package_output(
         b"pkg\t1.2.3\tamd64\tinstall ok installed\nmalformed\n",
@@ -63,10 +66,16 @@ fn package_ecosystem_maps_supported_osv_distros_and_keeps_others_unmapped() {
     assert_eq!(package_ecosystem(Some(&ubuntu), "deb"), "Ubuntu:22.04:LTS");
 
     let rocky = parse_os_release("ID=rocky\nVERSION_ID=9.5\n").expect("Rocky OS");
-    assert_eq!(package_ecosystem(Some(&rocky), "rpm"), "rpm");
+    assert_eq!(package_ecosystem(Some(&rocky), "rpm"), "Rocky Linux:9");
 
     let alpine = parse_os_release("ID=alpine\nVERSION_ID=3.22\n").expect("Alpine OS");
-    assert_eq!(package_ecosystem(Some(&alpine), "apk"), "apk");
+    assert_eq!(package_ecosystem(Some(&alpine), "apk"), "Alpine:v3.22");
+
+    let rhel = parse_os_release("ID=rhel\nVERSION_ID=9.5\n").expect("RHEL OS");
+    assert_eq!(package_ecosystem(Some(&rhel), "rpm"), "rpm");
+
+    let oracle = parse_os_release("ID=ol\nVERSION_ID=9.5\n").expect("Oracle Linux OS");
+    assert_eq!(package_ecosystem(Some(&oracle), "rpm"), "rpm");
 }
 
 #[test]

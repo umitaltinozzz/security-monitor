@@ -184,8 +184,10 @@
     "deletedSharedLibraries": "silinmiş paylaşılan kitaplık hâlâ belleğe eşlenmiş",
     "mapsUnverified": "{count} süreç doğrulanamadı",
     "osPackageEvaluation": {
-      "evaluated": "Debian veya Ubuntu işletim sistemi paketleri güncel yerel OSV verisiyle değerlendirildi.",
+      "evaluated": "Desteklenen işletim sistemi paketleri güncel yerel OSV verisiyle değerlendirildi.",
       "unverified": "İşletim sistemi paketi duyuruları güncel yerel OSV verisiyle doğrulanamadı.",
+      "unverified_scope": "Red Hat OSV verisi depolara göre ayrılır; envanter paket deposu bilgisini kaydetmiyor. Eşleşmeler incelenmeli.",
+      "no_data_source": "Doğrulanamadı — bu dağıtım için OSV veri kaynağı yok.",
       "not_evaluated": "Bu dağıtımın işletim sistemi paketleri değerlendirilmemektedir."
     },
     "osPackageFindings": "İşletim sistemi paketi bulguları",

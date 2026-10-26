@@ -244,6 +244,8 @@ pub struct CollectionSummary {
 pub enum OsPackageEvaluationStatus {
     Evaluated,
     Unverified,
+    UnverifiedScope,
+    NoDataSource,
     NotEvaluated,
 }
 

@@ -365,6 +365,18 @@ pub fn ecosystem_slug(ecosystem: &str) -> Option<&'static str> {
     if canonical == "ubuntu" || canonical.starts_with("ubuntu:") {
         return Some("Ubuntu");
     }
+    if canonical == "almalinux" || canonical.starts_with("almalinux:") {
+        return Some("AlmaLinux");
+    }
+    if canonical == "rocky linux" || canonical.starts_with("rocky linux:") {
+        return Some("Rocky Linux");
+    }
+    if canonical == "red hat" || canonical.starts_with("red hat:") {
+        return Some("Red Hat");
+    }
+    if canonical == "alpine" || canonical.starts_with("alpine:") {
+        return Some("Alpine");
+    }
     match canonical.as_str() {
         "npm" => Some("npm"),
         "pypi" => Some("PyPI"),
