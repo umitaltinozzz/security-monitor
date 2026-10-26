@@ -153,8 +153,13 @@ jobs:
         if: github.event_name != 'push'
         shell: bash
         run: |
-          executable=target/debug/security-monitor-desktop
-          if [[ "$RUNNER_OS" == "Windows" ]]; then executable="${executable}.exe"; fi
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            target_dir="$(cygpath -u "$target_dir")"
+            executable="$target_dir/debug/security-monitor-desktop.exe"
+          else
+            executable="$target_dir/debug/security-monitor-desktop"
+          fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             xvfb-run -a "$executable" --smoke-test
           else
@@ -169,8 +174,13 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
-          executable=target/release/security-monitor-desktop
-          if [[ "$RUNNER_OS" == "Windows" ]]; then executable="${executable}.exe"; fi
+          target_dir="${CARGO_TARGET_DIR:-target}"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            target_dir="$(cygpath -u "$target_dir")"
+            executable="$target_dir/release/security-monitor-desktop.exe"
+          else
+            executable="$target_dir/release/security-monitor-desktop"
+          fi
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             xvfb-run -a "$executable" --smoke-test
           else
