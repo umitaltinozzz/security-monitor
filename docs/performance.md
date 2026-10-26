@@ -51,7 +51,7 @@ The Windows desktop/tray sample below records one platform. macOS and Linux desk
 
 ## Real Linux agent sample (2026-10-26)
 
-Real-server smoke collections reported approximately 6 MB maximum RSS on Ubuntu 24.04.5 x86_64 (0.07 seconds) and 143 MB on Oracle Linux 9.8 aarch64 (1.7 seconds). Both collection times are under the 20-second target. Ubuntu is below the 100 MB memory target; Oracle Linux exceeds it by about 43 MB. The reported peak did not isolate `secmon-agent` from its `rpm` child, so the memory source is unverified. The RPM child is a hypothesis, not a measured attribution. A process-specific peak sample is still needed before deciding whether the agent itself exceeds the budget.
+Initial real-server smoke collections reported approximately 6 MB aggregate command peak RSS on Ubuntu 24.04.5 x86_64 (0.07 seconds) and 143 MB on Oracle Linux 9.8 aarch64 (1.7 seconds). Follow-up process-specific sampling measured agent-only `VmHWM` at about 23 MB and `rpm -qa` alone at about 152 MB; the Oracle host's `rpmdb.sqlite` was about 300 MB. Both collection times are under the 20-second target. The agent process itself is below the 100 MB target, while the full Oracle collection exceeds that target because the RPM child peaks around 152 MB. RSS values are separate process high-water measurements, not additive totals. This attributes the memory peak to RPM rather than `secmon-agent`.
 
 ## Windows desktop and tray sample
 
