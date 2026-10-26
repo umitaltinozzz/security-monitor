@@ -13,7 +13,7 @@ The agent is available as static musl binaries for `x86_64` and `aarch64` (ARM64
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
-cargo build -p secmon-agent --target x86_64-unknown-linux-musl --release
+RUSTFLAGS="-C relocation-model=static" cargo build -p secmon-agent --target x86_64-unknown-linux-musl --release
 cp target/x86_64-unknown-linux-musl/release/secmon-agent secmon-agent-linux-x86_64
 sha256sum secmon-agent-linux-x86_64
 ```
@@ -23,7 +23,7 @@ Install Zig 0.16.0, then cross-compile the ARM64 binary from Linux with cargo-zi
 ```sh
 rustup target add aarch64-unknown-linux-musl
 cargo install --locked cargo-zigbuild --version 0.23.4
-cargo zigbuild -p secmon-agent --target aarch64-unknown-linux-musl --release
+RUSTFLAGS="-C relocation-model=static" cargo zigbuild -p secmon-agent --target aarch64-unknown-linux-musl --release
 cp target/aarch64-unknown-linux-musl/release/secmon-agent secmon-agent-linux-aarch64
 sha256sum secmon-agent-linux-aarch64
 ```

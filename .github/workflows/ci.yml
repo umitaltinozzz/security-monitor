@@ -224,10 +224,15 @@ jobs:
       - name: Build static Linux agent
         if: matrix.arch == 'x86_64'
         run: cargo build -p secmon-agent --target ${{ matrix.target }} --release
+        env:
+          RUSTFLAGS: -C relocation-model=static
 
       - name: Cross-build static Linux agent
         if: matrix.arch == 'aarch64'
         run: cargo zigbuild -p secmon-agent --target ${{ matrix.target }} --release
+        env:
+          CARGO_BUILD_WARNINGS: warn
+          RUSTFLAGS: -D warnings -A linker_messages -C relocation-model=static
 
       - name: Verify static Linux agent
         shell: bash

@@ -156,10 +156,15 @@ jobs:
       - name: Build static Linux x86_64 server agent
         if: matrix.platform == 'linux'
         run: cargo build -p secmon-agent --release --target x86_64-unknown-linux-musl
+        env:
+          RUSTFLAGS: -C relocation-model=static
 
       - name: Cross-build static Linux aarch64 server agent
         if: matrix.platform == 'linux'
         run: cargo zigbuild -p secmon-agent --release --target aarch64-unknown-linux-musl
+        env:
+          CARGO_BUILD_WARNINGS: warn
+          RUSTFLAGS: -D warnings -A linker_messages -C relocation-model=static
 
       - name: Verify static Linux server agents
         if: matrix.platform == 'linux'
