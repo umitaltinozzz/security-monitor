@@ -58,10 +58,12 @@ test('CLI and agent binaries receive minisign signatures that are verified befor
   const directory = await mkdtemp(join(tmpdir(), 'secmon-minisign-binaries-'));
   const cli = join(directory, 'secmon-windows-x86_64.exe');
   const agent = join(directory, 'secmon-agent-linux-x86_64');
+  const armAgent = join(directory, 'secmon-agent-linux-aarch64');
   const packageFile = join(directory, 'security-monitor-windows-x86_64-setup.msi');
   await Promise.all([
     writeFile(cli, 'cli fixture'),
     writeFile(agent, 'agent fixture'),
+    writeFile(armAgent, 'arm agent fixture'),
     writeFile(packageFile, 'package fixture'),
   ]);
   const calls = [];
@@ -88,11 +90,12 @@ test('CLI and agent binaries receive minisign signatures that are verified befor
     run: runMinisignFixture,
   });
 
-  assert.equal(calls.filter((args) => args[0] === '-S').length, 2);
-  assert.equal(calls.filter((args) => args[0] === '-V').length, 2);
+  assert.equal(calls.filter((args) => args[0] === '-S').length, 3);
+  assert.equal(calls.filter((args) => args[0] === '-V').length, 3);
   assert.ok(calls.every((args) => !args.includes(privateKey)));
   assert.ok((await readFile(`${cli}.minisig`, 'utf8')).length > 0);
   assert.ok((await readFile(`${agent}.minisig`, 'utf8')).length > 0);
+  assert.ok((await readFile(`${armAgent}.minisig`, 'utf8')).length > 0);
   await assert.rejects(readFile(privateKeyPath, 'utf8'));
   await assert.rejects(readFile(`${packageFile}.minisig`, 'utf8'));
 });
@@ -144,6 +147,8 @@ test('release manifest requires all signed targets and writes offline checksums'
       await writeFile(join(directory, 'secmon-linux-x86_64.minisig'), 'CLI Minisign signature');
       await writeFile(join(directory, 'secmon-agent-linux-x86_64'), 'agent binary');
       await writeFile(join(directory, 'secmon-agent-linux-x86_64.minisig'), 'agent Minisign signature');
+      await writeFile(join(directory, 'secmon-agent-linux-aarch64'), 'ARM agent binary');
+      await writeFile(join(directory, 'secmon-agent-linux-aarch64.minisig'), 'ARM agent Minisign signature');
     }
   }
 
@@ -159,6 +164,7 @@ test('release manifest requires all signed targets and writes offline checksums'
   assert.match(sums, /linux\.AppImage/);
   assert.match(sums, /secmon-linux-x86_64\.minisig/);
   assert.match(sums, /secmon-agent-linux-x86_64\.minisig/);
+  assert.match(sums, /secmon-agent-linux-aarch64\.minisig/);
 });
 
 test('release manifest rejects an incomplete platform matrix', async () => {
@@ -222,4 +228,25 @@ test('asset staging rejects Tauri ZIP updater bundles', async () => {
   const result = run('stage-assets.mjs', [target, 'windows-x86_64', 'windows', 'x86_64'], { cwd: root });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /ZIP updater bundles are outside the supported release formats/);
+});
+
+test('Linux asset staging includes x86_64 and aarch64 agent binaries', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-linux-stage-'));
+  const target = 'x86_64-unknown-linux-gnu';
+  const releaseDirectory = join(root, 'target', target, 'release');
+  const bundle = join(releaseDirectory, 'bundle', 'appimage');
+  await mkdir(bundle, { recursive: true });
+  await mkdir(join(root, 'target', 'x86_64-unknown-linux-musl', 'release'), { recursive: true });
+  await mkdir(join(root, 'target', 'aarch64-unknown-linux-musl', 'release'), { recursive: true });
+  await writeFile(join(bundle, 'security-monitor.AppImage'), 'desktop package');
+  await writeFile(join(bundle, 'security-monitor.AppImage.sig'), 'updater signature');
+  await writeFile(join(releaseDirectory, 'secmon'), 'CLI binary');
+  await writeFile(join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent'), 'x86 agent');
+  await writeFile(join(root, 'target', 'aarch64-unknown-linux-musl', 'release', 'secmon-agent'), 'ARM agent');
+
+  const result = run('stage-assets.mjs', [target, 'linux-x86_64', 'linux', 'x86_64'], { cwd: root });
+  assert.equal(result.status, 0, result.stderr);
+  const output = join(root, 'target', 'release-out', 'linux-x86_64');
+  assert.equal(await readFile(join(output, 'secmon-agent-linux-x86_64'), 'utf8'), 'x86 agent');
+  assert.equal(await readFile(join(output, 'secmon-agent-linux-aarch64'), 'utf8'), 'ARM agent');
 });

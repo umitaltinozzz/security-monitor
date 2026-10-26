@@ -32,7 +32,7 @@ Hesap yok. Bulut paneli yok. Kaynak kod, lockfile'lar ve envanter, sen belirli b
 ## Ne yapar
 
 - **Açıklı bağımlılıkları yerelde bulur.** Desteklenen lockfile envanteri cihazda yerel duyuru verisiyle eşleştirilir; OSV-Scanner, Trivy ve Semgrep isteğe bağlı adaptörlerdir. Sunucu işletim sistemi paketleri yalnızca toplama eksiksiz ve yerel OSV verisi güncelse Debian ve Ubuntu için değerlendirilir; diğer dağıtımlar değerlendirilmemiş olarak gösterilir.
-- **Repoyu production ile karşılaştırır.** Sabitlenmiş SSH üzerinden çalışan salt okunur Linux ajanı kurulu ve çalışan bileşenleri bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil. Her toplama kullanıcı onayı ister.
+- **Repoyu production ile karşılaştırır.** `x86_64` ve `aarch64` (ARM64) için statik Linux ajanı, sabitlenmiş SSH üzerinden kurulu ve çalışan bileşenleri bildirir; yeniden başlatma bekleyen kernel'ler ve silinmiş kütüphaneleri hâlâ kullanan süreçler dahil. Her toplama kullanıcı onayı ister.
 - **Açıklı kod push edilmeden önce uyarır.** `secmon hook` yalnızca değişen lockfile'lara, çevrimdışı ve üç saniyenin altında bakar.
 - **Kodlama ajanınla çalışır.** Tek komut Claude Code, Codex veya OpenCode'u yerel MCP sunucusuna ve Security Monitor skill'lerine bağlar.
 - **Onayladığın düzeltmeleri hazırlar.** Yerel kodlama ajanı filtrelenmiş ortamla izole bir Git worktree'de çalışır; projedeki ajan yapılandırmaları varsa çalışma reddedilir. Test komutları ağ erişimi kapalı sandbox'ta çalışır ve onayın olmadan hiçbir değişiklik uygulanmaz.

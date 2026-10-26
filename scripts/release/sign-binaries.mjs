@@ -4,7 +4,7 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-const signableBinary = /^secmon(?:-agent)?-(?:windows-x86_64|macos-x86_64|macos-aarch64|linux-x86_64)(?:\.exe)?$/;
+const signableBinary = /^secmon(?:-agent)?-(?:windows-x86_64|macos-x86_64|macos-aarch64|linux-x86_64|linux-aarch64)(?:\.exe)?$/;
 
 function runMinisign(run, args, action) {
   const result = run('minisign', args, { stdio: 'ignore', windowsHide: true });

@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'docs/**'
-      - '*.md'
+      - "docs/**"
+      - "*.md"
   pull_request:
     paths-ignore:
-      - 'docs/**'
-      - '*.md'
+      - "docs/**"
+      - "*.md"
   workflow_dispatch:
 
 concurrency:
@@ -186,3 +186,74 @@ jobs:
           else
             "$executable" --smoke-test
           fi
+
+  linux-agent-artifacts:
+    name: Build Linux agent (${{ matrix.arch }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools file
+
+      - name: Set up Zig
+        if: matrix.arch == 'aarch64'
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+
+      - name: Install cargo-zigbuild
+        if: matrix.arch == 'aarch64'
+        run: cargo install --locked cargo-zigbuild --version 0.23.4
+
+      - name: Build static Linux agent
+        if: matrix.arch == 'x86_64'
+        run: cargo build -p secmon-agent --target ${{ matrix.target }} --release
+
+      - name: Cross-build static Linux agent
+        if: matrix.arch == 'aarch64'
+        run: cargo zigbuild -p secmon-agent --target ${{ matrix.target }} --release
+
+      - name: Verify static Linux agent
+        shell: bash
+        run: |
+          binary="target/${{ matrix.target }}/release/secmon-agent"
+          file_output=$(file "$binary")
+          printf '%s\n' "$file_output"
+          if [[ "$file_output" != *"statically linked"* ]]; then
+            printf '%s\n' 'The Linux agent is not statically linked.' >&2
+            exit 1
+          fi
+
+      - name: Name Linux agent artifact
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/secmon-agent" "secmon-agent-linux-${{ matrix.arch }}"
+
+      - name: Write Linux agent checksum
+        shell: bash
+        run: sha256sum "secmon-agent-linux-${{ matrix.arch }}" > "secmon-agent-linux-${{ matrix.arch }}.sha256"
+
+      - name: Upload Linux agent artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: secmon-agent-linux-${{ matrix.arch }}
+          path: |
+            secmon-agent-linux-${{ matrix.arch }}
+            secmon-agent-linux-${{ matrix.arch }}.sha256
+          if-no-files-found: error
+          retention-days: 7

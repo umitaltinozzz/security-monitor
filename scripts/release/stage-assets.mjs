@@ -62,9 +62,11 @@ const cliName = `secmon-${artifact}${cliSuffix}`;
 await copyFile(cliSource, join(output, cliName));
 
 if (platform === 'linux') {
-  const agentSource = join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent');
-  const agentName = 'secmon-agent-linux-x86_64';
-  await copyFile(agentSource, join(output, agentName));
+  for (const agentArch of ['x86_64', 'aarch64']) {
+    const agentSource = join(root, 'target', `${agentArch}-unknown-linux-musl`, 'release', 'secmon-agent');
+    const agentName = `secmon-agent-linux-${agentArch}`;
+    await copyFile(agentSource, join(output, agentName));
+  }
 }
 
 await writeFile(join(output, `${artifact}.updater.json`), `${JSON.stringify(updaterTargets, null, 2)}\n`, { flag: 'wx' });

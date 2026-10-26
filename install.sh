@@ -32,9 +32,14 @@ if [[ ! $expected_sha256 =~ ^[0-9a-f]{64}$ ]]; then
   exit 2
 fi
 
-case "$(uname -m)" in
-  x86_64|amd64|aarch64|arm64) ;;
-  *) printf '%s\n' 'This Linux architecture is not supported.' >&2; exit 1 ;;
+machine_arch=$(uname -m)
+case "$machine_arch" in
+  x86_64) agent_arch=x86_64 ;;
+  aarch64) agent_arch=aarch64 ;;
+  *)
+    printf 'Unsupported Linux architecture: %s. Supported architectures are x86_64 and aarch64.\n' "$machine_arch" >&2
+    exit 1
+    ;;
 esac
 
 temporary_directory=$(mktemp -d /tmp/secmon-agent-install.XXXXXXXX)
@@ -44,6 +49,11 @@ binary_path=$temporary_directory/secmon-agent
 source_path=$(realpath -e -- "$source_value")
 if [[ ! -f $source_path ]]; then
   printf '%s\n' 'The supplied agent binary is not a regular file.' >&2
+  exit 1
+fi
+expected_binary_name="secmon-agent-linux-${agent_arch}"
+if [[ ${source_path##*/} != "$expected_binary_name" ]]; then
+  printf 'This host requires %s for its %s architecture.\n' "$expected_binary_name" "$machine_arch" >&2
   exit 1
 fi
 cp -- "$source_path" "$binary_path"

@@ -5,7 +5,7 @@ description: Build, sign, verify, and install Security Monitor releases.
 
 # Signed releases and updates
 
-Security Monitor publishes Windows (`x86_64`), macOS (`x86_64` and `aarch64`), and Linux (`x86_64`) desktop packages. Each platform build also includes the `secmon` CLI; the Linux build includes the static musl `secmon-agent`. The release workflow refuses to build when signing configuration is missing.
+Security Monitor publishes Windows (`x86_64`), macOS (`x86_64` and `aarch64`), and Linux (`x86_64`) desktop packages. Each platform build also includes the `secmon` CLI; the Linux release includes static musl `secmon-agent` binaries for `x86_64` and `aarch64` (ARM64). Both agent binaries receive Minisign signatures and are covered by the signed `SHA256SUMS` manifest. The release workflow refuses to build when signing configuration is missing.
 
 ## Configure release signing
 

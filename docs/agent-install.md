@@ -9,23 +9,41 @@ description: Build, install, and pair the read-only Linux inventory agent over S
 
 ## Build and verify the binary
 
-Build a static x86-64 Linux binary on a Linux build machine:
+The agent is available as static musl binaries for `x86_64` and `aarch64` (ARM64). Build the x86-64 binary on a Linux build machine:
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
 cargo build -p secmon-agent --target x86_64-unknown-linux-musl --release
-sha256sum target/x86_64-unknown-linux-musl/release/secmon-agent
+cp target/x86_64-unknown-linux-musl/release/secmon-agent secmon-agent-linux-x86_64
+sha256sum secmon-agent-linux-x86_64
 ```
 
-For ARM64, build `aarch64-unknown-linux-musl` with an installed musl cross-linker.
-
-Copy `install.sh` and the binary to the Linux server using a channel you trust. Compare the checksum from the build machine with the checksum you pass to the installer:
+Install Zig 0.16.0, then cross-compile the ARM64 binary from Linux with cargo-zigbuild 0.23.4:
 
 ```sh
-sudo ./install.sh --binary ./secmon-agent --sha256 YOUR_64_CHARACTER_SHA256
+rustup target add aarch64-unknown-linux-musl
+cargo install --locked cargo-zigbuild --version 0.23.4
+cargo zigbuild -p secmon-agent --target aarch64-unknown-linux-musl --release
+cp target/aarch64-unknown-linux-musl/release/secmon-agent secmon-agent-linux-aarch64
+sha256sum secmon-agent-linux-aarch64
 ```
 
-The installer accepts only a local binary; transfer the binary and script over a channel you trust, then provide the checksum you verified on the build machine. It makes no network requests. It creates a system account named `secmon` with home `/var/lib/secmon` if needed and sets its password field to the unusable value `NP`, so OpenSSH permits public-key authentication while password authentication cannot succeed. It installs the binary root-owned at `/usr/local/bin/secmon-agent` and creates `/etc/secmon/agent.toml`. The account uses `/bin/sh` because OpenSSH invokes a forced command through the account shell; the pairing key itself forces the one fixed collection command and disables interactive and forwarding features. Do not add unrestricted keys to this account.
+The main-branch CI workflow also builds both architectures and keeps each binary with its `.sha256` sidecar as a downloadable workflow artifact for seven days.
+
+On the server, select the matching release binary from its reported machine architecture. The installer accepts only the matching architecture-labelled filename and rejects unknown architectures:
+
+```sh
+case "$(uname -m)" in
+  x86_64) agent=secmon-agent-linux-x86_64 ;;
+  aarch64) agent=secmon-agent-linux-aarch64 ;;
+  *) printf 'Unsupported Linux architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
+esac
+read -r agent_sha256 _ < "$agent.sha256"
+sha256sum -c "$agent.sha256"
+sudo ./install.sh --binary "./$agent" --sha256 "$agent_sha256"
+```
+
+Copy `install.sh` and the selected binary to the Linux server using a channel you trust. Compare its checksum with the value from the build machine before installing. The installer accepts only a local binary and makes no network requests. It creates a system account named `secmon` with home `/var/lib/secmon` if needed and sets its password field to the unusable value `NP`, so OpenSSH permits public-key authentication while password authentication cannot succeed. It installs the binary root-owned at `/usr/local/bin/secmon-agent` and creates `/etc/secmon/agent.toml`. The account uses `/bin/sh` because OpenSSH invokes a forced command through the account shell; the pairing key itself forces the one fixed collection command and disables interactive and forwarding features. Do not add unrestricted keys to this account.
 
 The installed agent runs as the SSH account and does not need root. The installer does not add `secmon` to the Docker group. Docker group membership grants root-equivalent access and should remain disabled unless you have explicitly reviewed and accepted that privilege.
 
