@@ -25,19 +25,35 @@ pub(super) fn sarif_report(snapshot: &ReportSnapshot) -> Value {
     let component_by_id = component_map(snapshot);
     let instance_by_id = instance_map(snapshot);
     let advisory_by_id = advisory_map(snapshot);
-    let rules = snapshot
-        .findings
+    let mut rule_data = BTreeMap::<String, (String, Option<String>)>::new();
+    for finding in &snapshot.findings {
+        let id = finding.advisory_id.clone();
+        let advisory = advisory_by_id.get(id.as_str());
+        let title = advisory.map_or_else(|| id.clone(), |item| item.title.clone());
+        let help_uri = advisory
+            .and_then(|item| item.source_urls.first())
+            .and_then(|uri| safe_reference_uri(uri));
+        rule_data.entry(id).or_insert((title, help_uri));
+    }
+    for finding in &snapshot.scanner_findings {
+        rule_data
+            .entry(scanner_rule_id(finding))
+            .or_insert_with(|| {
+                (
+                    finding
+                        .title
+                        .clone()
+                        .or_else(|| finding.rule_id.clone())
+                        .unwrap_or_else(|| finding.kind.clone()),
+                    None,
+                )
+            });
+    }
+    let rules = rule_data
         .iter()
-        .map(|finding| finding.advisory_id.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .map(|id| {
-            let advisory = advisory_by_id.get(id);
-            let mut rule = json!({"id":id,"shortDescription":{"text":advisory.map_or(id, |item| item.title.as_str())}});
-            if let Some(uri) = advisory
-                .and_then(|item| item.source_urls.first())
-                .and_then(|uri| safe_reference_uri(uri))
-            {
+        .map(|(id, (title, help_uri))| {
+            let mut rule = json!({"id":id,"shortDescription":{"text":title}});
+            if let Some(uri) = help_uri {
                 rule["helpUri"] = json!(uri);
             }
             rule
@@ -48,7 +64,7 @@ pub(super) fn sarif_report(snapshot: &ReportSnapshot) -> Value {
         .enumerate()
         .filter_map(|(index, rule)| Some((rule.get("id")?.as_str()?, index)))
         .collect::<BTreeMap<_, _>>();
-    let results = snapshot
+    let mut results = snapshot
         .findings
         .iter()
         .map(|finding| {
@@ -63,7 +79,7 @@ pub(super) fn sarif_report(snapshot: &ReportSnapshot) -> Value {
                 "message":{"text":format!("{} affects {}@{}; verification: {}",
                     advisory.map_or(finding.advisory_id.as_str(), |item| item.title.as_str()),
                     component.map_or("unknown component", |item| item.name.as_str()),
-                    component.map_or("unknown version", |item| item.version.as_str()), verification_text(snapshot.verification))},
+                    component.and_then(|item| item.version.as_deref()).unwrap_or("unknown version"), verification_text(snapshot.verification))},
                 "partialFingerprints":{"securityMonitorFindingId":finding.id},
                 "properties":{"status":finding_status(&finding.status),"repo_status":finding.repo_status,"production_status":finding.production_status,
                     "verification":verification_text(snapshot.verification),"priority_score":finding.priority_score}});
@@ -73,10 +89,44 @@ pub(super) fn sarif_report(snapshot: &ReportSnapshot) -> Value {
             result
         })
         .collect::<Vec<_>>();
+    results.extend(snapshot.scanner_findings.iter().map(|finding| {
+        let rule_id = scanner_rule_id(finding);
+        let mut result = json!({
+            "ruleId":rule_id,
+            "ruleIndex":rule_indexes.get(rule_id.as_str()).copied().unwrap_or(0),
+            "level":sarif_level(&finding.severity),
+            "message":{"text":finding.title.as_deref()
+                .or(finding.rule_id.as_deref()).unwrap_or(&finding.kind)},
+            "partialFingerprints":{"securityMonitorFindingId":finding.id},
+            "properties":{"scanner":finding.scanner,"mode":finding.mode,
+                "kind":finding.kind,"last_seen_at":finding.last_seen_at}
+        });
+        if let Some(path) = finding.path.as_deref().and_then(relative_evidence_path) {
+            let mut physical_location = json!({"artifactLocation":{"uri":path}});
+            if let Some(start_line) = finding.line_start {
+                let mut region = json!({"startLine":start_line});
+                if let Some(end_line) = finding.line_end {
+                    region["endLine"] = json!(end_line);
+                }
+                physical_location["region"] = region;
+            }
+            result["locations"] = json!([{"physicalLocation":physical_location}]);
+        }
+        result
+    }));
     json!({"$schema":"https://docs.oasis-open.org/sarif/sarif/v2.1.0/cs01/schemas/sarif-schema-2.1.0.json",
         "version":"2.1.0","runs":[{"tool":{"driver":{"name":"Security Monitor","informationUri":"https://github.com/umitaltinozzz/security-monitor",
             "rules":rules}},"results":results,"properties":{"verification":verification_text(snapshot.verification),
                 "inventory_complete":snapshot.inventory_complete,"project":snapshot.project}}]})
+}
+
+fn scanner_rule_id(finding: &security_monitor_core::ScannerFinding) -> String {
+    format!(
+        "{}:{}:{}",
+        finding.scanner,
+        finding.mode,
+        finding.rule_id.as_deref().unwrap_or(&finding.kind)
+    )
 }
 
 fn sarif_level(severity: &Severity) -> &'static str {

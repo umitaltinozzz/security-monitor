@@ -213,7 +213,7 @@ pub struct Component {
     pub purl: String,
     pub ecosystem: String,
     pub name: String,
-    pub version: String,
+    pub version: Option<String>,
     pub source_type: String,
     pub created_at: DateTime<Utc>,
 }
@@ -237,6 +237,8 @@ pub struct ComponentInstance {
     pub deployment_id: Option<String>,
     pub evidence: Vec<ComponentEvidence>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub last_seen_at: Option<DateTime<Utc>>,
 }
 
 /// A product-matched public security news item. It is separate from vulnerability findings
@@ -445,6 +447,33 @@ pub struct ScanRun {
     pub finished_at: Option<DateTime<Utc>>,
     pub outcome: ScanOutcome,
     pub error: Option<String>,
+}
+
+/// A normalized third-party scanner observation. It stays separate from advisory findings because
+/// scanner results can describe code, secrets, or configuration without an advisory/component FK.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ScannerFinding {
+    pub id: String,
+    pub project_id: String,
+    pub scan_run_id: String,
+    pub scanner: String,
+    pub mode: String,
+    pub kind: String,
+    pub rule_id: Option<String>,
+    pub aliases: Vec<String>,
+    pub package_name: Option<String>,
+    pub package_ecosystem: Option<String>,
+    pub package_version: Option<String>,
+    pub severity: Severity,
+    pub title: Option<String>,
+    pub fixed_version: Option<String>,
+    pub path: Option<String>,
+    pub line_start: Option<u32>,
+    pub line_end: Option<u32>,
+    pub fingerprint: String,
+    pub created_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
 }
 
 // This checkpoint detects dependency-input changes without retaining source code.

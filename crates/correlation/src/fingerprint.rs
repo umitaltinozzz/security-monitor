@@ -44,7 +44,11 @@ pub fn finding_fingerprint(
         input.instance.deployment_id.as_deref(),
     );
     field(&mut digest, "purl", Some(input.component.purl.trim()));
-    field(&mut digest, "version", Some(input.component.version.trim()));
+    field(
+        &mut digest,
+        "version",
+        input.component.version.as_deref().map(str::trim),
+    );
     let location = input
         .evidence
         .and_then(|evidence| evidence.file_path_redacted.as_deref())

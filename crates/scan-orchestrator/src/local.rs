@@ -12,7 +12,7 @@ use security_monitor_advisory_providers::{
 };
 use security_monitor_core::{
     Advisory, AuditScope, Component, ComponentEvidence, ComponentInstance, Project,
-    ProjectScanCheckpoint, ScanOutcome, ScanRun,
+    ProjectScanCheckpoint, ScanOutcome, ScanRun, ScannerFinding, Severity,
 };
 use security_monitor_correlation::{
     CorrelationComponent, InventoryFreshness, PriorityContext, ScopeVerification,
@@ -21,8 +21,8 @@ use security_monitor_correlation::{
 use security_monitor_database::Database;
 use security_monitor_inventory::{Inventory, InventoryComponent, scan_repository};
 use security_monitor_scanner_adapters::{
-    EngineKind, EngineStatus, ScanExecution, ScanMode, ScanRequest as EngineScanRequest,
-    ScannerAdapters,
+    EngineKind, EngineStatus, FindingKind, NormalizedFinding, NormalizedSeverity, ScanExecution,
+    ScanMode, ScanRequest as EngineScanRequest, ScannerAdapters,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -234,12 +234,7 @@ impl LocalProjectScanner {
             .map(|result| result.findings.len())
             .sum();
         let scanners_complete = request.profile == ScanProfile::Quick
-            || (!executions.is_empty()
-                && executions.iter().all(|execution| {
-                    execution.detection.status == EngineStatus::Available
-                        && execution.result.as_ref().is_some_and(|scan| scan.complete)
-                })
-                && !diagnostics.contains(&"semgrep_rules_not_configured".to_owned()));
+            || full_scan_is_complete(&executions, &diagnostics);
         if !inventory.complete {
             diagnostics.push("inventory_incomplete".to_owned());
         }
@@ -249,36 +244,34 @@ impl LocalProjectScanner {
         if !advisory_fresh {
             diagnostics.push("advisory_data_stale_or_unverified".to_owned());
         }
-        if request.profile == ScanProfile::Full {
+        if request.profile == ScanProfile::Full && !scanners_complete {
             diagnostics.push("scanner_coverage_unverified".to_owned());
         }
-        let outcome = if inventory.complete
-            && input_hash.complete
-            && advisory_fresh
-            && scanners_complete
-            && request.profile != ScanProfile::Full
-        {
-            ScanOutcome::Succeeded
-        } else {
-            ScanOutcome::Partial
-        };
+        let outcome = scan_outcome(
+            inventory.complete,
+            input_hash.complete,
+            advisory_fresh,
+            scanners_complete,
+        );
         let finished_at = Utc::now();
         let scan_id = Uuid::new_v4().to_string();
+        let scan_run = ScanRun {
+            id: scan_id.clone(),
+            scope: AuditScope {
+                resource_type: "project".to_owned(),
+                resource_id: Some(project.id.clone()),
+            },
+            scanner: "security-monitor".to_owned(),
+            scanner_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+            started_at: now,
+            finished_at: Some(finished_at),
+            outcome: outcome.clone(),
+            error: (!diagnostics.is_empty()).then(|| diagnostics.join(",")),
+        };
+        let scanner_records =
+            scanner_finding_records(&project.id, &scan_id, &executions, finished_at)?;
         self.database
-            .repository::<ScanRun>()
-            .create(&ScanRun {
-                id: scan_id.clone(),
-                scope: AuditScope {
-                    resource_type: "project".to_owned(),
-                    resource_id: Some(project.id.clone()),
-                },
-                scanner: "security-monitor".to_owned(),
-                scanner_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
-                started_at: now,
-                finished_at: Some(finished_at),
-                outcome: outcome.clone(),
-                error: (!diagnostics.is_empty()).then(|| diagnostics.join(",")),
-            })
+            .persist_scan_run_results(&scan_run, &scanner_records)
             .await
             .map_err(|_| ScanError::Failed)?;
         let project_repository = self.database.repository::<Project>();
@@ -364,31 +357,28 @@ impl LocalProjectScanner {
         now: DateTime<Utc>,
     ) -> Result<(), ScanError> {
         let _guard = self.correlation_lock.lock().await;
-        let component_repository = self.database.repository::<Component>();
-        let instance_repository = self.database.repository::<ComponentInstance>();
-        let mut stored_components = component_repository
+        let mut stored_components = self
+            .database
+            .repository::<Component>()
             .list()
             .await
             .map_err(|_| ScanError::Failed)?
             .into_iter()
             .map(|component| (component.purl.clone(), component))
             .collect::<BTreeMap<_, _>>();
-        let mut current_instance_ids = BTreeSet::new();
+        let mut new_components = Vec::new();
+        let mut instances = Vec::with_capacity(inventory.components.len());
         for package in &inventory.components {
             let component = if let Some(component) = stored_components.get(&package.purl) {
                 component.clone()
             } else {
                 let component = component_record(package, now);
-                component_repository
-                    .create(&component)
-                    .await
-                    .map_err(|_| ScanError::Failed)?;
+                new_components.push(component.clone());
                 stored_components.insert(package.purl.clone(), component.clone());
                 component
             };
             let instance_id = stable_id("instance", &project.id, &component.id);
-            current_instance_ids.insert(instance_id.clone());
-            let instance = ComponentInstance {
+            instances.push(ComponentInstance {
                 id: instance_id.clone(),
                 component_id: component.id.clone(),
                 project_id: Some(project.id.clone()),
@@ -405,45 +395,10 @@ impl LocalProjectScanner {
                     })
                     .collect(),
                 created_at: now,
-            };
-            if instance_repository
-                .get(&instance_id)
-                .await
-                .map_err(|_| ScanError::Failed)?
-                .is_some()
-            {
-                instance_repository
-                    .update(&instance)
-                    .await
-                    .map_err(|_| ScanError::Failed)?;
-            } else {
-                instance_repository
-                    .create(&instance)
-                    .await
-                    .map_err(|_| ScanError::Failed)?;
-            }
-        }
-        for old in instance_repository
-            .list()
-            .await
-            .map_err(|_| ScanError::Failed)?
-            .into_iter()
-            .filter(|instance| {
-                instance.project_id.as_deref() == Some(project.id.as_str())
-                    && !current_instance_ids.contains(&instance.id)
-            })
-        {
-            instance_repository
-                .delete(&old.id)
-                .await
-                .map_err(|_| ScanError::Failed)?;
+                last_seen_at: Some(now),
+            });
         }
 
-        let checkpoints = self.database.repository::<ProjectScanCheckpoint>();
-        let existing = checkpoints
-            .get(&project.id)
-            .await
-            .map_err(|_| ScanError::Failed)?;
         let inventory_json = serde_json::to_string(inventory).map_err(|_| ScanError::Failed)?;
         let checkpoint = ProjectScanCheckpoint {
             id: project.id.clone(),
@@ -452,20 +407,18 @@ impl LocalProjectScanner {
             inventory_json,
             inventory_complete: inventory.complete && input_hash.complete,
             checked_at: now,
-            created_at: existing.as_ref().map_or(now, |value| value.created_at),
+            created_at: now,
             updated_at: now,
         };
-        if existing.is_some() {
-            checkpoints
-                .update(&checkpoint)
-                .await
-                .map_err(|_| ScanError::Failed)?;
-        } else {
-            checkpoints
-                .create(&checkpoint)
-                .await
-                .map_err(|_| ScanError::Failed)?;
-        }
+        self.database
+            .persist_project_inventory_snapshot(
+                &project.id,
+                &new_components,
+                &instances,
+                &checkpoint,
+            )
+            .await
+            .map_err(|_| ScanError::Failed)?;
         Ok(())
     }
 
@@ -753,9 +706,134 @@ fn component_record(package: &InventoryComponent, now: DateTime<Utc>) -> Compone
         purl: package.purl.clone(),
         ecosystem: package.ecosystem.clone(),
         name: package.name.clone(),
-        version: package.version.clone().unwrap_or_default(),
+        version: package.version.clone(),
         source_type: package.source_type.clone(),
         created_at: now,
+    }
+}
+
+fn scanner_finding_records(
+    project_id: &str,
+    scan_run_id: &str,
+    executions: &[ScanExecution],
+    observed_at: DateTime<Utc>,
+) -> Result<Vec<ScannerFinding>, ScanError> {
+    let mut records = BTreeMap::new();
+    for execution in executions {
+        let Some(scan) = execution.result.as_ref() else {
+            continue;
+        };
+        for finding in &scan.findings {
+            let fingerprint_bytes = serde_json::to_vec(&(
+                scan.engine.as_str(),
+                execution.mode.as_str(),
+                finding.kind,
+                finding.rule_id.as_deref(),
+                finding.package.as_ref().map(|package| {
+                    (
+                        package.name.as_str(),
+                        package.ecosystem.as_deref(),
+                        package.version.as_deref(),
+                    )
+                }),
+                finding.path.as_deref(),
+                finding.line_start,
+                finding.line_end,
+            ))
+            .map_err(|_| ScanError::Failed)?;
+            let fingerprint = hex::encode(Sha256::digest(fingerprint_bytes));
+            let record = normalized_scanner_finding(
+                project_id,
+                scan_run_id,
+                scan.engine,
+                execution.mode,
+                finding,
+                fingerprint,
+                observed_at,
+            );
+            records.insert(record.id.clone(), record);
+        }
+    }
+    Ok(records.into_values().collect())
+}
+
+fn full_scan_is_complete(executions: &[ScanExecution], diagnostics: &[String]) -> bool {
+    !executions.is_empty()
+        && executions.iter().all(|execution| {
+            execution.detection.status == EngineStatus::Available
+                && execution.result.as_ref().is_some_and(|scan| scan.complete)
+        })
+        && !diagnostics
+            .iter()
+            .any(|item| item == "semgrep_rules_not_configured")
+}
+
+fn scan_outcome(
+    inventory_complete: bool,
+    input_hash_complete: bool,
+    advisory_fresh: bool,
+    scanners_complete: bool,
+) -> ScanOutcome {
+    if inventory_complete && input_hash_complete && advisory_fresh && scanners_complete {
+        ScanOutcome::Succeeded
+    } else {
+        ScanOutcome::Partial
+    }
+}
+
+fn normalized_scanner_finding(
+    project_id: &str,
+    scan_run_id: &str,
+    engine: EngineKind,
+    mode: ScanMode,
+    finding: &NormalizedFinding,
+    fingerprint: String,
+    observed_at: DateTime<Utc>,
+) -> ScannerFinding {
+    let (package_name, package_ecosystem, package_version) = finding
+        .package
+        .as_ref()
+        .map(|package| {
+            (
+                Some(package.name.clone()),
+                package.ecosystem.clone(),
+                package.version.clone(),
+            )
+        })
+        .unwrap_or((None, None, None));
+    ScannerFinding {
+        id: stable_id("scanner-finding", project_id, &fingerprint),
+        project_id: project_id.to_owned(),
+        scan_run_id: scan_run_id.to_owned(),
+        scanner: engine.as_str().to_owned(),
+        mode: mode.as_str().to_owned(),
+        kind: match finding.kind {
+            FindingKind::Vulnerability => "vulnerability",
+            FindingKind::Secret => "secret",
+            FindingKind::Misconfiguration => "misconfiguration",
+            FindingKind::Code => "code",
+        }
+        .to_owned(),
+        rule_id: finding.rule_id.clone(),
+        aliases: finding.aliases.clone(),
+        package_name,
+        package_ecosystem,
+        package_version,
+        severity: match finding.severity {
+            NormalizedSeverity::Unknown => Severity::Unknown,
+            NormalizedSeverity::Low => Severity::Low,
+            NormalizedSeverity::Medium => Severity::Medium,
+            NormalizedSeverity::High => Severity::High,
+            NormalizedSeverity::Critical => Severity::Critical,
+        },
+        title: finding.title.clone(),
+        fixed_version: finding.fixed_version.clone(),
+        path: finding.path.clone(),
+        line_start: finding.line_start,
+        line_end: finding.line_end,
+        fingerprint,
+        created_at: observed_at,
+        last_seen_at: observed_at,
     }
 }
 
@@ -772,6 +850,81 @@ fn ensure_not_cancelled(cancellation: &CancellationToken) -> Result<(), ScanErro
         Err(ScanError::Cancelled)
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod scanner_finding_tests {
+    use super::{full_scan_is_complete, scan_outcome, scanner_finding_records};
+    use chrono::{Duration, Utc};
+    use security_monitor_core::ScanOutcome;
+    use security_monitor_scanner_adapters::{
+        EngineDetection, EngineKind, EngineStatus, FindingKind, NormalizedFinding, NormalizedScan,
+        NormalizedSeverity, ScanExecution, ScanMode,
+    };
+
+    fn execution(complete: bool) -> ScanExecution {
+        ScanExecution {
+            detection: EngineDetection {
+                engine: EngineKind::Semgrep,
+                status: EngineStatus::Available,
+                version: Some("1.0.0".to_owned()),
+                executable: None,
+            },
+            mode: ScanMode::Code,
+            result: Some(NormalizedScan {
+                engine: EngineKind::Semgrep,
+                complete,
+                findings: vec![NormalizedFinding {
+                    kind: FindingKind::Code,
+                    rule_id: Some("fixture.rule".to_owned()),
+                    aliases: Vec::new(),
+                    package: None,
+                    severity: NormalizedSeverity::High,
+                    title: Some("Fixture finding".to_owned()),
+                    fixed_version: None,
+                    path: Some("src/main.rs".to_owned()),
+                    line_start: Some(7),
+                    line_end: Some(8),
+                }],
+                diagnostics: Vec::new(),
+            }),
+        }
+    }
+
+    #[test]
+    fn complete_full_scan_can_succeed_and_incomplete_coverage_stays_partial() {
+        let executions = [execution(true)];
+        assert!(full_scan_is_complete(&executions, &[]));
+        assert!(!full_scan_is_complete(
+            &executions,
+            &["semgrep_rules_not_configured".to_owned()]
+        ));
+        assert!(!full_scan_is_complete(&[execution(false)], &[]));
+        assert_eq!(scan_outcome(true, true, true, true), ScanOutcome::Succeeded);
+        assert_eq!(scan_outcome(true, true, true, false), ScanOutcome::Partial);
+    }
+
+    #[test]
+    fn normalized_scanner_observations_get_stable_project_local_ids() {
+        let first_seen = Utc::now();
+        let executions = [execution(true)];
+        let first =
+            scanner_finding_records("project-1", "scan-1", &executions, first_seen).unwrap();
+        let later = scanner_finding_records(
+            "project-1",
+            "scan-2",
+            &executions,
+            first_seen + Duration::seconds(5),
+        )
+        .unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].id, later[0].id);
+        assert_eq!(first[0].fingerprint, later[0].fingerprint);
+        assert_eq!(first[0].scanner, "semgrep");
+        assert_eq!(first[0].path.as_deref(), Some("src/main.rs"));
+        assert_eq!(first[0].line_start, Some(7));
+        assert_eq!(first[0].severity, security_monitor_core::Severity::High);
     }
 }
 

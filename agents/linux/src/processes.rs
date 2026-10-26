@@ -69,25 +69,27 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         Ok(entries) => entries,
         Err(_) => return unavailable_snapshot(DiagnosticCode::PermissionDenied),
     };
-    let mut processes = Vec::new();
-    let mut units = BTreeSet::new();
+    let mut process_ids = Vec::new();
     let mut had_permission_denied = false;
-    let mut had_stale_observation = false;
-    let mut hit_limit = false;
     for entry in entries {
         let Ok(entry) = entry else {
             had_permission_denied = true;
             continue;
         };
-        let name = entry.file_name();
-        let Some(pid) = name.to_str().and_then(|name| name.parse::<u32>().ok()) else {
-            continue;
-        };
-        if processes.len() >= max_processes {
-            hit_limit = true;
-            break;
+        if let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u32>().ok())
+        {
+            process_ids.push(pid);
         }
-        let process_dir = entry.path();
+    }
+    let (process_ids, hit_limit) = select_process_ids(process_ids, max_processes);
+    let mut processes = Vec::new();
+    let mut units = BTreeSet::new();
+    let mut had_stale_observation = false;
+    for pid in process_ids {
+        let process_dir = Path::new("/proc").join(pid.to_string());
         let mut executable_missing = false;
         let executable_path = match fs::read_link(process_dir.join("exe")) {
             Ok(path) => Some(clean_executable_path(&path)),
@@ -104,7 +106,17 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
                 None
             }
         };
-        let kernel_thread = executable_missing && process_cmdline_is_empty(&process_dir);
+        let kernel_thread = if executable_missing {
+            match process_is_kernel_thread(&process_dir) {
+                Some(is_kernel_thread) => is_kernel_thread,
+                None => {
+                    had_stale_observation = true;
+                    false
+                }
+            }
+        } else {
+            false
+        };
         if executable_path.is_none() && !kernel_thread {
             had_stale_observation = true;
         }
@@ -204,6 +216,15 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         processes,
         services,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn select_process_ids(mut process_ids: Vec<u32>, max_processes: usize) -> (Vec<u32>, bool) {
+    process_ids.sort_unstable();
+    process_ids.dedup();
+    let hit_limit = process_ids.len() > max_processes;
+    process_ids.truncate(max_processes);
+    (process_ids, hit_limit)
 }
 
 #[cfg(target_os = "linux")]
@@ -325,9 +346,42 @@ fn deleted_shared_libraries(path: &Path) -> (Vec<String>, MapsStatus, Option<Dia
 }
 
 #[cfg(target_os = "linux")]
-fn process_cmdline_is_empty(process_dir: &Path) -> bool {
-    fs::metadata(process_dir.join("cmdline"))
-        .is_ok_and(|metadata| metadata.is_file() && metadata.len() == 0)
+fn process_is_kernel_thread(process_dir: &Path) -> Option<bool> {
+    const MAX_STATUS_BYTES: u64 = 64 * 1024;
+
+    let mut cmdline = Vec::with_capacity(1);
+    fs::File::open(process_dir.join("cmdline"))
+        .ok()?
+        .take(1)
+        .read_to_end(&mut cmdline)
+        .ok()?;
+    if !cmdline.is_empty() {
+        return Some(false);
+    }
+
+    let mut status = String::new();
+    let bytes_read = fs::File::open(process_dir.join("status"))
+        .ok()?
+        .take(MAX_STATUS_BYTES + 1)
+        .read_to_string(&mut status)
+        .ok()?;
+    if bytes_read as u64 > MAX_STATUS_BYTES {
+        return None;
+    }
+    let mut kernel_thread = false;
+    let mut non_zombie_state = false;
+    for line in status.lines() {
+        if let Some(value) = line.strip_prefix("Kthread:") {
+            kernel_thread = value.trim() == "1";
+        } else if let Some(value) = line.strip_prefix("State:") {
+            non_zombie_state = value
+                .trim()
+                .chars()
+                .next()
+                .is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'));
+        }
+    }
+    Some(kernel_thread && non_zombie_state)
 }
 
 #[cfg(target_os = "linux")]
@@ -545,15 +599,30 @@ mod tests {
     }
 
     #[test]
-    fn kernel_thread_shape_is_an_empty_cmdline_file() {
+    fn kernel_thread_requires_empty_contents_and_explicit_live_status() {
         let path = std::env::temp_dir().join(format!("secmon-proc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         let cmdline = path.join("cmdline");
         std::fs::write(&cmdline, b"").unwrap();
-        assert!(super::process_cmdline_is_empty(&path));
+        std::fs::write(path.join("status"), b"State:\tS (sleeping)\nKthread:\t1\n").unwrap();
+        assert_eq!(super::process_is_kernel_thread(&path), Some(true));
+        std::fs::write(path.join("status"), b"State:\tZ (zombie)\nKthread:\t1\n").unwrap();
+        assert_eq!(super::process_is_kernel_thread(&path), Some(false));
+        std::fs::write(path.join("status"), b"State:\tS (sleeping)\n").unwrap();
+        assert_eq!(super::process_is_kernel_thread(&path), Some(false));
         std::fs::write(&cmdline, b"/usr/bin/example\0").unwrap();
-        assert!(!super::process_cmdline_is_empty(&path));
+        assert_eq!(super::process_is_kernel_thread(&path), Some(false));
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn process_limit_selects_the_lowest_pids_independent_of_directory_order() {
+        let (selected, hit_limit) = super::select_process_ids(vec![900, 7, 42, 7, 3], 3);
+        assert_eq!(selected, vec![3, 7, 42]);
+        assert!(hit_limit);
+        let (selected, hit_limit) = super::select_process_ids(vec![900, 7, 42, 3], 4);
+        assert_eq!(selected, vec![3, 7, 42, 900]);
+        assert!(!hit_limit);
     }
 }

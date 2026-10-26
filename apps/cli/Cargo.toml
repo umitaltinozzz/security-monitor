@@ -14,6 +14,7 @@ path = "src/main.rs"
 chrono = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
+libc = { workspace = true }
 security-monitor-advisory-providers = { version = "0.1.0", path = "../../crates/advisory-providers" }
 security-monitor-agent-protocol = { version = "0.1.0", path = "../../crates/agent-protocol" }
 security-monitor-agent-transport = { version = "0.1.0", path = "../../crates/agent-transport" }

@@ -1,18 +1,19 @@
 use chrono::{Duration, TimeZone, Utc};
 use security_monitor_core::{
-    Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
-    ComponentInstance, Deployment, Finding, FindingEvidence, FindingStatus, Memory, MemoryKind,
-    MemoryScope, NotificationChannel, NotificationDeliveryState, ProductionStatus, Project,
-    ProjectServerLink, Remediation, ScanRun, Service,
+    Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, AuditResult,
+    AuditScope, Component, ComponentInstance, Deployment, Finding, FindingEvidence, FindingStatus,
+    Memory, MemoryKind, MemoryScope, NotificationChannel, NotificationDeliveryState,
+    ProductionStatus, Project, ProjectServerLink, Remediation, ScanRun, ScannerFinding, Service,
+    Severity,
 };
 use serde::Deserialize;
-use sqlx::Row;
+use sqlx::{Row, sqlite::SqlitePoolOptions};
 
 use crate::{Database, DatabaseError, Entity, FindingPageFilter, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
-    let migrations: [&[u8]; 12] = [
+    let migrations: [&[u8]; 16] = [
         include_bytes!("../migrations/0001_initial.sql"),
         include_bytes!("../migrations/0002_advisory_metadata.sql"),
         include_bytes!("../migrations/0003_finding_disposition.sql"),
@@ -25,6 +26,10 @@ fn migration_sources_use_platform_independent_lf_line_endings() {
         include_bytes!("../migrations/0010_project_server_links.sql"),
         include_bytes!("../migrations/0011_unique_project_root_path.sql"),
         include_bytes!("../migrations/0012_server_unpair_history.sql"),
+        include_bytes!("../migrations/0013_component_instance_last_seen.sql"),
+        include_bytes!("../migrations/0014_nullable_component_version.sql"),
+        include_bytes!("../migrations/0015_scanner_findings.sql"),
+        include_bytes!("../migrations/0016_audit_event_lookup_index.sql"),
     ];
 
     assert!(
@@ -65,7 +70,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 12);
+    assert_eq!(database.schema_version().await.unwrap(), 16);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -73,14 +78,260 @@ async fn migration_installs_all_tables_into_an_empty_database() {
           'scan_runs', 'remediations', 'ai_providers', 'ai_runs', \
          'notification_channels', 'audit_events', 'project_scan_checkpoints', \
           'notification_delivery_states', 'ai_transfer_approvals', 'memories', \
-          'project_server_links')",
+          'project_server_links', 'scanner_findings')",
     )
     .fetch_one(&database.pool)
     .await
     .unwrap()
     .try_get("count")
     .unwrap();
-    assert_eq!(count, 20);
+    assert_eq!(count, 21);
+}
+
+#[tokio::test]
+async fn latest_successful_audit_event_filters_by_action_and_resource() {
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 10, 26, 12, 0, 0).unwrap();
+    for (id, action, resource_id, result, timestamp) in [
+        (
+            "audit-old",
+            "server_inventory_collection_approved",
+            "server-1",
+            AuditResult::Succeeded,
+            now - Duration::hours(2),
+        ),
+        (
+            "audit-latest-failed",
+            "server_inventory_collection_approved",
+            "server-1",
+            AuditResult::Failed,
+            now,
+        ),
+        (
+            "audit-other-server",
+            "server_inventory_collection_approved",
+            "server-2",
+            AuditResult::Succeeded,
+            now,
+        ),
+        (
+            "audit-latest-success",
+            "server_inventory_collection_approved",
+            "server-1",
+            AuditResult::Succeeded,
+            now - Duration::hours(1),
+        ),
+    ] {
+        database
+            .repository::<AuditEvent>()
+            .create(&AuditEvent {
+                id: id.to_owned(),
+                timestamp,
+                actor: "user".to_owned(),
+                action: action.to_owned(),
+                scope: AuditScope {
+                    resource_type: "asset".to_owned(),
+                    resource_id: Some(resource_id.to_owned()),
+                },
+                result,
+            })
+            .await
+            .unwrap();
+    }
+
+    let event = database
+        .latest_successful_audit_event("server_inventory_collection_approved", "server-1")
+        .await
+        .unwrap()
+        .expect("successful matching event");
+    assert_eq!(event.id, "audit-latest-success");
+}
+
+#[tokio::test]
+async fn nullable_component_version_migration_preserves_inventory_relations() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE TABLE app_metadata (singleton INTEGER PRIMARY KEY, schema_version INTEGER NOT NULL); \
+         INSERT INTO app_metadata VALUES (1, 13); \
+         CREATE TABLE components (id TEXT PRIMARY KEY, purl TEXT NOT NULL, ecosystem TEXT NOT NULL, \
+             name TEXT NOT NULL, version TEXT NOT NULL, source_type TEXT NOT NULL, created_at TEXT NOT NULL, \
+             record_json TEXT NOT NULL); \
+         CREATE TABLE component_instances (id TEXT PRIMARY KEY, component_id TEXT NOT NULL \
+             REFERENCES components(id) ON DELETE CASCADE); \
+         CREATE TABLE findings (id TEXT PRIMARY KEY, component_instance_id TEXT NOT NULL \
+             REFERENCES component_instances(id) ON DELETE CASCADE); \
+         CREATE TABLE finding_evidence (id TEXT PRIMARY KEY, finding_id TEXT NOT NULL \
+             REFERENCES findings(id) ON DELETE CASCADE); \
+         CREATE TABLE remediations (id TEXT PRIMARY KEY, finding_id TEXT NOT NULL \
+             REFERENCES findings(id) ON DELETE CASCADE); \
+         INSERT INTO components VALUES ('component-1', 'pkg:pypi/requests@2.1', 'PyPI', 'requests', \
+             '2.1', 'requirements', '2026-10-26T00:00:00Z', '{\"id\":\"component-1\",\"version\":\"2.1\"}'); \
+         INSERT INTO component_instances VALUES ('instance-1', 'component-1'); \
+         INSERT INTO findings VALUES ('finding-1', 'instance-1'); \
+         INSERT INTO finding_evidence VALUES ('evidence-1', 'finding-1'); \
+         INSERT INTO remediations VALUES ('remediation-1', 'finding-1');",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../migrations/0014_nullable_component_version.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let migrated =
+        sqlx::query("SELECT version, legacy_version FROM components WHERE id = 'component-1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(migrated.try_get::<String, _>("version").unwrap(), "2.1");
+    assert_eq!(
+        migrated.try_get::<String, _>("legacy_version").unwrap(),
+        "2.1"
+    );
+    for table in [
+        "component_instances",
+        "findings",
+        "finding_evidence",
+        "remediations",
+    ] {
+        let count = sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1, "{table} history remains intact");
+    }
+    let version_column = sqlx::query("PRAGMA table_info(components)")
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| {
+            row.try_get::<String, _>("name")
+                .is_ok_and(|name| name == "version")
+        })
+        .expect("component version column");
+    assert_eq!(version_column.try_get::<i64, _>("notnull").unwrap(), 0);
+    let foreign_key_issues = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert!(foreign_key_issues.is_empty());
+
+    let database = Database::in_memory().await.unwrap();
+    let mut unknown = records().component;
+    unknown.id = "component-unknown-version".to_owned();
+    unknown.purl = "pkg:pypi/requests".to_owned();
+    unknown.ecosystem = "PyPI".to_owned();
+    unknown.name = "requests".to_owned();
+    unknown.version = None;
+    database
+        .repository::<Component>()
+        .create(&unknown)
+        .await
+        .unwrap();
+    assert_eq!(
+        database
+            .repository::<Component>()
+            .get(&unknown.id)
+            .await
+            .unwrap(),
+        Some(unknown)
+    );
+}
+
+#[tokio::test]
+async fn scanner_findings_are_persisted_and_keep_first_seen_across_scans() {
+    let database = Database::in_memory().await.unwrap();
+    let project = records().project;
+    database
+        .repository::<Project>()
+        .create(&project)
+        .await
+        .unwrap();
+    let first_seen = Utc.with_ymd_and_hms(2026, 10, 26, 10, 0, 0).unwrap();
+    let first_run = ScanRun {
+        id: "scan-1".to_owned(),
+        scope: AuditScope {
+            resource_type: "project".to_owned(),
+            resource_id: Some(project.id.clone()),
+        },
+        scanner: "security-monitor".to_owned(),
+        scanner_version: Some("0.1.0".to_owned()),
+        started_at: first_seen,
+        finished_at: Some(first_seen),
+        outcome: security_monitor_core::ScanOutcome::Succeeded,
+        error: None,
+    };
+    let first_finding = ScannerFinding {
+        id: "scanner-finding-1".to_owned(),
+        project_id: project.id.clone(),
+        scan_run_id: first_run.id.clone(),
+        scanner: "semgrep".to_owned(),
+        mode: "code".to_owned(),
+        kind: "code".to_owned(),
+        rule_id: Some("fixture.rule".to_owned()),
+        aliases: Vec::new(),
+        package_name: None,
+        package_ecosystem: None,
+        package_version: None,
+        severity: Severity::High,
+        title: Some("Fixture issue".to_owned()),
+        fixed_version: None,
+        path: Some("src/main.rs".to_owned()),
+        line_start: Some(10),
+        line_end: Some(11),
+        fingerprint: "a".repeat(64),
+        created_at: first_seen,
+        last_seen_at: first_seen,
+    };
+    database
+        .persist_scan_run_results(&first_run, std::slice::from_ref(&first_finding))
+        .await
+        .unwrap();
+
+    let last_seen = first_seen + Duration::seconds(10);
+    let second_run = ScanRun {
+        id: "scan-2".to_owned(),
+        started_at: last_seen,
+        finished_at: Some(last_seen),
+        ..first_run.clone()
+    };
+    let second_finding = ScannerFinding {
+        scan_run_id: second_run.id.clone(),
+        created_at: last_seen,
+        last_seen_at: last_seen,
+        ..first_finding.clone()
+    };
+    database
+        .persist_scan_run_results(&second_run, &[second_finding])
+        .await
+        .unwrap();
+
+    let stored = database
+        .repository::<ScannerFinding>()
+        .get(&first_finding.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.created_at, first_seen);
+    assert_eq!(stored.last_seen_at, last_seen);
+    assert_eq!(stored.scan_run_id, second_run.id);
+    let foreign_key_violations = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&database.pool)
+        .await
+        .unwrap();
+    assert!(foreign_key_violations.is_empty());
 }
 
 #[tokio::test]
@@ -418,7 +669,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 12);
+    assert_eq!(readonly.schema_version().await.unwrap(), 16);
     assert_eq!(
         readonly
             .repository::<Project>()
@@ -739,7 +990,7 @@ async fn all_domain_repositories_support_typed_crud_and_json_round_trips() {
         &database.repository::<Component>(),
         &fixture.component,
         "component-1",
-        |value| value.version = "1.0.1".to_owned(),
+        |value| value.version = Some("1.0.1".to_owned()),
     )
     .await;
     verify_update(

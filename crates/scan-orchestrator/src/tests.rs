@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use security_monitor_advisory_providers::HttpPolicy;
 use security_monitor_core::{
-    Advisory, AffectedRange, ComponentInstance, Finding, Project, ProjectScanCheckpoint,
-    RangeEvent, ScanOutcome, ScanRun, Severity,
+    Advisory, AffectedRange, ApprovalState, ComponentInstance, Finding, FindingEvidence, Project,
+    ProjectScanCheckpoint, RangeEvent, Remediation, ScanOutcome, ScanRun, Severity,
 };
 use security_monitor_database::Database;
 use tokio_util::sync::CancellationToken;
@@ -124,6 +124,8 @@ fn input_hash_changes_with_lockfile_and_unknown_or_over_limit_inputs_are_incompl
         crate::InputHashLimits {
             max_files: 1,
             max_bytes: 1,
+            max_entries: 250_000,
+            max_depth: 64,
         },
     );
     assert!(!limited.complete);
@@ -132,6 +134,22 @@ fn input_hash_changes_with_lockfile_and_unknown_or_over_limit_inputs_are_incompl
     let empty = temp.path().join("empty-project");
     fs::create_dir(&empty).unwrap();
     assert!(!hash_dependency_inputs(&empty, Default::default()).complete);
+
+    let large_tree = temp.path().join("large-tree");
+    fs::create_dir(&large_tree).unwrap();
+    for index in 0..20 {
+        fs::write(large_tree.join(format!("unrelated-{index}.txt")), b"x").unwrap();
+    }
+    let traversal_limited = hash_dependency_inputs(
+        &large_tree,
+        crate::InputHashLimits {
+            max_files: 20,
+            max_bytes: 1024,
+            max_entries: 2,
+            max_depth: 64,
+        },
+    );
+    assert!(!traversal_limited.complete);
 }
 
 #[test]
@@ -319,6 +337,222 @@ async fn new_advisory_recorrelates_cached_inventory_without_another_scan() {
             .iter()
             .any(|instance| instance.project_id.as_deref() == Some("advisory-project"))
     );
+}
+
+#[tokio::test]
+async fn incomplete_inventory_preserves_prior_findings_and_remediations() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = Database::in_memory().await.unwrap();
+    let project = fixture_project(temp.path(), "incomplete-inventory-project");
+    database
+        .repository::<Project>()
+        .create(&project)
+        .await
+        .unwrap();
+    let scanner = scanner(database.clone(), temp.path().join("app-data").as_path());
+    let queue = scanner.queue(limits(1, 4)).unwrap();
+
+    let first = queue
+        .enqueue(ScanRequest {
+            project_id: project.id.clone(),
+            root: PathBuf::from(&project.root_path),
+            profile: ScanProfile::Quick,
+            reason: ScanReason::Manual,
+        })
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert!(first.inventory_complete);
+
+    database
+        .repository::<Advisory>()
+        .create(&left_pad_advisory())
+        .await
+        .unwrap();
+    assert!(queue.refresh_advisories().await.unwrap() > 0);
+
+    let instance_repository = database.repository::<ComponentInstance>();
+    let project_instances = instance_repository
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|instance| instance.project_id.as_deref() == Some(project.id.as_str()))
+        .collect::<Vec<_>>();
+    let findings = database.repository::<Finding>().list().await.unwrap();
+    let finding = findings
+        .iter()
+        .find(|finding| {
+            project_instances
+                .iter()
+                .any(|instance| instance.id == finding.component_instance_id)
+        })
+        .expect("correlated finding")
+        .clone();
+    let initial_instance = project_instances
+        .into_iter()
+        .find(|instance| instance.id == finding.component_instance_id)
+        .expect("instance for correlated finding");
+    let evidence_before = database
+        .repository::<FindingEvidence>()
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|evidence| evidence.finding_id == finding.id)
+        .collect::<Vec<_>>();
+    assert!(!evidence_before.is_empty());
+
+    let now = Utc::now();
+    let remediation = Remediation {
+        id: "remediation-incomplete-scan".to_owned(),
+        finding_id: finding.id.clone(),
+        worktree_path: "fixture-worktree".to_owned(),
+        branch: "secmon/fixture-remediation".to_owned(),
+        provider_id: None,
+        diff_hash: None,
+        tests: Vec::new(),
+        approval_state: ApprovalState::Pending,
+        created_at: now,
+        updated_at: now,
+    };
+    database
+        .repository::<Remediation>()
+        .create(&remediation)
+        .await
+        .unwrap();
+
+    let repeated = queue
+        .enqueue(ScanRequest {
+            project_id: project.id.clone(),
+            root: PathBuf::from(&project.root_path),
+            profile: ScanProfile::Quick,
+            reason: ScanReason::Manual,
+        })
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert!(repeated.inventory_complete);
+    let updated_instance = instance_repository
+        .get(&initial_instance.id)
+        .await
+        .unwrap()
+        .expect("repeated scan preserves the instance");
+    assert_eq!(updated_instance.created_at, initial_instance.created_at);
+    assert!(updated_instance.last_seen_at > initial_instance.last_seen_at);
+
+    fs::write(
+        Path::new(&project.root_path).join("package-lock.json"),
+        "{ malformed lockfile",
+    )
+    .unwrap();
+    let incomplete = queue
+        .enqueue(ScanRequest {
+            project_id: project.id.clone(),
+            root: PathBuf::from(&project.root_path),
+            profile: ScanProfile::Quick,
+            reason: ScanReason::Manual,
+        })
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    assert!(!incomplete.inventory_complete);
+
+    assert!(
+        instance_repository
+            .get(&initial_instance.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let finding_after = database
+        .repository::<Finding>()
+        .get(&finding.id)
+        .await
+        .unwrap()
+        .expect("finding survives incomplete inventory");
+    assert_eq!(finding_after.id, finding.id);
+    assert_eq!(
+        finding_after.component_instance_id,
+        finding.component_instance_id
+    );
+    let evidence_after = database
+        .repository::<FindingEvidence>()
+        .list()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|evidence| evidence.finding_id == finding.id)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        evidence_after
+            .iter()
+            .map(|evidence| evidence.id.as_str())
+            .collect::<Vec<_>>(),
+        evidence_before
+            .iter()
+            .map(|evidence| evidence.id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        database
+            .repository::<Remediation>()
+            .get(&remediation.id)
+            .await
+            .unwrap(),
+        Some(remediation)
+    );
+}
+
+#[tokio::test]
+async fn versionless_python_requirements_are_persisted_as_unknown_versions() {
+    let temp = tempfile::tempdir().unwrap();
+    let database = Database::in_memory().await.unwrap();
+    let project = fixture_project(temp.path(), "versionless-python-project");
+    let root = Path::new(&project.root_path);
+    fs::remove_file(root.join("package-lock.json")).unwrap();
+    fs::write(root.join("requirements.txt"), "requests>=2.0\nflask\n").unwrap();
+    database
+        .repository::<Project>()
+        .create(&project)
+        .await
+        .unwrap();
+
+    let scanner = scanner(database.clone(), temp.path().join("app-data").as_path());
+    let summary = scanner
+        .queue(limits(1, 4))
+        .unwrap()
+        .enqueue(ScanRequest {
+            project_id: project.id.clone(),
+            root: root.to_path_buf(),
+            profile: ScanProfile::Quick,
+            reason: ScanReason::Manual,
+        })
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+
+    assert!(summary.inventory_complete);
+    let components = database
+        .repository::<security_monitor_core::Component>()
+        .list()
+        .await
+        .unwrap();
+    for name in ["requests", "flask"] {
+        let component = components
+            .iter()
+            .find(|component| component.name == name)
+            .unwrap_or_else(|| panic!("{name} is persisted"));
+        assert_eq!(component.version, None);
+    }
 }
 
 #[tokio::test]

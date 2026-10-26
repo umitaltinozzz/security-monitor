@@ -36,7 +36,7 @@ fn component() -> Component {
         purl: "pkg:npm/fixture-lib@1.0.2".to_owned(),
         ecosystem: "npm".to_owned(),
         name: "fixture-lib".to_owned(),
-        version: "1.0.2".to_owned(),
+        version: Some("1.0.2".to_owned()),
         source_type: "lockfile".to_owned(),
         created_at: timestamp(20),
     }
@@ -52,6 +52,7 @@ fn instance_with_evidence(evidence: Vec<ComponentEvidence>) -> ComponentInstance
         deployment_id: None,
         evidence,
         created_at: timestamp(20),
+        last_seen_at: Some(timestamp(20)),
     }
 }
 
@@ -245,7 +246,7 @@ fn unverified_component_scope_needs_review_even_when_version_matches() {
 #[test]
 fn package_url_version_mismatch_needs_review() {
     let mut component = component();
-    component.version = "1.0.3".to_owned();
+    component.version = Some("1.0.3".to_owned());
     let input = CorrelationComponent {
         component,
         instance: instance_with_evidence(Vec::new()),

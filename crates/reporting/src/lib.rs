@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use jsonschema::{Retrieve, Uri};
 use security_monitor_core::{
     Advisory, Component, ComponentInstance, Finding, FindingDispositionReason, FindingEvidence,
-    FindingStatus, Project, ProjectScanCheckpoint, ScanOutcome, ScanRun, Severity,
+    FindingStatus, Project, ProjectScanCheckpoint, ScanOutcome, ScanRun, ScannerFinding, Severity,
 };
 use security_monitor_database::Database;
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,7 @@ pub struct ReportSnapshot {
     pub advisories: Vec<Advisory>,
     pub findings: Vec<Finding>,
     pub evidence: Vec<FindingEvidence>,
+    pub scanner_findings: Vec<ScannerFinding>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,6 +227,13 @@ pub async fn load_snapshot(
         .into_iter()
         .filter(|item| finding_ids.contains(item.finding_id.as_str()))
         .collect::<Vec<_>>();
+    let scanner_findings = database
+        .repository::<ScannerFinding>()
+        .list()
+        .await?
+        .into_iter()
+        .filter(|finding| project_ids.contains(&finding.project_id))
+        .collect::<Vec<_>>();
     let advisory_ids = findings
         .iter()
         .map(|finding| finding.advisory_id.as_str())
@@ -257,25 +265,17 @@ pub async fn load_snapshot(
                 .is_some_and(|checkpoint| checkpoint.inventory_complete)
         });
     let runs = database.repository::<ScanRun>().list().await?;
-    let latest_scan = runs
-        .iter()
-        .filter(|run| {
-            run.scope.resource_type == "project"
-                && run
-                    .scope
-                    .resource_id
-                    .as_ref()
-                    .is_some_and(|id| project_ids.contains(id))
-        })
-        .max_by_key(|run| run.finished_at.or(Some(run.started_at)));
-    let scan_is_fresh = latest_scan.is_some_and(|run| {
-        run.outcome == ScanOutcome::Succeeded
-            && run.finished_at.is_some_and(|finished| {
-                generated_at.signed_duration_since(finished) >= Duration::zero()
-                    && generated_at.signed_duration_since(finished) <= REPORT_FRESHNESS
-            })
-    });
-    let verification = if inventory_complete && scan_is_fresh {
+    let every_project_has_a_fresh_scan = !project_ids.is_empty()
+        && project_ids.iter().all(|project_id| {
+            runs.iter()
+                .filter(|run| {
+                    run.scope.resource_type == "project"
+                        && run.scope.resource_id.as_deref() == Some(project_id.as_str())
+                })
+                .max_by_key(|run| run.finished_at.unwrap_or(run.started_at))
+                .is_some_and(|run| scan_is_fresh(run, generated_at))
+        });
+    let verification = if inventory_complete && every_project_has_a_fresh_scan {
         VerificationState::Verified
     } else {
         VerificationState::NeedsReview
@@ -291,7 +291,16 @@ pub async fn load_snapshot(
         advisories,
         findings,
         evidence,
+        scanner_findings,
     })
+}
+
+fn scan_is_fresh(run: &ScanRun, generated_at: DateTime<Utc>) -> bool {
+    run.outcome == ScanOutcome::Succeeded
+        && run.finished_at.is_some_and(|finished| {
+            generated_at.signed_duration_since(finished) >= Duration::zero()
+                && generated_at.signed_duration_since(finished) <= REPORT_FRESHNESS
+        })
 }
 
 pub fn render(snapshot: &ReportSnapshot, format: ReportFormat) -> Result<String, ReportingError> {

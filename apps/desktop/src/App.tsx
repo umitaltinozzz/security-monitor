@@ -177,6 +177,7 @@ export function App() {
         requestRefresh([
           "projects",
           "findings",
+          "scannerFindings",
           "advisories",
           "components",
           "instances",
@@ -198,6 +199,7 @@ export function App() {
         requestRefresh([
           "projects",
           "findings",
+          "scannerFindings",
           "advisories",
           "components",
           "instances",

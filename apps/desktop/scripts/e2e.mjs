@@ -226,6 +226,8 @@ try {
             return true;
           case "list_findings":
             return state.findings;
+          case "list_scanner_findings":
+            return [];
           case "list_findings_page": {
             const { offset, limit, status, severity, projectId, query } = args;
             const filtered = state.findings.filter((finding) => {

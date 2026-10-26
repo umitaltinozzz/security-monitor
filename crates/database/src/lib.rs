@@ -4,7 +4,7 @@ use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
     ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
     NotificationChannel, NotificationDeliveryState, ProductionStatus, Project,
-    ProjectScanCheckpoint, ProjectServerLink, Remediation, ScanRun, Service,
+    ProjectScanCheckpoint, ProjectServerLink, Remediation, ScanRun, ScannerFinding, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -96,6 +96,130 @@ impl Database {
             pool: self.pool.clone(),
             marker: PhantomData,
         }
+    }
+
+    /// Persists a project inventory and its checkpoint atomically. Missing instances are pruned
+    /// only when the checkpoint records a complete inventory and input hash.
+    pub async fn persist_project_inventory_snapshot(
+        &self,
+        project_id: &str,
+        components: &[Component],
+        instances: &[ComponentInstance],
+        checkpoint: &ProjectScanCheckpoint,
+    ) -> Result<(), DatabaseError> {
+        if checkpoint.project_id != project_id
+            || instances.iter().any(|instance| {
+                instance.project_id.as_deref() != Some(project_id)
+                    || instance.asset_id.is_some()
+                    || instance.service_id.is_some()
+                    || instance.deployment_id.is_some()
+            })
+        {
+            return Err(DatabaseError::InvalidProjectInventory);
+        }
+
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        for component in components {
+            let existing = sqlx::query_scalar::<_, i64>("SELECT 1 FROM components WHERE id = ?1")
+                .bind(&component.id)
+                .fetch_optional(&mut *transaction)
+                .await?;
+            if existing.is_none() {
+                insert_in_transaction(&mut transaction, component).await?;
+            }
+        }
+
+        for instance in instances {
+            let existing_json = sqlx::query_scalar::<_, String>(
+                "SELECT record_json FROM component_instances WHERE id = ?1",
+            )
+            .bind(&instance.id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if let Some(existing_json) = existing_json {
+                let existing: ComponentInstance = decode_record(existing_json)?;
+                let mut updated = instance.clone();
+                updated.created_at = existing.created_at;
+                update_in_transaction(&mut transaction, &updated).await?;
+            } else {
+                insert_in_transaction(&mut transaction, instance).await?;
+            }
+        }
+
+        if checkpoint.inventory_complete {
+            let retained_ids = serde_json::to_string(
+                &instances
+                    .iter()
+                    .map(|instance| instance.id.as_str())
+                    .collect::<Vec<_>>(),
+            )?;
+            sqlx::query(
+                "DELETE FROM component_instances \
+                 WHERE project_id = ?1 \
+                   AND id NOT IN (SELECT value FROM json_each(?2))",
+            )
+            .bind(project_id)
+            .bind(retained_ids)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        let existing_checkpoint = sqlx::query_scalar::<_, String>(
+            "SELECT record_json FROM project_scan_checkpoints WHERE project_id = ?1",
+        )
+        .bind(project_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some(existing_json) = existing_checkpoint {
+            let existing: ProjectScanCheckpoint = decode_record(existing_json)?;
+            let mut updated = checkpoint.clone();
+            updated.created_at = existing.created_at;
+            update_in_transaction(&mut transaction, &updated).await?;
+        } else {
+            insert_in_transaction(&mut transaction, checkpoint).await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Stores a scan run and its normalized scanner observations atomically. Repeated findings
+    /// keep their first-seen timestamp while refreshing the latest scan and last-seen timestamp.
+    pub async fn persist_scan_run_results(
+        &self,
+        scan_run: &ScanRun,
+        findings: &[ScannerFinding],
+    ) -> Result<(), DatabaseError> {
+        let project_id = scan_run.scope.resource_id.as_deref();
+        if scan_run.scope.resource_type != "project"
+            || findings.iter().any(|finding| {
+                finding.scan_run_id != scan_run.id
+                    || Some(finding.project_id.as_str()) != project_id
+            })
+        {
+            return Err(DatabaseError::InvalidScannerFinding);
+        }
+
+        let mut transaction = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        insert_in_transaction(&mut transaction, scan_run).await?;
+        for finding in findings {
+            let existing_json = sqlx::query_scalar::<_, String>(
+                "SELECT record_json FROM scanner_findings WHERE id = ?1",
+            )
+            .bind(&finding.id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            if let Some(existing_json) = existing_json {
+                let existing: ScannerFinding = decode_record(existing_json)?;
+                let mut updated = finding.clone();
+                updated.created_at = existing.created_at;
+                update_in_transaction(&mut transaction, &updated).await?;
+            } else {
+                insert_in_transaction(&mut transaction, finding).await?;
+            }
+        }
+        transaction.commit().await?;
+        Ok(())
     }
 
     pub async fn schema_version(&self) -> Result<i64, DatabaseError> {
@@ -193,7 +317,7 @@ impl Database {
             .collect::<Vec<_>>();
         let values = AiRun::COLUMNS
             .iter()
-            .map(|(_, path)| format!("json_extract(?1, '{path}')"))
+            .map(|(_, path)| json_value_expression(path))
             .collect::<Vec<_>>();
         let sql = format!(
             "INSERT INTO {} ({}, record_json) SELECT {}, ?1",
@@ -246,6 +370,24 @@ impl Database {
         Ok(())
     }
 
+    pub async fn latest_successful_audit_event(
+        &self,
+        action: &str,
+        resource_id: &str,
+    ) -> Result<Option<AuditEvent>, DatabaseError> {
+        let record = sqlx::query_scalar::<_, String>(
+            "SELECT record_json FROM audit_events \
+             WHERE action = ?1 AND result = 'succeeded' \
+               AND json_extract(scope_json, '$.resource_id') = ?2 \
+             ORDER BY timestamp DESC, id DESC LIMIT 1",
+        )
+        .bind(action)
+        .bind(resource_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        record.map(decode_record).transpose()
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
     }
@@ -289,7 +431,7 @@ impl<T: Entity> Repository<T> {
             .collect::<Vec<_>>();
         let values = T::COLUMNS
             .iter()
-            .map(|(_, path)| format!("json_extract(?1, '{path}')"))
+            .map(|(_, path)| json_value_expression(path))
             .collect::<Vec<_>>();
         let sql = format!(
             "INSERT INTO {} ({}, record_json) SELECT {}, ?1",
@@ -366,7 +508,11 @@ impl<T: Entity> Repository<T> {
         let assignments = T::COLUMNS
             .iter()
             .map(|(column, path)| {
-                format!("{} = json_extract(?1, '{path}')", quote_identifier(column))
+                format!(
+                    "{} = {}",
+                    quote_identifier(column),
+                    json_value_expression(path)
+                )
             })
             .chain(std::iter::once("record_json = ?1".to_owned()))
             .collect::<Vec<_>>();
@@ -712,6 +858,10 @@ pub enum DatabaseError {
     InvalidNotificationDestination,
     #[error("canonical advisory is missing during rekey")]
     MissingAdvisoryTarget,
+    #[error("project inventory snapshot is inconsistent")]
+    InvalidProjectInventory,
+    #[error("scanner finding is invalid or does not belong to its scan run")]
+    InvalidScannerFinding,
     #[error("database schema does not support MCP memory writes")]
     MemorySchemaUnavailable,
     #[error("memory record is invalid")]
@@ -758,6 +908,14 @@ fn quote_identifier(identifier: &str) -> String {
     format!("\"{identifier}\"")
 }
 
+fn json_value_expression(path: &str) -> String {
+    if let Some(path) = path.strip_prefix("legacy-version:") {
+        format!("COALESCE(json_extract(?1, '{path}'), '__unknown__')")
+    } else {
+        format!("json_extract(?1, '{path}')")
+    }
+}
+
 async fn update_in_transaction<T: Entity>(
     transaction: &mut Transaction<'_, Sqlite>,
     entity: &T,
@@ -767,7 +925,13 @@ async fn update_in_transaction<T: Entity>(
     validate_record(T::TABLE, &json)?;
     let assignments = T::COLUMNS
         .iter()
-        .map(|(column, path)| format!("{} = json_extract(?1, '{path}')", quote_identifier(column)))
+        .map(|(column, path)| {
+            format!(
+                "{} = {}",
+                quote_identifier(column),
+                json_value_expression(path)
+            )
+        })
         .chain(std::iter::once("record_json = ?1".to_owned()))
         .collect::<Vec<_>>();
     let sql = format!(
@@ -797,7 +961,7 @@ async fn insert_in_transaction<T: Entity>(
         .collect::<Vec<_>>();
     let values = T::COLUMNS
         .iter()
-        .map(|(_, path)| format!("json_extract(?1, '{path}')"))
+        .map(|(_, path)| json_value_expression(path))
         .collect::<Vec<_>>();
     let sql = format!(
         "INSERT INTO {} ({}, record_json) SELECT {}, ?1",
@@ -1044,6 +1208,7 @@ entity!(
         ("ecosystem", "$.ecosystem"),
         ("name", "$.name"),
         ("version", "$.version"),
+        ("legacy_version", "legacy-version:$.version"),
         ("source_type", "$.source_type"),
         ("created_at", "$.created_at"),
     ]
@@ -1062,6 +1227,7 @@ entity!(
         ("deployment_id", "$.deployment_id"),
         ("evidence", "$.evidence"),
         ("created_at", "$.created_at"),
+        ("last_seen_at", "$.last_seen_at"),
     ]
 );
 entity!(
@@ -1159,6 +1325,64 @@ entity!(
         ("error", "$.error"),
     ]
 );
+impl sealed::Sealed for ScannerFinding {}
+impl Entity for ScannerFinding {
+    const TABLE: &'static str = "scanner_findings";
+    const KEY_COLUMN: &'static str = "id";
+    const COLUMNS: &'static [(&'static str, &'static str)] = &[
+        ("id", "$.id"),
+        ("project_id", "$.project_id"),
+        ("scan_run_id", "$.scan_run_id"),
+        ("scanner", "$.scanner"),
+        ("mode", "$.mode"),
+        ("kind", "$.kind"),
+        ("rule_id", "$.rule_id"),
+        ("aliases", "$.aliases"),
+        ("package_name", "$.package_name"),
+        ("package_ecosystem", "$.package_ecosystem"),
+        ("package_version", "$.package_version"),
+        ("severity", "$.severity"),
+        ("title", "$.title"),
+        ("fixed_version", "$.fixed_version"),
+        ("path", "$.path"),
+        ("line_start", "$.line_start"),
+        ("line_end", "$.line_end"),
+        ("fingerprint", "$.fingerprint"),
+        ("created_at", "$.created_at"),
+        ("last_seen_at", "$.last_seen_at"),
+    ];
+
+    fn key(&self) -> &str {
+        &self.id
+    }
+
+    fn validate(&self) -> Result<(), DatabaseError> {
+        let path_is_safe = self.path.as_deref().is_none_or(|path| {
+            !path.is_empty()
+                && Path::new(path)
+                    .components()
+                    .all(|component| matches!(component, std::path::Component::Normal(_)))
+        });
+        let fingerprint_is_hex = self.fingerprint.len() == 64
+            && self
+                .fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit());
+        if self.id.is_empty()
+            || self.project_id.is_empty()
+            || self.scan_run_id.is_empty()
+            || !path_is_safe
+            || !fingerprint_is_hex
+            || self
+                .line_start
+                .zip(self.line_end)
+                .is_some_and(|(start, end)| end < start)
+        {
+            return Err(DatabaseError::InvalidScannerFinding);
+        }
+        Ok(())
+    }
+}
 entity!(
     ProjectScanCheckpoint,
     id,

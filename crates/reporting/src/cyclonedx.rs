@@ -29,8 +29,12 @@ pub(super) fn cyclonedx_report(snapshot: &ReportSnapshot) -> Value {
         .iter()
         .filter_map(|instance| component_by_id.get(instance.component_id.as_str()))
         .map(|component| {
-            json!({"type":"library","bom-ref":component.purl,"name":component.name,"version":component.version,
-                "purl":component.purl,"properties":[{"name":"security-monitor:ecosystem","value":component.ecosystem}]})
+            let mut value = json!({"type":"library","bom-ref":component.purl,"name":component.name,
+                "purl":component.purl,"properties":[{"name":"security-monitor:ecosystem","value":component.ecosystem}]});
+            if let Some(version) = &component.version {
+                value["version"] = json!(version);
+            }
+            value
         })
         .collect::<Vec<_>>();
     let components = unique_values(components);
@@ -41,9 +45,14 @@ pub(super) fn cyclonedx_report(snapshot: &ReportSnapshot) -> Value {
             let instance = instance_by_id.get(finding.component_instance_id.as_str())?;
             let component = component_by_id.get(instance.component_id.as_str())?;
             let advisory = advisory_by_id.get(finding.advisory_id.as_str());
+            let affects = if let Some(version) = &component.version {
+                json!([{"ref":component.purl,"versions":[{"version":version,"status":cyclonedx_version_status(finding, snapshot.verification)}]}])
+            } else {
+                json!([{"ref":component.purl}])
+            };
             let mut vulnerability = json!({"id":finding.advisory_id,"source":{"name":"OSV"},
                 "ratings":[{"severity":cyclonedx_severity(&finding.severity)}],
-                "affects":[{"ref":component.purl,"versions":[{"version":component.version,"status":cyclonedx_version_status(finding, snapshot.verification)}]}],
+                "affects":affects,
                 "analysis":{"state":cyclonedx_analysis_state(finding, snapshot.verification)},
                 "properties":[{"name":"security-monitor:verification","value":verification_text(snapshot.verification)},
                     {"name":"security-monitor:finding-status","value":finding_status(&finding.status)}]});

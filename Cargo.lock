@@ -5264,6 +5264,7 @@ dependencies = [
  "chrono",
  "clap",
  "hex",
+ "libc",
  "security-monitor-advisory-providers",
  "security-monitor-agent-protocol",
  "security-monitor-agent-transport",
@@ -5654,6 +5655,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
  "url",
 ]
 

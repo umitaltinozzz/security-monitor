@@ -70,7 +70,7 @@ pub enum HostCommand {
     SystemdServices,
     DockerList,
     DockerInspect {
-        container_id: String,
+        container_ids: Vec<String>,
     },
 }
 
@@ -122,9 +122,13 @@ impl HostCommand {
                 "/usr/bin/docker",
                 &["ps", "--no-trunc", "--format", "{{json .}}"],
             ),
-            Self::DockerInspect { container_id } => {
-                if !(12..=64).contains(&container_id.len())
-                    || !container_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+            Self::DockerInspect { container_ids } => {
+                if container_ids.is_empty()
+                    || container_ids.len() > 128
+                    || container_ids.iter().any(|container_id| {
+                        !(12..=64).contains(&container_id.len())
+                            || !container_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
                 {
                     return Err(HostCommandError::InvalidArgument);
                 }
@@ -133,8 +137,11 @@ impl HostCommand {
                     OsString::from("--type=container"),
                     OsString::from("--format"),
                     OsString::from(OCI_LABEL_TEMPLATE),
-                    OsString::from(container_id),
                 ];
+                let args = args
+                    .into_iter()
+                    .chain(container_ids.iter().map(OsString::from))
+                    .collect();
                 return Ok(("/usr/bin/docker", args));
             }
         };
@@ -252,17 +259,44 @@ mod tests {
         }
         assert!(
             HostCommand::DockerInspect {
-                container_id: "bad;id".to_owned()
+                container_ids: vec!["bad;id".to_owned()]
             }
             .executable_and_args()
             .is_err()
         );
         assert!(
             HostCommand::DockerInspect {
-                container_id: "a".repeat(64)
+                container_ids: vec!["a".repeat(64)]
             }
             .executable_and_args()
             .is_ok()
+        );
+        let ids = vec!["b".repeat(64), "c".repeat(64)];
+        let (_, args) = HostCommand::DockerInspect {
+            container_ids: ids.clone(),
+        }
+        .executable_and_args()
+        .expect("batch IDs should be accepted");
+        assert_eq!(
+            args[4..]
+                .iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            ids
+        );
+        assert!(
+            HostCommand::DockerInspect {
+                container_ids: Vec::new()
+            }
+            .executable_and_args()
+            .is_err()
+        );
+        assert!(
+            HostCommand::DockerInspect {
+                container_ids: vec!["a".repeat(64); 129]
+            }
+            .executable_and_args()
+            .is_err()
         );
     }
 }

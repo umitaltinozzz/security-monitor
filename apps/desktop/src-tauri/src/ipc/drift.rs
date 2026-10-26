@@ -165,17 +165,9 @@ pub async fn get_server_inventory_summary(
     };
     let audit = state
         .database
-        .repository::<AuditEvent>()
-        .list()
+        .latest_successful_audit_event("server_inventory_collection_approved", &asset.id)
         .await
-        .map_err(|error| opaque(error, "storage_unavailable"))?
-        .into_iter()
-        .filter(|event| {
-            event.action == "server_inventory_collection_approved"
-                && event.scope.resource_id.as_deref() == Some(asset.id.as_str())
-                && event.result == AuditResult::Succeeded
-        })
-        .max_by_key(|event| event.timestamp);
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
     let approved_at = audit
         .map(|event| event.timestamp)
         .ok_or_else(|| "collection_failed".to_owned())?;

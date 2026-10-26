@@ -5,13 +5,16 @@ use std::{
     io::{self, Read},
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::{Duration as StdDuration, Instant},
 };
 
 use chrono::{Duration, Utc};
 use security_monitor_advisory_providers::{
-    FindingReason, OsvDatabase, ecosystem_slug, evaluate_inventory,
+    AdvisoryFinding, AdvisoryMerger, FindingReason, OsvDatabase, ecosystem_slug, evaluate_inventory,
 };
-use security_monitor_core::{Advisory, Severity};
+use security_monitor_core::{Advisory, FindingStatus, Severity};
 use security_monitor_database::Database;
 use security_monitor_inventory::{Inventory, is_dependency_file, scan_repository};
 use security_monitor_reporting::FailOn;
@@ -21,8 +24,10 @@ const MAX_GIT_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CHANGED_FILES: usize = 1024;
 const MAX_CHANGED_FILE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CHANGED_BYTES: usize = 128 * 1024 * 1024;
+const GIT_PROCESS_TIMEOUT: StdDuration = StdDuration::from_secs(30);
 const OSV_FRESHNESS: Duration = Duration::hours(24);
 pub(super) const THRESHOLD_BREACH_EXIT: i32 = 2;
+pub(super) const VERIFICATION_INCOMPLETE_EXIT: i32 = 3;
 
 struct SnapshotChanges {
     revision: String,
@@ -170,7 +175,14 @@ fn pre_push_snapshots(repository: &Path) -> Result<Vec<SnapshotChanges>, &'stati
         return Err("hook_input_too_large");
     }
     let input = std::str::from_utf8(&input).map_err(|_| "hook_input_invalid")?;
-    let mut updates = BTreeMap::<String, String>::new();
+    pre_push_snapshots_from_input(repository, input)
+}
+
+fn pre_push_snapshots_from_input(
+    repository: &Path,
+    input: &str,
+) -> Result<Vec<SnapshotChanges>, &'static str> {
+    let mut updates = BTreeSet::<(String, String)>::new();
     for line in input.lines().filter(|line| !line.trim().is_empty()) {
         let fields = line.split_whitespace().collect::<Vec<_>>();
         if fields.len() != 4 {
@@ -188,7 +200,7 @@ fn pre_push_snapshots(repository: &Path) -> Result<Vec<SnapshotChanges>, &'stati
         } else {
             remote.to_owned()
         };
-        updates.insert(local.to_owned(), base);
+        updates.insert((local.to_owned(), base));
     }
 
     let mut snapshots = Vec::new();
@@ -299,15 +311,15 @@ async fn offline_findings(
     }
 
     let cache_root = app_data.join("advisories").join("osv");
-    let mut loaded = BTreeSet::new();
+    let mut osv_databases = BTreeMap::<String, Option<OsvDatabase>>::new();
     let now = Utc::now();
     for component in &inventory.components {
         let Some(slug) = ecosystem_slug(&component.ecosystem) else {
             needs_review = true;
             continue;
         };
-        if loaded.insert(slug.to_owned()) {
-            match OsvDatabase::open(cache_root.join(slug)) {
+        if !osv_databases.contains_key(slug) {
+            let opened = match OsvDatabase::open(cache_root.join(slug)) {
                 Ok(cache) => {
                     let status = cache.status();
                     if status.stale
@@ -317,18 +329,26 @@ async fn offline_findings(
                     {
                         needs_review = true;
                     }
-                    advisories.extend(cache.query(&component.ecosystem, &component.name));
+                    Some(cache)
                 }
-                Err(_) => needs_review = true,
-            }
-        } else if let Ok(cache) = OsvDatabase::open(cache_root.join(slug)) {
+                Err(_) => {
+                    needs_review = true;
+                    None
+                }
+            };
+            osv_databases.insert(slug.to_owned(), opened);
+        }
+        if let Some(cache) = osv_databases.get(slug).and_then(Option::as_ref) {
             advisories.extend(cache.query(&component.ecosystem, &component.name));
+        } else {
+            // A single failed ecosystem load invalidates every component check in that ecosystem.
+            needs_review = true;
         }
     }
 
-    advisories.sort_by(|left, right| left.canonical_id.cmp(&right.canonical_id));
-    advisories.dedup_by(|left, right| left.canonical_id == right.canonical_id);
+    let advisories = AdvisoryMerger::new(advisories).into_records();
     let findings = evaluate_inventory(&advisories, inventory);
+    needs_review |= findings_require_review(&findings);
     let threshold = match fail_on {
         FailOn::Critical => 4,
         FailOn::High => 3,
@@ -350,6 +370,12 @@ async fn offline_findings(
             .is_some_and(|rank| finding_exceeds_threshold(finding.reason, *rank, threshold))
     });
     (findings.len(), needs_review, threshold_exceeded)
+}
+
+fn findings_require_review(findings: &[AdvisoryFinding]) -> bool {
+    findings
+        .iter()
+        .any(|finding| finding.status == FindingStatus::NeedsReview)
 }
 
 fn finding_exceeds_threshold(reason: FindingReason, severity_rank: u8, threshold: u8) -> bool {
@@ -411,53 +437,163 @@ fn git_output(
     args: Vec<OsString>,
     max_bytes: usize,
 ) -> Result<Vec<u8>, &'static str> {
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .args(args)
         .current_dir(repository)
         .env("GIT_NO_LAZY_FETCH", "1")
-        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    git_output_with_timeout(command, max_bytes, GIT_PROCESS_TIMEOUT)
+}
+
+fn git_output_with_timeout(
+    mut command: Command,
+    max_bytes: usize,
+    timeout: StdDuration,
+) -> Result<Vec<u8>, &'static str> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| "hook_git_unavailable")?;
     let mut stdout = child.stdout.take().ok_or("hook_git_operation_failed")?;
-    let mut output = Vec::new();
-    if stdout
-        .by_ref()
-        .take((max_bytes + 1) as u64)
-        .read_to_end(&mut output)
-        .is_err()
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        let result = stdout
+            .by_ref()
+            .take(max_bytes.saturating_add(1) as u64)
+            .read_to_end(&mut output)
+            .map(|_| output);
+        let _ = sender.send(result);
+    });
+    let deadline = Instant::now() + timeout;
+    let mut output = None;
+    loop {
+        if output.is_none() {
+            match receiver.try_recv() {
+                Ok(Ok(bytes)) => {
+                    if bytes.len() > max_bytes {
+                        terminate_git_process(&mut child);
+                        let _ = reader.join();
+                        return Err("hook_scan_limits_exceeded");
+                    }
+                    output = Some(bytes);
+                }
+                Ok(Err(_)) => {
+                    terminate_git_process(&mut child);
+                    let _ = reader.join();
+                    return Err("hook_git_operation_failed");
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    terminate_git_process(&mut child);
+                    let _ = reader.join();
+                    return Err("hook_git_operation_failed");
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        let status = match child.try_wait() {
+            Ok(status) => status,
+            Err(_) => {
+                terminate_git_process(&mut child);
+                let _ = reader.join();
+                return Err("hook_git_operation_failed");
+            }
+        };
+        if let Some(status) = status {
+            if !status.success() {
+                terminate_git_process(&mut child);
+                let _ = reader.join();
+                return Err("hook_git_operation_failed");
+            }
+            if let Some(output) = output {
+                let _ = reader.join();
+                return Ok(output);
+            }
+        }
+        if Instant::now() >= deadline {
+            terminate_git_process(&mut child);
+            let _ = reader.join();
+            return Err("hook_git_timeout");
+        }
+        thread::sleep(StdDuration::from_millis(10));
+    }
+}
+
+fn terminate_git_process(child: &mut std::process::Child) {
+    #[cfg(unix)]
     {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("hook_git_operation_failed");
+        let _ = unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
     }
-    if output.len() > max_bytes {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("hook_scan_limits_exceeded");
-    }
-    if !child
-        .wait()
-        .map_err(|_| "hook_git_operation_failed")?
-        .success()
-    {
-        return Err("hook_git_operation_failed");
-    }
-    Ok(output)
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
-    use security_monitor_advisory_providers::FindingReason;
-    use std::path::Path;
+    use chrono::{Duration, Utc};
+    use security_monitor_advisory_providers::{FindingReason, evaluate_inventory};
+    use security_monitor_core::{Advisory, AffectedRange, FindingStatus, RangeEvent, Severity};
+    use security_monitor_inventory::{Inventory, InventoryComponent};
+    use std::{
+        ffi::OsStr,
+        path::{Path, PathBuf},
+        process::Command,
+        time::{Duration as StdDuration, Instant},
+    };
 
     use super::{
-        OSV_FRESHNESS, finding_exceeds_threshold, is_scannable_input, parse_changed_paths,
-        safe_relative_path,
+        AdvisoryMerger, OSV_FRESHNESS, finding_exceeds_threshold, findings_require_review,
+        git_output_with_timeout, is_scannable_input, parse_changed_paths,
+        pre_push_snapshots_from_input, safe_relative_path,
     };
+
+    #[test]
+    fn git_timeout_child_fixture() {
+        if std::env::var_os("SECMON_GIT_TIMEOUT_FIXTURE").is_some() {
+            std::thread::sleep(StdDuration::from_secs(5));
+        }
+    }
+
+    #[test]
+    fn git_subprocess_timeout_kills_the_child() {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "hooks::tests::git_timeout_child_fixture",
+                "--nocapture",
+            ])
+            .env("SECMON_GIT_TIMEOUT_FIXTURE", "1");
+        let started = Instant::now();
+        let result = git_output_with_timeout(command, 1024, StdDuration::from_millis(100));
+        assert_eq!(result, Err("hook_git_timeout"));
+        assert!(started.elapsed() < StdDuration::from_secs(3));
+    }
+
+    fn git(repository: &Path, args: &[&OsStr]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repository)
+            .output()
+            .expect("git is available for the hook integration test");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("git output is UTF-8")
+            .trim()
+            .to_owned()
+    }
 
     #[test]
     fn changed_file_parser_only_accepts_safe_dependency_inputs() {
@@ -496,5 +632,156 @@ mod tests {
     #[test]
     fn osv_cache_freshness_window_is_24_hours() {
         assert_eq!(OSV_FRESHNESS, Duration::hours(24));
+    }
+
+    fn advisory(fixed: &str, source: &str) -> Advisory {
+        let now = Utc::now();
+        Advisory {
+            canonical_id: "CVE-2026-7001".to_owned(),
+            title: "Fixture advisory".to_owned(),
+            summary: None,
+            summary_model: None,
+            description: None,
+            source_attributions: Vec::new(),
+            aliases: Vec::new(),
+            affected_ranges: vec![AffectedRange {
+                ecosystem: "npm".to_owned(),
+                package: Some("fixture-package".to_owned()),
+                source: Some(source.to_owned()),
+                range_type: Some("SEMVER".to_owned()),
+                events: vec![RangeEvent {
+                    introduced: Some("1.0.0".to_owned()),
+                    fixed: Some(fixed.to_owned()),
+                    last_affected: None,
+                    limit: None,
+                }],
+            }],
+            fixed_versions: vec![fixed.to_owned()],
+            cvss: Some(8.0),
+            severity: Some(Severity::High),
+            kev: false,
+            epss: None,
+            epss_date: None,
+            source_urls: Vec::new(),
+            source_updated_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn newer_osv_ranges_are_merged_and_conflicts_require_review() {
+        let advisories = AdvisoryMerger::new([
+            advisory("2.0.0", "local database"),
+            advisory("3.0.0", "OSV"),
+        ])
+        .into_records();
+        assert_eq!(advisories.len(), 1);
+        assert_eq!(advisories[0].affected_ranges.len(), 2);
+
+        let inventory = Inventory {
+            components: vec![InventoryComponent {
+                purl: "pkg:npm/fixture-package@2.5.0".to_owned(),
+                ecosystem: "npm".to_owned(),
+                name: "fixture-package".to_owned(),
+                version: Some("2.5.0".to_owned()),
+                source_type: "lockfile".to_owned(),
+                evidence_paths: vec!["package-lock.json".to_owned()],
+            }],
+            project_roots: Vec::new(),
+            detected_files: Vec::new(),
+            diagnostics: Vec::new(),
+            complete: true,
+        };
+        let findings = evaluate_inventory(&advisories, &inventory);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].reason, FindingReason::SourceDisagreement);
+        assert_eq!(findings[0].status, FindingStatus::NeedsReview);
+        assert!(findings_require_review(&findings));
+    }
+
+    #[test]
+    fn pre_push_keeps_distinct_ref_updates_for_the_same_local_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path();
+        git(repository, &[OsStr::new("init"), OsStr::new("--quiet")]);
+        git(
+            repository,
+            &[
+                OsStr::new("config"),
+                OsStr::new("user.name"),
+                OsStr::new("Fixture"),
+            ],
+        );
+        git(
+            repository,
+            &[
+                OsStr::new("config"),
+                OsStr::new("user.email"),
+                OsStr::new("fixture@example.invalid"),
+            ],
+        );
+        std::fs::write(repository.join("README.md"), "base\n").unwrap();
+        git(
+            repository,
+            &[OsStr::new("add"), OsStr::new("--"), OsStr::new("README.md")],
+        );
+        git(
+            repository,
+            &[
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new("base"),
+            ],
+        );
+        let first_base = git(repository, &[OsStr::new("rev-parse"), OsStr::new("HEAD")]);
+
+        std::fs::write(repository.join("package-lock.json"), "fixture lock\n").unwrap();
+        git(
+            repository,
+            &[
+                OsStr::new("add"),
+                OsStr::new("--"),
+                OsStr::new("package-lock.json"),
+            ],
+        );
+        git(
+            repository,
+            &[
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new("dependency input"),
+            ],
+        );
+        let second_base = git(repository, &[OsStr::new("rev-parse"), OsStr::new("HEAD")]);
+
+        std::fs::write(repository.join("README.md"), "updated\n").unwrap();
+        git(
+            repository,
+            &[OsStr::new("add"), OsStr::new("--"), OsStr::new("README.md")],
+        );
+        git(
+            repository,
+            &[
+                OsStr::new("commit"),
+                OsStr::new("--quiet"),
+                OsStr::new("-m"),
+                OsStr::new("same target"),
+            ],
+        );
+        let local = git(repository, &[OsStr::new("rev-parse"), OsStr::new("HEAD")]);
+        let updates = format!(
+            "refs/heads/one {local} refs/remotes/origin/one {first_base}\nrefs/heads/two {local} refs/remotes/origin/two {second_base}\n"
+        );
+
+        let snapshots = pre_push_snapshots_from_input(repository, &updates).unwrap();
+        assert_eq!(snapshots.len(), 1);
+        assert!(snapshots.iter().any(|snapshot| {
+            snapshot
+                .files
+                .contains_key(&PathBuf::from("package-lock.json"))
+        }));
     }
 }

@@ -15,7 +15,6 @@ use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
-    time::timeout,
 };
 use ts_rs::TS;
 use uuid::Uuid;

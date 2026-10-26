@@ -606,9 +606,9 @@ pub async fn run_hook(
             }
             Err(error) => {
                 eprintln!(
-                    "warning: security check could not run ({error}); no threshold was confirmed"
+                    "blocked: security check could not run ({error}); verification is incomplete"
                 );
-                return Ok(0);
+                return Err(error);
             }
         };
     }
@@ -621,7 +621,9 @@ pub async fn run_hook(
             Ok(0)
         }
         HookMode::Block if should_block_hook(mode, code) => {
-            eprintln!("blocked: a verified finding meets the configured severity threshold");
+            eprintln!(
+                "blocked: the security check found a threshold breach or incomplete verification"
+            );
             Ok(code)
         }
         HookMode::Block => {
@@ -632,7 +634,11 @@ pub async fn run_hook(
 }
 
 fn should_block_hook(mode: HookMode, result_code: i32) -> bool {
-    matches!(mode, HookMode::Block) && result_code == super::hooks::THRESHOLD_BREACH_EXIT
+    matches!(mode, HookMode::Block)
+        && matches!(
+            result_code,
+            super::hooks::THRESHOLD_BREACH_EXIT | super::hooks::VERIFICATION_INCOMPLETE_EXIT
+        )
 }
 
 fn unverified_agent_event_result(mode: HookMode) -> Result<i32, &'static str> {
@@ -959,9 +965,10 @@ mod hook_mode_tests {
     #[test]
     fn block_mode_stops_only_on_a_threshold_breach() {
         assert!(should_block_hook(HookMode::Block, 2));
-        assert!(!should_block_hook(HookMode::Block, 3));
+        assert!(should_block_hook(HookMode::Block, 3));
         assert!(!should_block_hook(HookMode::Warn, 2));
         assert!(!should_block_hook(HookMode::Block, 0));
+        assert!(!should_block_hook(HookMode::Block, 4));
     }
 
     #[test]

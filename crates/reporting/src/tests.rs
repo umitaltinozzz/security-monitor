@@ -1,8 +1,10 @@
 use super::*;
 use chrono::TimeZone;
 use security_monitor_core::{
-    AffectedRange, AuditScope, ComponentEvidence, FindingDisposition, RangeEvent,
+    AffectedRange, AuditScope, ComponentEvidence, FindingDisposition, ProjectScanCheckpoint,
+    RangeEvent, ScanOutcome, ScanRun, ScannerFinding,
 };
+use security_monitor_database::Database;
 
 #[derive(serde::Deserialize)]
 struct ReportingFixture {
@@ -48,7 +50,7 @@ fn fixture_snapshot() -> ReportSnapshot {
         purl: fixture.purl.clone(),
         ecosystem: fixture.ecosystem.clone(),
         name: fixture.component_name.clone(),
-        version: fixture.version.clone(),
+        version: Some(fixture.version.clone()),
         source_type: "package-lock".into(),
         created_at: timestamp,
     };
@@ -65,6 +67,7 @@ fn fixture_snapshot() -> ReportSnapshot {
             reference: None,
         }],
         created_at: timestamp,
+        last_seen_at: Some(timestamp),
     };
     let advisory = Advisory {
         canonical_id: fixture.advisory_id.clone(),
@@ -139,7 +142,59 @@ fn fixture_snapshot() -> ReportSnapshot {
             confidence: Some(1.0),
             created_at: timestamp,
         }],
+        scanner_findings: Vec::new(),
     }
+}
+
+#[test]
+fn normalized_scanner_observations_are_in_json_and_sarif_reports() {
+    let mut snapshot = fixture_snapshot();
+    snapshot.scanner_findings.push(ScannerFinding {
+        id: "scanner-finding-1".into(),
+        project_id: "project-1".into(),
+        scan_run_id: "scan-1".into(),
+        scanner: "semgrep".into(),
+        mode: "code".into(),
+        kind: "code".into(),
+        rule_id: Some("python.lang.security.audit.eval-detected".into()),
+        aliases: Vec::new(),
+        package_name: None,
+        package_ecosystem: None,
+        package_version: None,
+        severity: security_monitor_core::Severity::High,
+        title: Some("Use of eval".into()),
+        fixed_version: None,
+        path: Some("src/app.py".into()),
+        line_start: Some(8),
+        line_end: Some(8),
+        fingerprint: "b".repeat(64),
+        created_at: snapshot.generated_at,
+        last_seen_at: snapshot.generated_at,
+    });
+
+    let json: Value =
+        serde_json::from_str(&render(&snapshot, ReportFormat::Json).unwrap()).unwrap();
+    assert_eq!(
+        json.pointer("/scanner_findings/0/rule_id")
+            .and_then(Value::as_str),
+        Some("python.lang.security.audit.eval-detected")
+    );
+    let sarif: Value =
+        serde_json::from_str(&render(&snapshot, ReportFormat::Sarif).unwrap()).unwrap();
+    let results = sarif
+        .pointer("/runs/0/results")
+        .and_then(Value::as_array)
+        .unwrap();
+    assert!(results.iter().any(|result| {
+        result
+            .pointer("/locations/0/physicalLocation/artifactLocation/uri")
+            .and_then(Value::as_str)
+            == Some("src/app.py")
+            && result
+                .pointer("/locations/0/physicalLocation/region/startLine")
+                .and_then(Value::as_u64)
+                == Some(8)
+    }));
 }
 
 #[test]
@@ -330,6 +385,89 @@ fn fixed_production_claims_require_a_current_verified_snapshot() {
         Some("resolved")
     );
     validate(ReportFormat::Cyclonedx, &cyclonedx).unwrap();
+}
+
+#[tokio::test]
+async fn workspace_report_requires_a_fresh_scan_for_every_project() {
+    let database = Database::in_memory().await.unwrap();
+    let generated_at = Utc.with_ymd_and_hms(2026, 10, 26, 12, 0, 0).unwrap();
+    let mut projects = Vec::new();
+    for id in ["recent-project", "old-project"] {
+        let project = Project {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            root_path: format!("C:/fixtures/{id}"),
+            git_remote: None,
+            reference_branch: None,
+            allowed_ai_providers: Vec::new(),
+            last_scan_at: None,
+            created_at: generated_at,
+            updated_at: generated_at,
+        };
+        database
+            .repository::<Project>()
+            .create(&project)
+            .await
+            .unwrap();
+        database
+            .repository::<ProjectScanCheckpoint>()
+            .create(&ProjectScanCheckpoint {
+                id: id.to_owned(),
+                project_id: id.to_owned(),
+                input_hash: Some("a".repeat(64)),
+                inventory_json: "[]".to_owned(),
+                inventory_complete: true,
+                checked_at: generated_at,
+                created_at: generated_at,
+                updated_at: generated_at,
+            })
+            .await
+            .unwrap();
+        let finished_at = if id == "recent-project" {
+            generated_at - chrono::Duration::hours(1)
+        } else {
+            generated_at - chrono::Duration::days(35)
+        };
+        database
+            .repository::<ScanRun>()
+            .create(&ScanRun {
+                id: format!("scan-{id}"),
+                scope: AuditScope {
+                    resource_type: "project".to_owned(),
+                    resource_id: Some(id.to_owned()),
+                },
+                scanner: "local".to_owned(),
+                scanner_version: None,
+                started_at: finished_at,
+                finished_at: Some(finished_at),
+                outcome: ScanOutcome::Succeeded,
+                error: None,
+            })
+            .await
+            .unwrap();
+        projects.push(project);
+    }
+
+    let snapshot = load_snapshot(&database, None, generated_at).await.unwrap();
+    assert!(snapshot.inventory_complete);
+    assert_eq!(snapshot.verification, VerificationState::NeedsReview);
+
+    let mut fresh_old_scan = database
+        .repository::<ScanRun>()
+        .get("scan-old-project")
+        .await
+        .unwrap()
+        .unwrap();
+    fresh_old_scan.started_at = generated_at - chrono::Duration::hours(2);
+    fresh_old_scan.finished_at = Some(generated_at - chrono::Duration::hours(1));
+    database
+        .repository::<ScanRun>()
+        .update(&fresh_old_scan)
+        .await
+        .unwrap();
+    let snapshot = load_snapshot(&database, None, generated_at).await.unwrap();
+    assert_eq!(snapshot.verification, VerificationState::Verified);
+    assert_eq!(projects.len(), 2);
 }
 
 #[test]

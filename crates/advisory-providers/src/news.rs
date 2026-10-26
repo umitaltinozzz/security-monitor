@@ -934,7 +934,7 @@ mod tests {
                 purl: "pkg:npm/next@14.2.1".to_owned(),
                 ecosystem: "npm".to_owned(),
                 name: "next".to_owned(),
-                version: "14.2.1".to_owned(),
+                version: Some("14.2.1".to_owned()),
                 source_type: "lockfile".to_owned(),
                 created_at: now,
             })
@@ -951,6 +951,7 @@ mod tests {
                 deployment_id: None,
                 evidence: Vec::new(),
                 created_at: now,
+                last_seen_at: Some(now),
             })
             .await
             .expect("component instance persists locally");

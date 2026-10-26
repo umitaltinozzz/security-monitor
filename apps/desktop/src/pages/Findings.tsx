@@ -207,7 +207,7 @@ export function Findings() {
                       </td>
                       <td>
                         {component
-                          ? `${component.name}@${component.version}`
+                          ? `${component.name}@${component.version ?? t("common.unverified")}`
                           : t("common.unverified")}
                       </td>
                       <td>
@@ -269,6 +269,67 @@ export function Findings() {
           {t("findings.nextPage")}
         </button>
       </nav>
+      {data.scannerFindings.length > 0 && (
+        <section className="panel table-panel scanner-findings-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{t("findings.scannerFindings")}</h2>
+              <p>{t("findings.scannerFindingsDescription")}</p>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("findings.rule")}</th>
+                  <th>{t("findings.source")}</th>
+                  <th>{t("findings.package")}</th>
+                  <th>{t("findings.location")}</th>
+                  <th>{t("common.severity")}</th>
+                  <th>{t("findings.lastSeen")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.scannerFindings.map((finding) => (
+                  <tr key={finding.id}>
+                    <td>
+                      {finding.title ?? finding.rule_id ?? t("common.unverified")}
+                      {finding.rule_id && (
+                        <small className="cell-subtitle">{finding.rule_id}</small>
+                      )}
+                    </td>
+                    <td>
+                      {finding.scanner} · {finding.mode}
+                    </td>
+                    <td>
+                      {finding.package_name
+                        ? `${finding.package_name}${finding.package_version ? `@${finding.package_version}` : ""}`
+                        : t("common.notAvailable")}
+                    </td>
+                    <td>
+                      {finding.path ? (
+                        <code>
+                          {finding.path}
+                          {finding.line_start ? `:${finding.line_start}` : ""}
+                          {finding.line_end && finding.line_end !== finding.line_start
+                            ? `-${finding.line_end}`
+                            : ""}
+                        </code>
+                      ) : (
+                        t("common.notAvailable")
+                      )}
+                    </td>
+                    <td>
+                      <SeverityLabel severity={finding.severity} t={t} />
+                    </td>
+                    <td>{date(finding.last_seen_at, data.settings.language)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
       {selected &&
         (editingStatus ? (
           <StatusDialog
@@ -371,8 +432,10 @@ function FindingDetail({
           </button>
         </div>
         <p className="finding-detail-package">
-          {component ? `${component.name}@${component.version}` : t("common.unverified")} ·{" "}
-          {projectName ?? t("common.unverified")}
+          {component
+            ? `${component.name}@${component.version ?? t("common.unverified")}`
+            : t("common.unverified")}{" "}
+          · {projectName ?? t("common.unverified")}
         </p>
         <div className="finding-detail-tags">
           <SeverityLabel severity={finding.severity} t={t} />

@@ -52,7 +52,18 @@ pub(super) fn json_report(snapshot: &ReportSnapshot) -> Value {
                 "priority_reasons":finding.priority_reasons,
                 "evidence":snapshot.evidence.iter().filter(|item| item.finding_id == finding.id)
                     .map(|item| json!({"type":item.evidence_type,"path":item.file_path_redacted.as_deref().and_then(relative_evidence_path),"confidence":item.confidence})).collect::<Vec<_>>() }))
-        }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>(),
+        "scanner_findings":snapshot.scanner_findings.iter().map(|finding| json!({
+            "id":finding.id,"project_id":finding.project_id,"scanner":finding.scanner,
+            "mode":finding.mode,"kind":finding.kind,"rule_id":finding.rule_id,
+            "aliases":finding.aliases,"package":{"name":finding.package_name,
+                "ecosystem":finding.package_ecosystem,"version":finding.package_version},
+            "severity":finding.severity,"title":finding.title,"fixed_version":finding.fixed_version,
+            "path":finding.path.as_deref().and_then(relative_evidence_path),
+            "line_start":finding.line_start,"line_end":finding.line_end,
+            "fingerprint":finding.fingerprint,"first_seen_at":finding.created_at,
+            "last_seen_at":finding.last_seen_at
+        })).collect::<Vec<_>>()
     })
 }
 

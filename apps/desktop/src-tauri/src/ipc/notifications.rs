@@ -17,6 +17,7 @@ use super::*;
 
 const SNAPSHOT_MAX_AGE: Duration = Duration::hours(24);
 const HIGH_PRIORITY: u8 = 70;
+const CRITICAL_PRIORITY: u8 = 90;
 
 pub async fn ensure_desktop_channel(database: &Database) -> Result<(), String> {
     let repository = database.repository::<NotificationChannel>();
@@ -506,6 +507,48 @@ pub async fn publish_new_high_findings(state: &AppState, project_id: Option<&str
         event.priority_score = event.priority_score.max(HIGH_PRIORITY);
         if let Err(error) = service.publish(&event).await {
             tracing::warn!(error = %notification_error(error), "finding notification delivery failed");
+        }
+    }
+
+    let scanner_findings = match state.database.repository::<ScannerFinding>().list().await {
+        Ok(findings) => findings,
+        Err(error) => {
+            tracing::warn!(error = %opaque(error, "storage_unavailable"), "scanner notifications could not load findings");
+            return;
+        }
+    };
+    for finding in scanner_findings.into_iter().filter(|finding| {
+        matches!(finding.severity, Severity::Critical | Severity::High)
+            && project_id.is_none_or(|project_id| finding.project_id == project_id)
+    }) {
+        let project_name = project_names
+            .get(&finding.project_id)
+            .map(String::as_str)
+            .unwrap_or("local project");
+        let severity = format!("{:?}", finding.severity).to_ascii_lowercase();
+        let event = NotificationEvent {
+            kind: "scanner_finding".to_owned(),
+            fingerprint: event_fingerprint(&format!("scanner|{}", finding.fingerprint)),
+            finding_id: finding.id.clone(),
+            advisory_id: finding
+                .rule_id
+                .clone()
+                .unwrap_or_else(|| finding.kind.clone()),
+            asset_alias: None,
+            priority_score: if finding.severity == Severity::Critical {
+                CRITICAL_PRIORITY
+            } else {
+                HIGH_PRIORITY
+            },
+            severity: severity.clone(),
+            title: format!("{} security observation", finding.scanner),
+            message: format!(
+                "{} reported a {} {} finding in {}.",
+                finding.scanner, severity, finding.kind, project_name
+            ),
+        };
+        if let Err(error) = service.publish(&event).await {
+            tracing::warn!(error = %notification_error(error), "scanner finding notification delivery failed");
         }
     }
 }

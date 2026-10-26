@@ -11,6 +11,20 @@ pub async fn list_findings(state: State<'_, AppState>) -> Result<Vec<Finding>, S
 }
 
 #[tauri::command]
+pub async fn list_scanner_findings(
+    state: State<'_, AppState>,
+) -> Result<Vec<ScannerFinding>, String> {
+    let mut findings = state
+        .database
+        .repository::<ScannerFinding>()
+        .list()
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
+    findings.sort_by_key(|finding| std::cmp::Reverse(finding.last_seen_at));
+    Ok(findings)
+}
+
+#[tauri::command]
 pub async fn list_findings_page(
     state: State<'_, AppState>,
     offset: u32,
@@ -118,12 +132,17 @@ pub async fn list_scan_runs(state: State<'_, AppState>) -> Result<Vec<ScanRun>, 
 }
 
 #[tauri::command]
-pub async fn list_audit_events(state: State<'_, AppState>) -> Result<Vec<AuditEvent>, String> {
+pub async fn list_audit_events(
+    state: State<'_, AppState>,
+    offset: u32,
+    limit: u32,
+) -> Result<Vec<AuditEvent>, String> {
     state
         .database
         .repository::<AuditEvent>()
-        .list()
+        .list_page(offset, limit)
         .await
+        .map(|page| page.items)
         .map_err(|error| opaque(error, "storage_unavailable"))
 }
 

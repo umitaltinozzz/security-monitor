@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use security_monitor_core::Advisory;
 use security_monitor_correlation::AliasMerger;
@@ -26,7 +26,7 @@ impl AdvisoryMerger {
         self.inner.extend(advisories);
     }
 
-    pub fn records(&self) -> &[Advisory] {
+    pub fn records(&self) -> Vec<Advisory> {
         self.inner.records()
     }
 
@@ -37,6 +37,15 @@ impl AdvisoryMerger {
     pub async fn persist(self, database: &Database) -> Result<Vec<Advisory>, ProviderError> {
         let repository = database.repository::<Advisory>();
         let existing = repository.list().await?;
+        let mut existing_by_alias = HashMap::<String, BTreeSet<String>>::new();
+        for old in &existing {
+            for alias in advisory_ids(old) {
+                existing_by_alias
+                    .entry(alias)
+                    .or_default()
+                    .insert(old.canonical_id.clone());
+            }
+        }
         let mut merger = AliasMerger::new(existing.clone());
         merger.extend(self.into_records());
         let records = merger.into_records();
@@ -47,14 +56,17 @@ impl AdvisoryMerger {
                 repository.create(record).await?;
             }
             let canonical_ids = advisory_ids(record);
-            for old in &existing {
-                if old.canonical_id != record.canonical_id
-                    && !advisory_ids(old).is_disjoint(&canonical_ids)
-                {
-                    database
-                        .rekey_advisory_findings(&old.canonical_id, &record.canonical_id)
-                        .await?;
-                }
+            let obsolete_ids = canonical_ids
+                .iter()
+                .filter_map(|alias| existing_by_alias.get(alias))
+                .flatten()
+                .filter(|old_id| old_id.as_str() != record.canonical_id)
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for old_id in obsolete_ids {
+                database
+                    .rekey_advisory_findings(&old_id, &record.canonical_id)
+                    .await?;
             }
         }
         Ok(records)

@@ -43,6 +43,7 @@ export function workspaceData(overrides: Partial<WorkspaceData> = {}): Workspace
     assets: [],
     links: [],
     findings: [],
+    scannerFindings: [],
     advisories: [],
     newsSignals: [],
     components: [],

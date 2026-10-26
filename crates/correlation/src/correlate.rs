@@ -202,7 +202,10 @@ fn purl_version_matches_component(component: &Component) -> bool {
     let Ok(purl) = GenericPurl::<String>::from_str(&component.purl) else {
         return false;
     };
-    match (purl.version(), component.version.trim()) {
+    match (
+        purl.version(),
+        component.version.as_deref().unwrap_or_default(),
+    ) {
         (Some(purl_version), component_version) => purl_version == component_version,
         (None, "") => true,
         (None, _) => false,
@@ -214,7 +217,7 @@ fn stable_component_key(
 ) -> (&str, &str, &str, &str, &str, &str, &str) {
     (
         context.component.purl.as_str(),
-        context.component.version.as_str(),
+        context.component.version.as_deref().unwrap_or_default(),
         context.instance.project_id.as_deref().unwrap_or_default(),
         context.instance.asset_id.as_deref().unwrap_or_default(),
         context.instance.service_id.as_deref().unwrap_or_default(),
@@ -379,8 +382,7 @@ fn inventory_for(context: &CorrelationComponent) -> Inventory {
             purl: context.component.purl.clone(),
             ecosystem: context.component.ecosystem.clone(),
             name: context.component.name.clone(),
-            version: (!context.component.version.trim().is_empty())
-                .then(|| context.component.version.clone()),
+            version: context.component.version.clone(),
             source_type: context.component.source_type.clone(),
             evidence_paths,
         }],

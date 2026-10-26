@@ -5,6 +5,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
+use tokio::time::{Instant, timeout_at};
 
 pub(super) async fn run_command(
     executable: &str,
@@ -72,6 +73,8 @@ pub(super) async fn capture_child(
     limit: Duration,
     max_output: usize,
 ) -> Result<CapturedProcess, RemediationError> {
+    let deadline = Instant::now() + limit;
+    let process_id = child.id();
     let stdout = child.stdout.take().ok_or(RemediationError::ProcessFailed)?;
     let stderr = child.stderr.take().ok_or(RemediationError::ProcessFailed)?;
     let total_bytes = Arc::new(AtomicUsize::new(0));
@@ -91,10 +94,10 @@ pub(super) async fn capture_child(
         truncated.clone(),
         limit_sender,
     );
-    let output_capture = tokio::spawn(async move {
+    let mut output_capture = tokio::spawn(async move {
         tokio::try_join!(stdout_reader, stderr_reader).map_err(|_| RemediationError::ProcessFailed)
     });
-    let status = match timeout(limit, async {
+    let status = match timeout_at(deadline, async {
         tokio::select! {
             status = child.wait() => status.map_err(|_| RemediationError::ProcessFailed),
             signal = limit_receiver.recv() => {
@@ -107,16 +110,30 @@ pub(super) async fn capture_child(
     })
     .await
     {
-        Ok(result) => result?,
+        Ok(Ok(status)) => status,
+        Ok(Err(error)) => {
+            output_capture.abort();
+            return Err(error);
+        }
         Err(_) => {
-            terminate_process_group(&mut child)?;
+            let termination = terminate_process_group(&mut child);
             let _ = child.wait().await;
+            output_capture.abort();
+            let _ = output_capture.await;
+            termination?;
             return Err(RemediationError::TimedOut);
         }
     };
-    let (stdout, stderr) = output_capture
-        .await
-        .map_err(|_| RemediationError::ProcessFailed)??;
+    let (stdout, stderr) = match timeout_at(deadline, &mut output_capture).await {
+        Ok(result) => result.map_err(|_| RemediationError::ProcessFailed)??,
+        Err(_) => {
+            let termination = process_id.map_or(Ok(()), terminate_process_group_id);
+            output_capture.abort();
+            let _ = output_capture.await;
+            termination?;
+            return Err(RemediationError::TimedOut);
+        }
+    };
     Ok(CapturedProcess {
         stdout,
         stderr,
@@ -199,6 +216,23 @@ fn terminate_process_group(child: &mut tokio::process::Child) -> Result<(), Reme
         child
             .start_kill()
             .map_err(|_| RemediationError::ProcessFailed)
+    }
+}
+
+fn terminate_process_group_id(process_id: u32) -> Result<(), RemediationError> {
+    #[cfg(unix)]
+    {
+        let result = unsafe { libc::kill(-(process_id as i32), libc::SIGKILL) };
+        if result == 0 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(RemediationError::ProcessFailed)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = process_id;
+        Ok(())
     }
 }
 

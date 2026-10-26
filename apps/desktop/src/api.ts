@@ -36,6 +36,7 @@ import type { MemoryKind } from "./generated/MemoryKind";
 import type { MemoryScope } from "./generated/MemoryScope";
 import type { ScanResult } from "./generated/ScanResult";
 import type { ScanRun } from "./generated/ScanRun";
+import type { ScannerFinding } from "./generated/ScannerFinding";
 import type { ScannerAvailability } from "./generated/ScannerAvailability";
 import type { SshHostSummary } from "./generated/SshHostSummary";
 import type { SshTargetInput } from "./generated/SshTargetInput";
@@ -52,6 +53,7 @@ export type WorkspaceData = {
   assets: Asset[];
   links: ProjectServerLink[];
   findings: Finding[];
+  scannerFindings: ScannerFinding[];
   advisories: Advisory[];
   newsSignals: NewsSignal[];
   components: Component[];
@@ -67,6 +69,7 @@ export const workspaceSections = [
   "assets",
   "links",
   "findings",
+  "scannerFindings",
   "advisories",
   "newsSignals",
   "components",
@@ -123,6 +126,7 @@ export const api = {
   cancelScan: (scanId: string) => invoke<boolean>("cancel_project_scan", { scanId }),
   scanResult: (scanId: string) => invoke<ScanResult | null>("get_scan_result", { scanId }),
   findings: () => invoke<Finding[]>("list_findings"),
+  scannerFindings: () => invoke<ScannerFinding[]>("list_scanner_findings"),
   findingsPage: (input: {
     offset: number;
     limit: number;
@@ -146,7 +150,7 @@ export const api = {
   instances: () => invoke<ComponentInstance[]>("list_component_instances"),
   evidence: () => invoke<FindingEvidence[]>("list_finding_evidence"),
   runs: () => invoke<ScanRun[]>("list_scan_runs"),
-  audit: () => invoke<AuditEvent[]>("list_audit_events"),
+  audit: (offset = 0, limit = 250) => invoke<AuditEvent[]>("list_audit_events", { offset, limit }),
   remediations: () => invoke<Remediation[]>("list_remediations"),
   remediationSandboxStatus: () => invoke<RemediationSandboxStatus>("remediation_sandbox_status"),
   mcpRemediationRequests: () => invoke<McpRemediationRequest[]>("list_mcp_remediation_requests"),
@@ -222,6 +226,7 @@ const workspaceLoaders: {
   assets: api.assets,
   links: api.projectServerLinks,
   findings: api.findings,
+  scannerFindings: api.scannerFindings,
   advisories: api.advisories,
   newsSignals: api.newsSignals,
   components: api.components,

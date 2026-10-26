@@ -10,7 +10,27 @@ use tempfile::TempDir;
 
 #[test]
 fn process_output_child_fixture() {
-    if std::env::var_os("SECMON_CAPTURE_CHILD_FIXTURE").is_none() {
+    let Some(mode) = std::env::var_os("SECMON_CAPTURE_CHILD_FIXTURE") else {
+        return;
+    };
+    if mode == "parent" {
+        let child = StdCommand::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::process_output_child_fixture",
+                "--nocapture",
+            ])
+            .env("SECMON_CAPTURE_CHILD_FIXTURE", "holder")
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        std::mem::forget(child);
+        return;
+    }
+    if mode == "holder" {
+        std::thread::sleep(Duration::from_secs(2));
         return;
     }
     let mut stdout = std::io::stdout().lock();
@@ -18,6 +38,29 @@ fn process_output_child_fixture() {
     stdout.write_all(&vec![b'x'; 2 * 1024 * 1024]).unwrap();
     stdout.flush().unwrap();
     std::thread::sleep(Duration::from_secs(20));
+}
+
+#[tokio::test]
+async fn capture_child_deadline_includes_pipe_readers_after_parent_exit() {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "tests::process_output_child_fixture",
+            "--nocapture",
+        ])
+        .env("SECMON_CAPTURE_CHILD_FIXTURE", "parent")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    process::configure_process_group(&mut command);
+    let child = command.spawn().unwrap();
+    let started = Instant::now();
+
+    let result = process::capture_child(child, Duration::from_millis(250), 8192).await;
+
+    assert!(matches!(result, Err(RemediationError::TimedOut)));
+    assert!(started.elapsed() < Duration::from_secs(3));
 }
 
 #[tokio::test]

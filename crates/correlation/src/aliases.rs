@@ -1,11 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Utc};
 use security_monitor_core::{Advisory, Severity};
 
 #[derive(Debug, Clone, Default)]
 pub struct AliasMerger {
-    records: Vec<Advisory>,
+    records: BTreeMap<String, Advisory>,
+    alias_index: HashMap<String, String>,
 }
 
 impl AliasMerger {
@@ -17,23 +18,26 @@ impl AliasMerger {
 
     pub fn merge(&mut self, incoming: Advisory) {
         let mut merged = incoming;
-        let mut index = 0;
-        while index < self.records.len() {
-            if aliases_of(&self.records[index]).is_disjoint(&aliases_of(&merged)) {
-                index += 1;
-                continue;
+        let matching_keys = aliases_of(&merged)
+            .into_iter()
+            .filter_map(|alias| self.alias_index.get(&alias).cloned())
+            .collect::<BTreeSet<_>>();
+        for key in matching_keys {
+            if let Some(existing) = self.records.remove(&key) {
+                for alias in aliases_of(&existing) {
+                    if self.alias_index.get(&alias) == Some(&key) {
+                        self.alias_index.remove(&alias);
+                    }
+                }
+                merged = merge_record(existing, merged);
             }
-            let existing = self.records.remove(index);
-            merged = merge_record(existing, merged);
-            index = 0;
         }
         normalize_record(&mut merged);
-        self.records.push(merged);
-        self.records.sort_by(|left, right| {
-            left.canonical_id
-                .cmp(&right.canonical_id)
-                .then_with(|| aliases_of(left).cmp(&aliases_of(right)))
-        });
+        let key = merged.canonical_id.to_ascii_uppercase();
+        for alias in aliases_of(&merged) {
+            self.alias_index.insert(alias, key.clone());
+        }
+        self.records.insert(key, merged);
     }
 
     pub fn extend(&mut self, advisories: impl IntoIterator<Item = Advisory>) {
@@ -52,13 +56,25 @@ impl AliasMerger {
         }
     }
 
-    pub fn records(&self) -> &[Advisory] {
-        &self.records
+    pub fn records(&self) -> Vec<Advisory> {
+        let mut records = self.records.values().cloned().collect::<Vec<_>>();
+        sort_records(&mut records);
+        records
     }
 
     pub fn into_records(self) -> Vec<Advisory> {
-        self.records
+        let mut records = self.records.into_values().collect::<Vec<_>>();
+        sort_records(&mut records);
+        records
     }
+}
+
+fn sort_records(records: &mut [Advisory]) {
+    records.sort_by(|left, right| {
+        left.canonical_id
+            .cmp(&right.canonical_id)
+            .then_with(|| aliases_of(left).cmp(&aliases_of(right)))
+    });
 }
 
 fn aliases_of(advisory: &Advisory) -> BTreeSet<String> {

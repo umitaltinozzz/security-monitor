@@ -235,8 +235,13 @@
     "snapshotCleanupWarning": "The server was removed, but its local inventory file could not be deleted."
   },
   "findings": {
-    "title": "Vulnerabilities",
-    "description": "Filter local findings by severity, status, and affected project.",
+    "title": "Findings",
+    "description": "Filter advisory findings and review normalized scanner observations.",
+    "scannerFindings": "Full scan observations",
+    "scannerFindingsDescription": "These are tool-reported results. Review their source and coverage before treating them as confirmed.",
+    "rule": "Rule or issue",
+    "location": "Location",
+    "lastSeen": "Last seen",
     "pagination": "Finding pages",
     "pageStatus": "Page {current} of {total} ({count} findings)",
     "previousPage": "Previous page",

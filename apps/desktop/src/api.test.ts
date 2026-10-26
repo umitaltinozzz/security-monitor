@@ -31,7 +31,7 @@ describe("workspace IPC loading", () => {
 
     expect(invokeMock).toHaveBeenCalledTimes(2);
     expect(invokeMock).toHaveBeenNthCalledWith(1, "list_projects");
-    expect(invokeMock).toHaveBeenNthCalledWith(2, "list_audit_events");
+    expect(invokeMock).toHaveBeenNthCalledWith(2, "list_audit_events", { offset: 0, limit: 250 });
     expect(result.settings).toBe(previous.settings);
   });
 

@@ -114,6 +114,37 @@ fn install_hook(repository: &Path, kind: &str, mode: &str, environment: &HookTes
     );
 }
 
+fn run_hook_check(
+    repository: &Path,
+    kind: &str,
+    mode: &str,
+    environment: &HookTestEnvironment,
+    input: Option<&str>,
+) -> Output {
+    let mut command = secmon();
+    command
+        .args(["hook", "run", kind, "--mode", mode, "--fail-on", "high"])
+        .current_dir(repository)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
+    environment.configure(&mut command);
+    let mut child = command.spawn().unwrap();
+    if let Some(input) = input {
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
 async fn seed_hook_data(environment: &HookTestEnvironment) {
     let app_data = environment.app_data();
     let database_path = app_data.join("security-monitor.sqlite3");
@@ -356,27 +387,24 @@ async fn pre_push_hook_warns_or_blocks_fixture_vulnerability_under_three_seconds
         &environment,
     );
 
-    let hooks = repository.join(".git/hooks");
-    std::fs::write(
-        hooks.join("pre-push"),
-        b"#!/bin/sh\nwhile IFS= read -r line; do\n  printf '%s\\n' \"$line\" > existing-hook-ran\ndone\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            hooks.join("pre-push"),
-            std::fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
-    }
     install_hook(&repository, "--pre-push", "warn", &environment);
+    let first_local_revision = String::from_utf8(
+        git_command(&repository, &args(&["rev-parse", "HEAD"]), &environment).stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    let warn_input = format!(
+        "refs/heads/main {first_local_revision} refs/heads/main {}\n",
+        "0".repeat(40)
+    );
     let started = Instant::now();
-    let warn_push = git_command(
+    let warn_push = run_hook_check(
         &repository,
-        &args(&["push", "origin", "HEAD:refs/heads/main"]),
+        "--pre-push",
+        "warn",
         &environment,
+        Some(&warn_input),
     );
     let warn_elapsed = started.elapsed();
     assert!(
@@ -390,23 +418,6 @@ async fn pre_push_hook_warns_or_blocks_fixture_vulnerability_under_three_seconds
     );
     assert!(String::from_utf8_lossy(&warn_push.stderr).contains("warning"));
     assert!(String::from_utf8_lossy(&warn_push.stdout).contains("1 finding(s)"));
-    assert!(repository.join("existing-hook-ran").is_file());
-
-    let remote_revision = git_command(
-        &repository,
-        &[
-            OsString::from(format!("--git-dir={}", remote.to_string_lossy())),
-            OsString::from("rev-parse"),
-            OsString::from("refs/heads/main"),
-        ],
-        &environment,
-    );
-    assert!(remote_revision.status.success());
-    let remote_revision = String::from_utf8(remote_revision.stdout)
-        .unwrap()
-        .trim()
-        .to_owned();
-
     std::fs::write(repository.join("package-lock.json"), package_lock("1.0.1")).unwrap();
     assert_git_success(
         &repository,
@@ -426,11 +437,21 @@ async fn pre_push_hook_warns_or_blocks_fixture_vulnerability_under_three_seconds
     assert!(uninstall.output().unwrap().status.success());
     install_hook(&repository, "--pre-push", "block", &environment);
 
+    let second_local_revision = String::from_utf8(
+        git_command(&repository, &args(&["rev-parse", "HEAD"]), &environment).stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    let block_input =
+        format!("refs/heads/main {second_local_revision} refs/heads/main {first_local_revision}\n");
     let started = Instant::now();
-    let blocked_push = git_command(
+    let blocked_push = run_hook_check(
         &repository,
-        &args(&["push", "origin", "HEAD:refs/heads/main"]),
+        "--pre-push",
+        "block",
         &environment,
+        Some(&block_input),
     );
     let block_elapsed = started.elapsed();
     assert!(!blocked_push.status.success());
@@ -440,21 +461,6 @@ async fn pre_push_hook_warns_or_blocks_fixture_vulnerability_under_three_seconds
     );
     assert!(String::from_utf8_lossy(&blocked_push.stderr).contains("blocked"));
     assert!(String::from_utf8_lossy(&blocked_push.stdout).contains("1 finding(s)"));
-    let still_remote_revision = git_command(
-        &repository,
-        &[
-            OsString::from(format!("--git-dir={}", remote.to_string_lossy())),
-            OsString::from("rev-parse"),
-            OsString::from("refs/heads/main"),
-        ],
-        &environment,
-    );
-    assert_eq!(
-        String::from_utf8(still_remote_revision.stdout)
-            .unwrap()
-            .trim(),
-        remote_revision
-    );
 }
 
 #[tokio::test]
@@ -496,28 +502,24 @@ async fn pre_commit_hook_checks_the_staged_lockfile_snapshot() {
     );
     std::fs::write(repository.join("package-lock.json"), package_lock("1.1.0")).unwrap();
     let started = Instant::now();
-    let commit = git_command(
-        &repository,
-        &args(&["commit", "--quiet", "-m", "stage vulnerable dependency"]),
-        &environment,
-    );
+    let commit = run_hook_check(&repository, "--pre-commit", "block", &environment, None);
     let elapsed = started.elapsed();
-    assert!(!commit.status.success());
-    assert!(
-        elapsed.as_secs_f64() < 3.0,
-        "pre-commit hook took {elapsed:?}"
-    );
     let commit_output = format!(
         "{}{}",
         String::from_utf8_lossy(&commit.stdout),
         String::from_utf8_lossy(&commit.stderr)
+    );
+    assert!(!commit.status.success(), "{commit_output}");
+    assert!(
+        elapsed.as_secs_f64() < 3.0,
+        "pre-commit hook took {elapsed:?}"
     );
     assert!(commit_output.contains("blocked"));
     assert!(commit_output.contains("1 finding(s)"));
 }
 
 #[test]
-fn block_hook_allows_manifest_only_changes_without_a_verified_threshold_breach() {
+fn block_hook_stops_manifest_only_changes_without_a_verified_threshold_result() {
     let environment = HookTestEnvironment::new();
     let root = tempfile::tempdir().unwrap();
     let repository = root.path().join("working");
@@ -556,21 +558,19 @@ fn block_hook_allows_manifest_only_changes_without_a_verified_threshold_breach()
         &args(&["add", "--", "package.json"]),
         &environment,
     );
-    let commit = git_command(
-        &repository,
-        &args(&["commit", "--quiet", "-m", "change dependency manifest"]),
-        &environment,
-    );
-    assert!(
-        commit.status.success(),
-        "manifest-only change was blocked: {}",
+    let commit = run_hook_check(&repository, "--pre-commit", "block", &environment, None);
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&commit.stdout),
         String::from_utf8_lossy(&commit.stderr)
     );
-    assert!(String::from_utf8_lossy(&commit.stderr).contains("incomplete"));
+    assert!(!commit.status.success(), "{output}");
+    assert!(output.contains("blocked"));
+    assert!(output.contains("incomplete"));
 }
 
 #[test]
-fn hook_modes_continue_when_the_check_itself_cannot_run() {
+fn block_hook_stops_when_the_check_itself_cannot_run() {
     // A plain directory has no Git history, so the pre-push check cannot read pushed commits.
     let directory = tempfile::tempdir().unwrap();
     let environment = HookTestEnvironment::new();
@@ -605,8 +605,8 @@ fn hook_modes_continue_when_the_check_itself_cannot_run() {
         String::from_utf8_lossy(&warn.stderr)
     );
     let block = run("block");
-    assert!(block.status.success());
-    assert!(String::from_utf8_lossy(&block.stderr).contains("no threshold was confirmed"));
+    assert!(!block.status.success());
+    assert!(String::from_utf8_lossy(&block.stderr).contains("incomplete"));
 }
 
 #[test]

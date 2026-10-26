@@ -235,8 +235,13 @@
     "snapshotCleanupWarning": "Sunucu kaldırıldı ancak yerel envanter dosyası silinemedi."
   },
   "findings": {
-    "title": "Güvenlik açıkları",
-    "description": "Yerel bulguları önem, durum ve etkilenen projeye göre filtreleyin.",
+    "title": "Bulgular",
+    "description": "Duyuru bulgularını filtreleyin ve normalleştirilmiş tarayıcı gözlemlerini inceleyin.",
+    "scannerFindings": "Tam tarama gözlemleri",
+    "scannerFindingsDescription": "Bunlar araçların bildirdiği sonuçlardır. Doğrulanmış kabul etmeden önce kaynağı ve kapsamı inceleyin.",
+    "rule": "Kural veya sorun",
+    "location": "Konum",
+    "lastSeen": "Son görülme",
     "pagination": "Bulgu sayfaları",
     "pageStatus": "Sayfa {current}/{total} ({count} bulgu)",
     "previousPage": "Önceki sayfa",

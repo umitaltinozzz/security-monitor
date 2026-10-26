@@ -1,6 +1,9 @@
 use super::*;
 use crate::deploy::unknown_identity;
 
+const MAX_CONTAINERS: usize = 4096;
+const DOCKER_INSPECT_BATCH_SIZE: usize = 128;
+
 pub(super) async fn collect_containers(
     docker_cli_approved: bool,
 ) -> (
@@ -35,11 +38,10 @@ pub(super) async fn collect_containers(
             );
         }
     };
-    let mut containers = Vec::new();
-    let mut deployments = BTreeMap::new();
+    let mut candidates = Vec::new();
     let mut partial = false;
     for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if containers.len() >= 4096 {
+        if candidates.len() >= MAX_CONTAINERS {
             partial = true;
             break;
         }
@@ -65,31 +67,58 @@ pub(super) async fn collect_containers(
             partial = true;
             continue;
         }
-        match run_allowlisted(&HostCommand::DockerInspect {
-            container_id: id.to_owned(),
-        })
-        .await
-        {
-            Ok(inspect) => match parse_docker_inspect(&inspect.stdout, id, name, image) {
-                Some((container, deployment)) => {
-                    if let Some(deployment) = deployment {
-                        deployments.insert(container.id.clone(), deployment);
+        candidates.push((id.to_owned(), name.to_owned(), image.to_owned()));
+    }
+    let mut deployments = BTreeMap::new();
+    let mut containers = Vec::with_capacity(candidates.len());
+    for batch in candidates.chunks(DOCKER_INSPECT_BATCH_SIZE) {
+        let ids = batch
+            .iter()
+            .map(|(id, _, _)| id.clone())
+            .collect::<Vec<_>>();
+        match run_allowlisted(&HostCommand::DockerInspect { container_ids: ids }).await {
+            Ok(inspect) => {
+                let mut inspected = BTreeSet::new();
+                for line in String::from_utf8_lossy(&inspect.stdout).lines() {
+                    let returned_id = line.split('\t').next().unwrap_or_default().trim();
+                    let Some((id, name, image)) = batch
+                        .iter()
+                        .find(|(id, _, _)| id.eq_ignore_ascii_case(returned_id))
+                    else {
+                        partial = true;
+                        continue;
+                    };
+                    if !inspected.insert(id.to_ascii_lowercase()) {
+                        partial = true;
+                        continue;
                     }
-                    containers.push(container);
+                    match parse_docker_inspect(line.as_bytes(), id, name, image) {
+                        Some((container, deployment)) => {
+                            if let Some(deployment) = deployment {
+                                deployments.insert(container.id.clone(), deployment);
+                            }
+                            containers.push(container);
+                        }
+                        None => {
+                            partial = true;
+                            containers.push(fallback_container(id, name, image));
+                        }
+                    }
                 }
-                None => partial = true,
-            },
+                for (id, name, image) in batch {
+                    if !inspected.contains(&id.to_ascii_lowercase()) {
+                        partial = true;
+                        containers.push(fallback_container(id, name, image));
+                    }
+                }
+            }
             Err(_) => {
                 partial = true;
-                containers.push(ContainerRecord {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                    image: image.to_owned(),
-                    image_digest: None,
-                    oci_revision: None,
-                    oci_version: None,
-                    oci_source: None,
-                });
+                containers.extend(
+                    batch
+                        .iter()
+                        .map(|(id, name, image)| fallback_container(id, name, image)),
+                );
             }
         }
     }
@@ -111,13 +140,27 @@ pub(super) async fn collect_containers(
     )
 }
 
+fn fallback_container(id: &str, name: &str, image: &str) -> ContainerRecord {
+    ContainerRecord {
+        id: id.to_owned(),
+        name: name.to_owned(),
+        image: image.to_owned(),
+        image_digest: None,
+        oci_revision: None,
+        oci_version: None,
+        oci_source: None,
+    }
+}
+
 pub(crate) fn parse_docker_inspect(
     output: &[u8],
     fallback_id: &str,
     fallback_name: &str,
     fallback_image: &str,
 ) -> Option<(ContainerRecord, Option<DeploymentIdentity>)> {
-    let line = std::str::from_utf8(output).ok()?.trim();
+    let line = std::str::from_utf8(output)
+        .ok()?
+        .trim_end_matches(['\r', '\n']);
     let mut fields = line.split('\t');
     let id = fields.next()?.trim().trim_start_matches('/');
     let name = fields.next()?.trim().trim_start_matches('/');

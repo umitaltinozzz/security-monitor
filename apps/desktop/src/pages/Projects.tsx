@@ -255,7 +255,7 @@ export function Projects() {
                       {projectComponents.slice(0, 8).map((component) => (
                         <li key={component.id}>
                           <span>
-                            {component.name}@{component.version}
+                            {component.name}@{component.version ?? t("common.unverified")}
                           </span>
                           <small>
                             {t(`ecosystems.${component.ecosystem}`) ===

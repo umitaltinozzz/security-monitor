@@ -29,6 +29,11 @@ struct DeploymentFile {
     built_at: Option<DateTime<Utc>>,
 }
 
+struct DeploymentEnvironment {
+    configured: bool,
+    identity: Option<DeploymentIdentity>,
+}
+
 pub fn collect_deployments(snapshot: &mut ProcessSnapshot, allowed_roots: &[PathBuf]) -> bool {
     let mut any_unknown = false;
     for service in &mut snapshot.services {
@@ -50,9 +55,12 @@ pub fn collect_deployments(snapshot: &mut ProcessSnapshot, allowed_roots: &[Path
             .and_then(process_working_directory)
             .filter(|directory| allowed_roots.iter().any(|root| directory.starts_with(root)));
         let system_configured = has_system_deployment_config(&service.name);
-        let environment_configured = process
+        let environment = process
             .map(|process| process.pid)
-            .is_some_and(has_deployment_environment);
+            .and_then(read_deployment_environment);
+        let environment_configured = environment
+            .as_ref()
+            .is_some_and(|observation| observation.configured);
         if !deployment_is_configured(
             app_directory.is_some(),
             system_configured,
@@ -66,9 +74,9 @@ pub fn collect_deployments(snapshot: &mut ProcessSnapshot, allowed_roots: &[Path
             .and_then(read_application_deployment)
             .or_else(|| read_system_deployment(&service.name))
             .or_else(|| {
-                process
-                    .map(|process| process.pid)
-                    .and_then(read_deployment_environment)
+                environment
+                    .as_ref()
+                    .and_then(|value| value.identity.clone())
             })
             .or_else(|| app_directory.as_deref().and_then(read_git_head));
         if deployment.is_none() {
@@ -128,24 +136,6 @@ fn has_system_deployment_config(service_name: &str) -> bool {
     let path = Path::new(SYSTEM_DEPLOYMENTS).join(format!("{service_name}.json"));
     fs::symlink_metadata(path)
         .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
-}
-
-fn has_deployment_environment(pid: u32) -> bool {
-    read_bounded_file(
-        &PathBuf::from(format!("/proc/{pid}/environ")),
-        MAX_ENV_BYTES,
-    )
-    .is_some_and(|data| {
-        data.split(|byte| *byte == 0).any(|entry| {
-            let Some(separator) = entry.iter().position(|byte| *byte == b'=') else {
-                return false;
-            };
-            matches!(
-                &entry[..separator],
-                b"SECMON_COMMIT_SHA" | b"SOURCE_COMMIT" | b"GIT_COMMIT"
-            )
-        })
-    })
 }
 
 fn deployment_is_configured(
@@ -215,34 +205,47 @@ fn normalize_deployment(
     })
 }
 
-fn read_deployment_environment(pid: u32) -> Option<DeploymentIdentity> {
+fn read_deployment_environment(pid: u32) -> Option<DeploymentEnvironment> {
     let data = read_bounded_file(
         &PathBuf::from(format!("/proc/{pid}/environ")),
         MAX_ENV_BYTES,
     )?;
-    let commit = data
-        .split(|byte| *byte == 0)
-        .filter_map(|entry| {
-            let separator = entry.iter().position(|byte| *byte == b'=')?;
-            Some((&entry[..separator], &entry[separator + 1..]))
-        })
-        .find_map(|(name, value)| {
-            matches!(
-                name,
-                b"SECMON_COMMIT_SHA" | b"SOURCE_COMMIT" | b"GIT_COMMIT"
-            )
-            .then(|| std::str::from_utf8(value).ok().and_then(normalize_commit))
-            .flatten()
-        });
-    commit.map(|commit_sha| DeploymentIdentity {
-        commit_sha: Some(commit_sha),
-        repository: None,
-        release_id: None,
-        image_digest: None,
-        built_at: None,
-        source: DeploymentSource::ServiceEnvironment,
-        integrity_verified: false,
-    })
+    Some(parse_deployment_environment(&data))
+}
+
+fn parse_deployment_environment(data: &[u8]) -> DeploymentEnvironment {
+    let mut configured = false;
+    let mut commit = None;
+    for entry in data.split(|byte| *byte == 0) {
+        let Some(separator) = entry.iter().position(|byte| *byte == b'=') else {
+            continue;
+        };
+        let name = &entry[..separator];
+        if !matches!(
+            name,
+            b"SECMON_COMMIT_SHA" | b"SOURCE_COMMIT" | b"GIT_COMMIT"
+        ) {
+            continue;
+        }
+        configured = true;
+        if commit.is_none() {
+            commit = std::str::from_utf8(&entry[separator + 1..])
+                .ok()
+                .and_then(normalize_commit);
+        }
+    }
+    DeploymentEnvironment {
+        configured,
+        identity: commit.map(|commit_sha| DeploymentIdentity {
+            commit_sha: Some(commit_sha),
+            repository: None,
+            release_id: None,
+            image_digest: None,
+            built_at: None,
+            source: DeploymentSource::ServiceEnvironment,
+            integrity_verified: false,
+        }),
+    }
 }
 
 fn read_git_head(app_directory: &Path) -> Option<DeploymentIdentity> {
@@ -363,7 +366,7 @@ fn validate_digest(value: &str) -> Option<String> {
 mod tests {
     use super::{
         DeploymentFile, DeploymentSource, deployment_is_configured, normalize_commit,
-        normalize_deployment, validate_repository,
+        normalize_deployment, parse_deployment_environment, validate_repository,
     };
 
     #[test]
@@ -395,5 +398,21 @@ mod tests {
         assert!(deployment_is_configured(true, false, false));
         assert!(deployment_is_configured(false, true, false));
         assert!(deployment_is_configured(false, false, true));
+    }
+
+    #[test]
+    fn deployment_environment_discards_unapproved_values_after_one_parse() {
+        let observation = parse_deployment_environment(
+            b"API_TOKEN=must-not-persist\0SECMON_COMMIT_SHA=ABCDEF0123456\0",
+        );
+        assert!(observation.configured);
+        let identity = observation.identity.expect("valid commit identity");
+        assert_eq!(identity.commit_sha.as_deref(), Some("abcdef0123456"));
+        assert_eq!(identity.repository, None);
+        assert_eq!(identity.release_id, None);
+
+        let invalid = parse_deployment_environment(b"GIT_COMMIT=not-a-commit\0");
+        assert!(invalid.configured);
+        assert!(invalid.identity.is_none());
     }
 }

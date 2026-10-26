@@ -100,7 +100,7 @@ async fn seeded(status: FindingStatus) -> (Database, Project) {
         purl: "pkg:npm/lodash@4.17.20".to_owned(),
         ecosystem: "npm".to_owned(),
         name: "lodash".to_owned(),
-        version: "4.17.20".to_owned(),
+        version: Some("4.17.20".to_owned()),
         source_type: "lockfile".to_owned(),
         created_at: now(),
     };
@@ -118,6 +118,7 @@ async fn seeded(status: FindingStatus) -> (Database, Project) {
         deployment_id: None,
         evidence: Vec::new(),
         created_at: now(),
+        last_seen_at: Some(now()),
     };
     database
         .repository::<ComponentInstance>()

@@ -98,4 +98,42 @@ describe("Findings filters", () => {
       query: "",
     });
   });
+
+  it("shows persisted full scan observations with their source and location", async () => {
+    apiMock.findingsPage.mockResolvedValue({ findings: [], total_count: 0, offset: 0, limit: 25 });
+    renderWithWorkspace(
+      <Findings />,
+      workspaceData({
+        scannerFindings: [
+          {
+            id: "scanner-finding-1",
+            project_id: "project-1",
+            scan_run_id: "scan-1",
+            scanner: "semgrep",
+            mode: "code",
+            kind: "code",
+            rule_id: "python.lang.security.audit.eval-detected",
+            aliases: [],
+            package_name: null,
+            package_ecosystem: null,
+            package_version: null,
+            severity: "high",
+            title: "Use of eval",
+            fixed_version: null,
+            path: "src/app.py",
+            line_start: 8,
+            line_end: 8,
+            fingerprint: "b".repeat(64),
+            created_at: "2026-10-26T10:00:00Z",
+            last_seen_at: "2026-10-26T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    expect(await screen.findByText("findings.scannerFindings")).toBeVisible();
+    expect(screen.getByText("Use of eval")).toBeVisible();
+    expect(screen.getByText("semgrep · code")).toBeVisible();
+    expect(screen.getByText("src/app.py:8")).toBeVisible();
+  });
 });

@@ -14,6 +14,7 @@ vi.mock("./api", () => ({
     "assets",
     "links",
     "findings",
+    "scannerFindings",
     "advisories",
     "newsSignals",
     "components",
@@ -40,6 +41,7 @@ describe("Security Monitor first-run experience", () => {
       projects: [],
       assets: [],
       findings: [],
+      scannerFindings: [],
       advisories: [],
       newsSignals: [],
       components: [],
@@ -77,6 +79,7 @@ describe("Security Monitor first-run experience", () => {
       projects: [],
       assets: [],
       findings: [],
+      scannerFindings: [],
       advisories: [],
       newsSignals: [
         {
@@ -122,6 +125,7 @@ describe("Security Monitor first-run experience", () => {
       projects: [],
       assets: [],
       findings: [],
+      scannerFindings: [],
       advisories: [],
       newsSignals: [],
       components: [],
