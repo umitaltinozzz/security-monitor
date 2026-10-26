@@ -13,4 +13,5 @@ export {
 } from "./Shared";
 export { ServerProjectLinks } from "./ServerProjectLinks";
 export { ServerUnpairControl } from "./ServerUnpairControl";
+export { ScannerFindingReviewDialog } from "./ScannerFindingReviewDialog";
 export { StatusDialog } from "./StatusDialog";

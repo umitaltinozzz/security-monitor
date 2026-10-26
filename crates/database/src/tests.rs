@@ -13,7 +13,7 @@ use crate::{Database, DatabaseError, Entity, FindingPageFilter, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
-    let migrations: [&[u8]; 16] = [
+    let migrations: [&[u8]; 17] = [
         include_bytes!("../migrations/0001_initial.sql"),
         include_bytes!("../migrations/0002_advisory_metadata.sql"),
         include_bytes!("../migrations/0003_finding_disposition.sql"),
@@ -30,6 +30,7 @@ fn migration_sources_use_platform_independent_lf_line_endings() {
         include_bytes!("../migrations/0014_nullable_component_version.sql"),
         include_bytes!("../migrations/0015_scanner_findings.sql"),
         include_bytes!("../migrations/0016_audit_event_lookup_index.sql"),
+        include_bytes!("../migrations/0017_scanner_finding_review.sql"),
     ];
 
     assert!(
@@ -70,7 +71,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 16);
+    assert_eq!(database.schema_version().await.unwrap(), 17);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -292,11 +293,24 @@ async fn scanner_findings_are_persisted_and_keep_first_seen_across_scans() {
         line_start: Some(10),
         line_end: Some(11),
         fingerprint: "a".repeat(64),
+        status: security_monitor_core::ScannerFindingStatus::NeedsReview,
+        review_reason: None,
+        reviewed_at: None,
         created_at: first_seen,
         last_seen_at: first_seen,
     };
     database
         .persist_scan_run_results(&first_run, std::slice::from_ref(&first_finding))
+        .await
+        .unwrap();
+
+    let mut reviewed_finding = first_finding.clone();
+    reviewed_finding.status = security_monitor_core::ScannerFindingStatus::Confirmed;
+    reviewed_finding.review_reason = Some("Reviewed against the fixture source".to_owned());
+    reviewed_finding.reviewed_at = Some(first_seen + Duration::seconds(5));
+    database
+        .repository::<ScannerFinding>()
+        .update(&reviewed_finding)
         .await
         .unwrap();
 
@@ -327,6 +341,15 @@ async fn scanner_findings_are_persisted_and_keep_first_seen_across_scans() {
     assert_eq!(stored.created_at, first_seen);
     assert_eq!(stored.last_seen_at, last_seen);
     assert_eq!(stored.scan_run_id, second_run.id);
+    assert_eq!(
+        stored.status,
+        security_monitor_core::ScannerFindingStatus::Confirmed
+    );
+    assert_eq!(
+        stored.review_reason.as_deref(),
+        Some("Reviewed against the fixture source")
+    );
+    assert_eq!(stored.reviewed_at, reviewed_finding.reviewed_at);
     let foreign_key_violations = sqlx::query("PRAGMA foreign_key_check")
         .fetch_all(&database.pool)
         .await
@@ -669,7 +692,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 16);
+    assert_eq!(readonly.schema_version().await.unwrap(), 17);
     assert_eq!(
         readonly
             .repository::<Project>()

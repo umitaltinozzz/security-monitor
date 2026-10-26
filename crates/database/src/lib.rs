@@ -4,7 +4,8 @@ use security_monitor_core::{
     Advisory, AiDataTransferApproval, AiProvider, AiRun, Asset, AuditEvent, Component,
     ComponentInstance, Deployment, Finding, FindingEvidence, Memory, NewsSignal,
     NotificationChannel, NotificationDeliveryState, ProductionStatus, Project,
-    ProjectScanCheckpoint, ProjectServerLink, Remediation, ScanRun, ScannerFinding, Service,
+    ProjectScanCheckpoint, ProjectServerLink, Remediation, ScanRun, ScannerFinding,
+    ScannerFindingStatus, Service,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -213,6 +214,9 @@ impl Database {
                 let existing: ScannerFinding = decode_record(existing_json)?;
                 let mut updated = finding.clone();
                 updated.created_at = existing.created_at;
+                updated.status = existing.status;
+                updated.review_reason = existing.review_reason;
+                updated.reviewed_at = existing.reviewed_at;
                 update_in_transaction(&mut transaction, &updated).await?;
             } else {
                 insert_in_transaction(&mut transaction, finding).await?;
@@ -1348,6 +1352,9 @@ impl Entity for ScannerFinding {
         ("line_start", "$.line_start"),
         ("line_end", "$.line_end"),
         ("fingerprint", "$.fingerprint"),
+        ("review_status", "$.status"),
+        ("review_reason", "$.review_reason"),
+        ("reviewed_at", "$.reviewed_at"),
         ("created_at", "$.created_at"),
         ("last_seen_at", "$.last_seen_at"),
     ];
@@ -1368,11 +1375,23 @@ impl Entity for ScannerFinding {
                 .fingerprint
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit());
+        let review_is_consistent = match self.status {
+            ScannerFindingStatus::NeedsReview => {
+                self.review_reason.is_none() && self.reviewed_at.is_none()
+            }
+            _ => {
+                self.review_reason
+                    .as_deref()
+                    .is_some_and(|reason| !reason.trim().is_empty() && reason.len() <= 1000)
+                    && self.reviewed_at.is_some()
+            }
+        };
         if self.id.is_empty()
             || self.project_id.is_empty()
             || self.scan_run_id.is_empty()
             || !path_is_safe
             || !fingerprint_is_hex
+            || !review_is_consistent
             || self
                 .line_start
                 .zip(self.line_end)

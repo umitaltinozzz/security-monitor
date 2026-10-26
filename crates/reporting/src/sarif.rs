@@ -99,7 +99,8 @@ pub(super) fn sarif_report(snapshot: &ReportSnapshot) -> Value {
                 .or(finding.rule_id.as_deref()).unwrap_or(&finding.kind)},
             "partialFingerprints":{"securityMonitorFindingId":finding.id},
             "properties":{"scanner":finding.scanner,"mode":finding.mode,
-                "kind":finding.kind,"last_seen_at":finding.last_seen_at}
+                "kind":finding.kind,"last_seen_at":finding.last_seen_at,
+                "review_status":finding.status,"reviewed_at":finding.reviewed_at}
         });
         if let Some(path) = finding.path.as_deref().and_then(relative_evidence_path) {
             let mut physical_location = json!({"artifactLocation":{"uri":path}});

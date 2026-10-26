@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const apiMock = vi.hoisted(() => ({ findingsPage: vi.fn() }));
+const apiMock = vi.hoisted(() => ({
+  findingsPage: vi.fn(),
+  setScannerFindingReview: vi.fn(),
+}));
 
 vi.mock("../api", () => ({ api: apiMock }));
 
@@ -13,6 +16,7 @@ describe("Findings filters", () => {
 
   beforeEach(() => {
     apiMock.findingsPage.mockReset();
+    apiMock.setScannerFindingReview.mockReset();
   });
 
   it("requests filtered pages by severity and advisory text", async () => {
@@ -124,6 +128,9 @@ describe("Findings filters", () => {
             line_start: 8,
             line_end: 8,
             fingerprint: "b".repeat(64),
+            status: "needs_review",
+            review_reason: null,
+            reviewed_at: null,
             created_at: "2026-10-26T10:00:00Z",
             last_seen_at: "2026-10-26T10:00:00Z",
           },
@@ -135,5 +142,67 @@ describe("Findings filters", () => {
     expect(screen.getByText("Use of eval")).toBeVisible();
     expect(screen.getByText("semgrep · code")).toBeVisible();
     expect(screen.getByText("src/app.py:8")).toBeVisible();
+    expect(screen.getByRole("row", { name: /Use of eval/ })).toHaveTextContent(
+      "findings.scannerStatus.needs_review",
+    );
+    fireEvent.change(screen.getByLabelText("findings.scannerReviewStatus"), {
+      target: { value: "confirmed" },
+    });
+    expect(screen.getByText("findings.scannerNoResults")).toBeVisible();
+  });
+
+  it("lets the user review a scanner observation with an auditable reason", async () => {
+    apiMock.findingsPage.mockResolvedValue({ findings: [], total_count: 0, offset: 0, limit: 25 });
+    apiMock.setScannerFindingReview.mockResolvedValue({});
+    renderWithWorkspace(
+      <Findings />,
+      workspaceData({
+        scannerFindings: [
+          {
+            id: "scanner-finding-2",
+            project_id: "project-1",
+            scan_run_id: "scan-2",
+            scanner: "semgrep",
+            mode: "code",
+            kind: "code",
+            rule_id: "fixture.rule",
+            aliases: [],
+            package_name: null,
+            package_ecosystem: null,
+            package_version: null,
+            severity: "medium",
+            title: "Fixture observation",
+            fixed_version: null,
+            path: "src/lib.rs",
+            line_start: 12,
+            line_end: 12,
+            fingerprint: "c".repeat(64),
+            status: "needs_review",
+            review_reason: null,
+            reviewed_at: null,
+            created_at: "2026-10-26T10:00:00Z",
+            last_seen_at: "2026-10-26T10:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "actions.review" }));
+    fireEvent.change(
+      within(screen.getByRole("dialog")).getByLabelText("findings.scannerReviewStatus"),
+      { target: { value: "false_positive" } },
+    );
+    fireEvent.change(screen.getByLabelText("findings.scannerReviewReason"), {
+      target: { value: "Reviewed the source and confirmed this rule does not apply." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "actions.save" }));
+
+    await waitFor(() => {
+      expect(apiMock.setScannerFindingReview).toHaveBeenCalledWith({
+        finding_id: "scanner-finding-2",
+        status: "false_positive",
+        reason: "Reviewed the source and confirmed this rule does not apply.",
+      });
+    });
   });
 });

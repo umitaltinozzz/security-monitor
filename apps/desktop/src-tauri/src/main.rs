@@ -168,6 +168,7 @@ fn main() {
             ipc::scan::get_scan_result,
             ipc::findings::list_findings,
             ipc::findings::list_scanner_findings,
+            ipc::findings::set_scanner_finding_review,
             ipc::findings::list_findings_page,
             ipc::memory::list_memories,
             ipc::memory::create_memory,

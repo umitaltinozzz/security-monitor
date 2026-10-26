@@ -832,6 +832,9 @@ fn normalized_scanner_finding(
         line_start: finding.line_start,
         line_end: finding.line_end,
         fingerprint,
+        status: security_monitor_core::ScannerFindingStatus::NeedsReview,
+        review_reason: None,
+        reviewed_at: None,
         created_at: observed_at,
         last_seen_at: observed_at,
     }

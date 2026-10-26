@@ -168,6 +168,9 @@ fn normalized_scanner_observations_are_in_json_and_sarif_reports() {
         line_start: Some(8),
         line_end: Some(8),
         fingerprint: "b".repeat(64),
+        status: security_monitor_core::ScannerFindingStatus::NeedsReview,
+        review_reason: None,
+        reviewed_at: None,
         created_at: snapshot.generated_at,
         last_seen_at: snapshot.generated_at,
     });
@@ -179,12 +182,28 @@ fn normalized_scanner_observations_are_in_json_and_sarif_reports() {
             .and_then(Value::as_str),
         Some("python.lang.security.audit.eval-detected")
     );
+    assert_eq!(
+        json.pointer("/scanner_findings/0/review_status")
+            .and_then(Value::as_str),
+        Some("needs_review")
+    );
     let sarif: Value =
         serde_json::from_str(&render(&snapshot, ReportFormat::Sarif).unwrap()).unwrap();
     let results = sarif
         .pointer("/runs/0/results")
         .and_then(Value::as_array)
         .unwrap();
+    assert_eq!(
+        results
+            .iter()
+            .find(
+                |item| item.pointer("/partialFingerprints/securityMonitorFindingId")
+                    == Some(&Value::String("scanner-finding-1".to_owned()))
+            )
+            .and_then(|item| item.pointer("/properties/review_status"))
+            .and_then(Value::as_str),
+        Some("needs_review")
+    );
     assert!(results.iter().any(|result| {
         result
             .pointer("/locations/0/physicalLocation/artifactLocation/uri")

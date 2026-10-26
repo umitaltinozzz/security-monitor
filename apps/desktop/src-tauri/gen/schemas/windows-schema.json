@@ -477,6 +477,12 @@
           "markdownDescription": "Enables the set_project_ai_providers command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_scanner_finding_review command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-scanner-finding-review",
+          "markdownDescription": "Enables the set_scanner_finding_review command without any pre-configured scope."
+        },
+        {
           "description": "Enables the start_project_scan command without any pre-configured scope.",
           "type": "string",
           "const": "allow-start-project-scan",
@@ -805,6 +811,12 @@
           "type": "string",
           "const": "deny-set-project-ai-providers",
           "markdownDescription": "Denies the set_project_ai_providers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_scanner_finding_review command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-scanner-finding-review",
+          "markdownDescription": "Denies the set_scanner_finding_review command without any pre-configured scope."
         },
         {
           "description": "Denies the start_project_scan command without any pre-configured scope.",

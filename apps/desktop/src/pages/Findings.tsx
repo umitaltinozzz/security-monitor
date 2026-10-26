@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Finding } from "../generated/Finding";
 import type { FindingPageView } from "../generated/FindingPageView";
 import type { FindingStatus } from "../generated/FindingStatus";
+import type { ScannerFinding } from "../generated/ScannerFinding";
+import type { ScannerFindingStatus } from "../generated/ScannerFindingStatus";
 import type { Severity } from "../generated/Severity";
 import type { WorkspaceData } from "../api";
 import { api } from "../api";
@@ -9,6 +11,7 @@ import {
   Empty,
   PageHeading,
   RepoProductionStatus,
+  ScannerFindingReviewDialog,
   SeverityLabel,
   StatusDialog,
   StatusTag,
@@ -40,6 +43,8 @@ export function Findings() {
   const [pageLoading, setPageLoading] = useState(true);
   const [pageReload, setPageReload] = useState(0);
   const [selected, setSelected] = useState<Finding | null>(null);
+  const [selectedScannerFinding, setSelectedScannerFinding] = useState<ScannerFinding | null>(null);
+  const [scannerStatus, setScannerStatus] = useState<ScannerFindingStatus | "all">("all");
   const [editingStatus, setEditingStatus] = useState(false);
   const advisories = useMemo(
     () => new Map(data.advisories.map((item) => [item.canonical_id, item])),
@@ -90,6 +95,28 @@ export function Findings() {
     onFocused();
   }, [data.findings, initialFindingId, onFocused]);
   const filtered = pageResult?.findings ?? [];
+  const scannerQuery = query.trim().toLowerCase();
+  const filteredScannerFindings = data.scannerFindings.filter((finding) => {
+    const matchesStatus = scannerStatus === "all" || finding.status === scannerStatus;
+    const matchesSeverity = severity === "all" || finding.severity === severity;
+    const matchesProject = project === "all" || finding.project_id === project;
+    const searchText = [
+      finding.title,
+      finding.rule_id,
+      finding.package_name,
+      finding.path,
+      finding.scanner,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .toLowerCase();
+    return (
+      matchesStatus &&
+      matchesSeverity &&
+      matchesProject &&
+      (!scannerQuery || searchText.includes(scannerQuery))
+    );
+  });
   const totalPages = Math.max(1, Math.ceil((pageResult?.total_count ?? 0) / FINDING_PAGE_SIZE));
   return (
     <>
@@ -276,6 +303,24 @@ export function Findings() {
               <h2>{t("findings.scannerFindings")}</h2>
               <p>{t("findings.scannerFindingsDescription")}</p>
             </div>
+            <label className="field">
+              <span>{t("findings.scannerReviewStatus")}</span>
+              <select
+                value={scannerStatus}
+                onChange={(event) =>
+                  setScannerStatus(event.target.value as ScannerFindingStatus | "all")
+                }
+              >
+                <option value="all">{t("common.all")}</option>
+                {["needs_review", "confirmed", "accepted_risk", "false_positive", "resolved"].map(
+                  (value) => (
+                    <option key={value} value={value}>
+                      {t(`findings.scannerStatus.${value}`)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
           </div>
           <div className="table-wrap">
             <table>
@@ -286,49 +331,83 @@ export function Findings() {
                   <th>{t("findings.package")}</th>
                   <th>{t("findings.location")}</th>
                   <th>{t("common.severity")}</th>
+                  <th>{t("common.status")}</th>
                   <th>{t("findings.lastSeen")}</th>
+                  <th>{t("actions.review")}</th>
                 </tr>
               </thead>
               <tbody>
-                {data.scannerFindings.map((finding) => (
-                  <tr key={finding.id}>
-                    <td>
-                      {finding.title ?? finding.rule_id ?? t("common.unverified")}
-                      {finding.rule_id && (
-                        <small className="cell-subtitle">{finding.rule_id}</small>
-                      )}
-                    </td>
-                    <td>
-                      {finding.scanner} · {finding.mode}
-                    </td>
-                    <td>
-                      {finding.package_name
-                        ? `${finding.package_name}${finding.package_version ? `@${finding.package_version}` : ""}`
-                        : t("common.notAvailable")}
-                    </td>
-                    <td>
-                      {finding.path ? (
-                        <code>
-                          {finding.path}
-                          {finding.line_start ? `:${finding.line_start}` : ""}
-                          {finding.line_end && finding.line_end !== finding.line_start
-                            ? `-${finding.line_end}`
-                            : ""}
-                        </code>
-                      ) : (
-                        t("common.notAvailable")
-                      )}
-                    </td>
-                    <td>
-                      <SeverityLabel severity={finding.severity} t={t} />
-                    </td>
-                    <td>{date(finding.last_seen_at, data.settings.language)}</td>
+                {filteredScannerFindings.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>{t("findings.scannerNoResults")}</td>
                   </tr>
-                ))}
+                ) : (
+                  filteredScannerFindings.map((finding) => (
+                    <tr key={finding.id}>
+                      <td>
+                        {finding.title ?? finding.rule_id ?? t("common.unverified")}
+                        {finding.rule_id && (
+                          <small className="cell-subtitle">{finding.rule_id}</small>
+                        )}
+                      </td>
+                      <td>
+                        {finding.scanner} · {finding.mode}
+                      </td>
+                      <td>
+                        {finding.package_name
+                          ? `${finding.package_name}${finding.package_version ? `@${finding.package_version}` : ""}`
+                          : t("common.notAvailable")}
+                      </td>
+                      <td>
+                        {finding.path ? (
+                          <code>
+                            {finding.path}
+                            {finding.line_start ? `:${finding.line_start}` : ""}
+                            {finding.line_end && finding.line_end !== finding.line_start
+                              ? `-${finding.line_end}`
+                              : ""}
+                          </code>
+                        ) : (
+                          t("common.notAvailable")
+                        )}
+                      </td>
+                      <td>
+                        <SeverityLabel severity={finding.severity} t={t} />
+                      </td>
+                      <td>{t(`findings.scannerStatus.${finding.status}`)}</td>
+                      <td>{date(finding.last_seen_at, data.settings.language)}</td>
+                      <td>
+                        <button
+                          className="button quiet"
+                          onClick={() => setSelectedScannerFinding(finding)}
+                        >
+                          {t("actions.review")}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </section>
+      )}
+      {selectedScannerFinding && (
+        <ScannerFindingReviewDialog
+          finding={selectedScannerFinding}
+          t={t}
+          close={() => setSelectedScannerFinding(null)}
+          onSave={async (change) => {
+            try {
+              await api.setScannerFindingReview(change);
+              setSelectedScannerFinding(null);
+              setNotice({ kind: "success", message: t("findings.scannerReviewSaved") });
+              refresh();
+            } catch (error) {
+              setNotice({ kind: "error", message: safeError(error, t) });
+            }
+          }}
+        />
       )}
       {selected &&
         (editingStatus ? (

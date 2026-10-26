@@ -14,6 +14,7 @@ const APP_COMMANDS: &[&str] = &[
     "cancel_project_scan",
     "get_scan_result",
     "list_findings",
+    "set_scanner_finding_review",
     "list_findings_page",
     "list_memories",
     "create_memory",

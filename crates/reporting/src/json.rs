@@ -61,6 +61,7 @@ pub(super) fn json_report(snapshot: &ReportSnapshot) -> Value {
             "severity":finding.severity,"title":finding.title,"fixed_version":finding.fixed_version,
             "path":finding.path.as_deref().and_then(relative_evidence_path),
             "line_start":finding.line_start,"line_end":finding.line_end,
+            "review_status":finding.status,"reviewed_at":finding.reviewed_at,
             "fingerprint":finding.fingerprint,"first_seen_at":finding.created_at,
             "last_seen_at":finding.last_seen_at
         })).collect::<Vec<_>>()

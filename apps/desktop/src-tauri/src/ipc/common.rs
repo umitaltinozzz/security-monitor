@@ -26,7 +26,7 @@ pub(super) use security_monitor_core::{
     ComponentInstance, Finding, FindingDispositionReason, FindingEvidence, FindingStatus, Memory,
     MemoryArchive, MemoryArchiveEntry, MemoryKind, MemoryScope, NewsSignal, Project,
     ProjectServerLink, Remediation, RemediationTest, ScanOutcome, ScanRun, ScannerFinding,
-    Severity, is_source_code_like,
+    ScannerFindingStatus, Severity, is_source_code_like,
 };
 pub(super) use security_monitor_correlation::{
     DispositionScope, StatusActor, StatusEvidence, StatusTransition, UserDisposition,

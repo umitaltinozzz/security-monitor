@@ -56,6 +56,18 @@ pub enum FindingStatus {
     FalsePositive,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ScannerFindingStatus {
+    #[default]
+    NeedsReview,
+    Confirmed,
+    AcceptedRisk,
+    FalsePositive,
+    Resolved,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -472,6 +484,12 @@ pub struct ScannerFinding {
     pub line_start: Option<u32>,
     pub line_end: Option<u32>,
     pub fingerprint: String,
+    #[serde(default)]
+    pub status: ScannerFindingStatus,
+    #[serde(default)]
+    pub review_reason: Option<String>,
+    #[serde(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
 }

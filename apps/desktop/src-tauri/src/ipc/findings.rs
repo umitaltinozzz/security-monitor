@@ -25,6 +25,127 @@ pub async fn list_scanner_findings(
 }
 
 #[tauri::command]
+pub async fn set_scanner_finding_review(
+    state: State<'_, AppState>,
+    finding_id: String,
+    status: ScannerFindingStatus,
+    reason: Option<String>,
+) -> Result<ScannerFinding, String> {
+    let repository = state.database.repository::<ScannerFinding>();
+    let mut finding = repository
+        .get(&finding_id)
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?
+        .ok_or_else(|| "scanner_finding_not_found".to_owned())?;
+    (finding.review_reason, finding.reviewed_at) =
+        normalized_scanner_review_fields(status, reason, Utc::now()).map_err(str::to_owned)?;
+    finding.status = status;
+    repository
+        .update(&finding)
+        .await
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
+    let now = finding.reviewed_at.unwrap_or_else(Utc::now);
+    write_audit_event(
+        &state.database,
+        &format!(
+            "scanner_finding_review_changed:{}",
+            scanner_status_key(status)
+        ),
+        "scanner_finding",
+        Some(finding.id.clone()),
+        now,
+        AuditResult::Succeeded,
+    )
+    .await?;
+    Ok(finding)
+}
+
+fn normalized_scanner_review_fields(
+    status: ScannerFindingStatus,
+    reason: Option<String>,
+    reviewed_at: chrono::DateTime<Utc>,
+) -> Result<(Option<String>, Option<chrono::DateTime<Utc>>), &'static str> {
+    if status == ScannerFindingStatus::NeedsReview {
+        if reason
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err("invalid_input");
+        }
+        return Ok((None, None));
+    }
+    let reason = reason
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty() && value.len() <= 1000)
+        .ok_or("invalid_input")?;
+    Ok((Some(reason), Some(reviewed_at)))
+}
+
+fn scanner_status_key(status: ScannerFindingStatus) -> &'static str {
+    match status {
+        ScannerFindingStatus::NeedsReview => "needs_review",
+        ScannerFindingStatus::Confirmed => "confirmed",
+        ScannerFindingStatus::AcceptedRisk => "accepted_risk",
+        ScannerFindingStatus::FalsePositive => "false_positive",
+        ScannerFindingStatus::Resolved => "resolved",
+    }
+}
+
+#[cfg(test)]
+mod scanner_review_tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::{ScannerFindingStatus, normalized_scanner_review_fields};
+
+    #[test]
+    fn reviewed_scanner_status_requires_a_bounded_reason() {
+        let at = Utc.with_ymd_and_hms(2026, 10, 26, 12, 0, 0).unwrap();
+        assert_eq!(
+            normalized_scanner_review_fields(
+                ScannerFindingStatus::FalsePositive,
+                Some("  reviewed source  ".to_owned()),
+                at,
+            )
+            .unwrap(),
+            (Some("reviewed source".to_owned()), Some(at))
+        );
+        assert!(
+            normalized_scanner_review_fields(
+                ScannerFindingStatus::AcceptedRisk,
+                Some("  ".to_owned()),
+                at,
+            )
+            .is_err()
+        );
+        assert!(
+            normalized_scanner_review_fields(
+                ScannerFindingStatus::Resolved,
+                Some("x".repeat(1001)),
+                at,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn returning_to_needs_review_clears_user_review_metadata() {
+        let at = Utc.with_ymd_and_hms(2026, 10, 26, 12, 0, 0).unwrap();
+        assert_eq!(
+            normalized_scanner_review_fields(ScannerFindingStatus::NeedsReview, None, at,).unwrap(),
+            (None, None)
+        );
+        assert!(
+            normalized_scanner_review_fields(
+                ScannerFindingStatus::NeedsReview,
+                Some("unexpected note".to_owned()),
+                at,
+            )
+            .is_err()
+        );
+    }
+}
+
+#[tauri::command]
 pub async fn list_findings_page(
     state: State<'_, AppState>,
     offset: u32,

@@ -37,6 +37,7 @@ import type { MemoryScope } from "./generated/MemoryScope";
 import type { ScanResult } from "./generated/ScanResult";
 import type { ScanRun } from "./generated/ScanRun";
 import type { ScannerFinding } from "./generated/ScannerFinding";
+import type { ScannerFindingStatus } from "./generated/ScannerFindingStatus";
 import type { ScannerAvailability } from "./generated/ScannerAvailability";
 import type { SshHostSummary } from "./generated/SshHostSummary";
 import type { SshTargetInput } from "./generated/SshTargetInput";
@@ -127,6 +128,16 @@ export const api = {
   scanResult: (scanId: string) => invoke<ScanResult | null>("get_scan_result", { scanId }),
   findings: () => invoke<Finding[]>("list_findings"),
   scannerFindings: () => invoke<ScannerFinding[]>("list_scanner_findings"),
+  setScannerFindingReview: (change: {
+    finding_id: string;
+    status: ScannerFindingStatus;
+    reason: string | null;
+  }) =>
+    invoke<ScannerFinding>("set_scanner_finding_review", {
+      findingId: change.finding_id,
+      status: change.status,
+      reason: change.reason,
+    }),
   findingsPage: (input: {
     offset: number;
     limit: number;
