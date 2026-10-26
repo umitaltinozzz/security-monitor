@@ -112,6 +112,8 @@ pub fn redact_text_with_host_aliases(
             r"(?i)\b(?:xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{30,}|sk_(?:live|test)_[A-Za-z0-9]{16,})\b",
             r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]{20,}={0,2}",
             r"(?i)\b[a-z][a-z0-9+.-]*://[^/@\s:]*:[^/@\s]+@[^/\s?#]+(?:/[^\s?#]*)?(?:\?[^\s#]*)?",
+            r#"(?i)(^|[\s"'(=])((?:\\\\\?\\|//\?/)[a-z]:[\\/][^"'\r\n,;:)\]}]*)"#,
+            r#"(?i)(^|[\s"'(=])((?:\\\\\?\\|//\?/)(?:UNC)[\\/][^\\/<>|:?*"\r\n]+[\\/][^\\/<>|:?*"\r\n]+(?:[\\/][^"'\r\n,;:)\]}]*)?)"#,
             r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/<>|:?*"\r\n]*\.[a-z0-9][a-z0-9._-]{0,15})(?=$|[\s,;:)\]}])"#,
             r#"(?i)(^|[\s"'(=])((?:\\\\|//)[^\\/<>|:?*"\r\n]+[\\/](?:[^\\/<>|:?*"\r\n]+[\\/])*[^\\/<>|:?*"\r\n]*\.[a-z0-9][a-z0-9._-]{0,15})(?=$|[\s,;:)\]}])"#,
             r#"(?i)(^|[\s"'(=])([a-z]:[\\/](?:[^\\/<>|:?*"\r\n,;)\]}]+[\\/])*[^\\/<>|:?*"\r\n,;)\]}]* [^\\/<>|:?*"\r\n,;)\]}]+)(?=$|[,;:\r\n)\]}])"#,
@@ -765,6 +767,24 @@ mod tests {
         assert!(result.text.contains("; keep this"));
         assert!(result.text.contains("; keep that"));
         assert!(result.text.contains(": denied"));
+    }
+
+    #[test]
+    fn redacts_unquoted_extended_length_windows_paths() {
+        let result = redact_text(
+            r#"local \\?\C:\Users\Alice\Desktop\My Folder\secret; UNC \\?\UNC\internal-share\Finance\Private Folder\report.csv; slash //?/C:/Users/Alice/My Folder/secret.txt; ordinary text"#,
+        );
+        for private in [
+            r"\\?\C:\Users\Alice",
+            r"\\?\UNC\internal-share\Finance",
+            "//?/C:/Users/Alice",
+        ] {
+            assert!(!result.text.contains(private), "{}", result.text);
+        }
+        assert!(result.text.contains("ordinary text"));
+        assert!(result.redacted_values >= 3);
+        let non_path = redact_text(r"not a drive path \\?\not-a-drive\private");
+        assert!(non_path.text.contains(r"\\?\not-a-drive\private"));
     }
 
     #[test]
