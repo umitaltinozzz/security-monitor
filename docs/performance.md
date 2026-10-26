@@ -47,7 +47,11 @@ Release-mode 50k fixture on Windows 11, Intel Core i7-11800H (8 cores / 16 logic
 
 The initial scan completed in 66.9 seconds. The unchanged startup path completed in 10.2 seconds, below the 30-second target. SQLite used about 95.9 MiB, below the 500 MiB target. The run intentionally had no advisory database, so its partial result is expected and remains unverified; this is a performance measurement, not a security-clean result. One working-set sample during the scan was about 159.6 MiB; this was not a sampled peak, so a stable peak-memory figure remains unverified.
 
-The Windows desktop/tray sample below records one platform. macOS and Linux desktop samples and real Linux agent measurements remain pending.
+The Windows desktop/tray sample below records one platform. macOS and Linux desktop samples remain pending.
+
+## Real Linux agent sample (2026-10-26)
+
+Real-server smoke collections reported approximately 6 MB maximum RSS on Ubuntu 24.04.5 x86_64 (0.07 seconds) and 143 MB on Oracle Linux 9.8 aarch64 (1.7 seconds). Both collection times are under the 20-second target. Ubuntu is below the 100 MB memory target; Oracle Linux exceeds it by about 43 MB. The reported peak did not isolate `secmon-agent` from its `rpm` child, so the memory source is unverified. The RPM child is a hypothesis, not a measured attribution. A process-specific peak sample is still needed before deciding whether the agent itself exceeds the budget.
 
 ## Windows desktop and tray sample
 

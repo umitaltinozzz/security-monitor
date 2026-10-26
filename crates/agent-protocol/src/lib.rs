@@ -11,7 +11,7 @@ pub use parsers::{
     parse_package_output, valid_container_id,
 };
 
-pub const PROTOCOL_VERSION: u16 = 3;
+pub const PROTOCOL_VERSION: u16 = 4;
 const MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_RECORDS: usize = 100_000;
@@ -257,6 +257,7 @@ pub enum CheckStatus {
 #[serde(rename_all = "snake_case")]
 pub enum DiagnosticCode {
     PermissionDenied,
+    ManualBinaryScanIncomplete,
     UnsupportedPlatform,
     CommandUnavailable,
     CommandFailed,
@@ -650,6 +651,34 @@ mod tests {
         assert_eq!(
             inventory.processes[0].maps_status,
             super::MapsStatus::Checked
+        );
+    }
+
+    #[test]
+    fn manual_binary_scan_diagnostic_is_valid_in_protocol_v4() {
+        let mut inventory: AgentInventory =
+            serde_json::from_slice(&fixture("realistic-complete.json"))
+                .expect("fixture should deserialize");
+        inventory.protocol_version = PROTOCOL_VERSION;
+        inventory.complete = false;
+        let package_check = inventory
+            .checks
+            .iter_mut()
+            .find(|check| check.kind == super::CheckKind::PackageInventory)
+            .expect("package check should exist");
+        package_check.status = super::CheckStatus::Partial;
+        package_check.diagnostic = Some(super::DiagnosticCode::ManualBinaryScanIncomplete);
+
+        let encoded = serde_json::to_vec(&inventory).expect("inventory should serialize");
+        let decoded = super::decode_inventory(&encoded).expect("protocol v4 should decode");
+        assert_eq!(decoded.protocol_version, 4);
+        assert_eq!(
+            decoded
+                .checks
+                .iter()
+                .find(|check| check.kind == super::CheckKind::PackageInventory)
+                .and_then(|check| check.diagnostic),
+            Some(super::DiagnosticCode::ManualBinaryScanIncomplete)
         );
     }
 

@@ -73,6 +73,25 @@ pub(super) fn package_command_for_os(
 pub(super) struct ManualCollection {
     pub(super) records: Vec<PackageRecord>,
     pub(super) partial: bool,
+    #[cfg(target_os = "linux")]
+    pub(super) first_issue: Option<ManualScanIssue>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ManualScanIssueKind {
+    PermissionDenied,
+    FilesystemError,
+    OutsideAllowedRoot,
+    DepthLimit,
+    EntryLimit,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub(super) struct ManualScanIssue {
+    pub(super) path: std::path::PathBuf,
+    pub(super) kind: ManualScanIssueKind,
 }
 
 #[cfg(target_os = "linux")]
@@ -86,51 +105,104 @@ pub(super) fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection 
 
     const MAX_ENTRIES: usize = 50_000;
     const MAX_DEPTH: usize = 16;
-    let allowed_roots = roots
-        .into_iter()
-        .filter_map(|root| root.canonicalize().ok())
-        .collect::<Vec<_>>();
+    let mut allowed_roots = Vec::new();
+    let mut partial = false;
+    let mut first_issue = None;
+    for root in roots {
+        match root.canonicalize() {
+            Ok(canonical_root) => allowed_roots.push(canonical_root),
+            Err(error) => mark_manual_scan_incomplete(
+                &mut partial,
+                &mut first_issue,
+                root,
+                manual_scan_issue_kind(&error),
+            ),
+        }
+    }
     let mut records = BTreeMap::<String, PackageRecord>::new();
-    let mut partial = allowed_roots.len() != 2;
     let mut visited = 0usize;
     for canonical_root in allowed_roots {
         let mut stack = vec![(canonical_root.clone(), 0usize)];
         while let Some((directory, depth)) = stack.pop() {
             if depth > MAX_DEPTH {
-                partial = true;
+                mark_manual_scan_incomplete(
+                    &mut partial,
+                    &mut first_issue,
+                    &directory,
+                    ManualScanIssueKind::DepthLimit,
+                );
                 continue;
             }
             let entries = match fs::read_dir(&directory) {
                 Ok(entries) => entries,
-                Err(_) => {
-                    partial = true;
+                Err(error) => {
+                    mark_manual_scan_incomplete(
+                        &mut partial,
+                        &mut first_issue,
+                        &directory,
+                        manual_scan_issue_kind(&error),
+                    );
                     continue;
                 }
             };
             for entry in entries {
                 visited += 1;
                 if visited > MAX_ENTRIES {
-                    partial = true;
+                    mark_manual_scan_incomplete(
+                        &mut partial,
+                        &mut first_issue,
+                        &directory,
+                        ManualScanIssueKind::EntryLimit,
+                    );
                     break;
                 }
-                let Ok(entry) = entry else {
-                    partial = true;
-                    continue;
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        mark_manual_scan_incomplete(
+                            &mut partial,
+                            &mut first_issue,
+                            &directory,
+                            manual_scan_issue_kind(&error),
+                        );
+                        continue;
+                    }
                 };
-                let Ok(file_type) = entry.file_type() else {
-                    partial = true;
-                    continue;
+                let path = entry.path();
+                let file_type = match entry.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(error) => {
+                        mark_manual_scan_incomplete(
+                            &mut partial,
+                            &mut first_issue,
+                            &path,
+                            manual_scan_issue_kind(&error),
+                        );
+                        continue;
+                    }
                 };
                 if file_type.is_symlink() {
                     continue;
                 }
-                let path = entry.path();
-                let Ok(canonical_path) = path.canonicalize() else {
-                    partial = true;
-                    continue;
+                let canonical_path = match path.canonicalize() {
+                    Ok(path) => path,
+                    Err(error) => {
+                        mark_manual_scan_incomplete(
+                            &mut partial,
+                            &mut first_issue,
+                            &path,
+                            manual_scan_issue_kind(&error),
+                        );
+                        continue;
+                    }
                 };
                 if !canonical_path.starts_with(&canonical_root) {
-                    partial = true;
+                    mark_manual_scan_incomplete(
+                        &mut partial,
+                        &mut first_issue,
+                        &path,
+                        ManualScanIssueKind::OutsideAllowedRoot,
+                    );
                     continue;
                 }
                 if file_type.is_dir() {
@@ -143,9 +215,17 @@ pub(super) fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection 
                 if !file_type.is_file() {
                     continue;
                 }
-                let Ok(metadata) = fs::metadata(&canonical_path) else {
-                    partial = true;
-                    continue;
+                let metadata = match fs::metadata(&canonical_path) {
+                    Ok(metadata) => metadata,
+                    Err(error) => {
+                        mark_manual_scan_incomplete(
+                            &mut partial,
+                            &mut first_issue,
+                            &canonical_path,
+                            manual_scan_issue_kind(&error),
+                        );
+                        continue;
+                    }
                 };
                 if metadata.permissions().mode() & 0o111 == 0 {
                     continue;
@@ -180,6 +260,35 @@ pub(super) fn collect_manual_binaries_at(roots: [&Path; 2]) -> ManualCollection 
     ManualCollection {
         records: records.into_values().collect(),
         partial,
+        first_issue,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn manual_scan_issue_kind(error: &std::io::Error) -> ManualScanIssueKind {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        ManualScanIssueKind::PermissionDenied
+    } else {
+        ManualScanIssueKind::FilesystemError
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn mark_manual_scan_incomplete(
+    partial: &mut bool,
+    first_issue: &mut Option<ManualScanIssue>,
+    path: &Path,
+    kind: ManualScanIssueKind,
+) {
+    *partial = true;
+    if first_issue.as_ref().is_none_or(|issue| {
+        issue.kind != ManualScanIssueKind::PermissionDenied
+            && kind == ManualScanIssueKind::PermissionDenied
+    }) {
+        *first_issue = Some(ManualScanIssue {
+            path: path.to_path_buf(),
+            kind,
+        });
     }
 }
 

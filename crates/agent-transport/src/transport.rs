@@ -684,7 +684,8 @@ async fn run_remote(
                         return Err(CollectionError::RemoteCommandFailed);
                     }
                 }
-                ChannelMsg::Eof | ChannelMsg::Close => break,
+                ChannelMsg::Eof => {}
+                ChannelMsg::Close => break,
                 _ => {}
             }
         }

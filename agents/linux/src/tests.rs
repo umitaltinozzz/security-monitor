@@ -281,6 +281,7 @@ fn manual_inventory_records_only_known_executables_below_the_supplied_roots() {
     let _ = fs::remove_dir_all(&temp_root);
 
     assert!(!collection.partial);
+    assert!(collection.first_issue.is_none());
     assert_eq!(
         collection
             .records
@@ -295,6 +296,58 @@ fn manual_inventory_records_only_known_executables_below_the_supplied_roots() {
             && record.ecosystem == "unknown"
             && record.purl.is_none()
     }));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn manual_inventory_reports_the_first_unavailable_scan_root() {
+    use super::packages::ManualScanIssueKind;
+    use std::fs;
+
+    let temp_root =
+        std::env::temp_dir().join(format!("secmon-manual-missing-{}", std::process::id()));
+    let opt_root = temp_root.join("opt");
+    let missing_root = temp_root.join("usr-local-missing");
+    let _ = fs::remove_dir_all(&temp_root);
+    fs::create_dir_all(&opt_root).unwrap();
+
+    let collection =
+        super::collect_manual_binaries_at([opt_root.as_path(), missing_root.as_path()]);
+
+    let _ = fs::remove_dir_all(&temp_root);
+    assert!(collection.partial);
+    let issue = collection
+        .first_issue
+        .expect("missing scan root should be reported");
+    assert_eq!(issue.path, missing_root);
+    assert_eq!(issue.kind, ManualScanIssueKind::FilesystemError);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn manual_inventory_prefers_a_permission_denied_path_for_diagnostics() {
+    use super::packages::{ManualScanIssueKind, mark_manual_scan_incomplete};
+    use std::path::Path;
+
+    let mut partial = false;
+    let mut first_issue = None;
+    mark_manual_scan_incomplete(
+        &mut partial,
+        &mut first_issue,
+        Path::new("/opt/missing"),
+        ManualScanIssueKind::FilesystemError,
+    );
+    mark_manual_scan_incomplete(
+        &mut partial,
+        &mut first_issue,
+        Path::new("/usr/local/private"),
+        ManualScanIssueKind::PermissionDenied,
+    );
+
+    let issue = first_issue.expect("permission issue should be retained");
+    assert!(partial);
+    assert_eq!(issue.path, Path::new("/usr/local/private"));
+    assert_eq!(issue.kind, ManualScanIssueKind::PermissionDenied);
 }
 
 #[test]

@@ -20,6 +20,11 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), &'static str> {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(io::stderr)
+        .with_target(false)
+        .with_ansi(false)
+        .try_init();
     let mut args = env::args_os();
     let _binary = args.next();
     if args.next().as_deref() != Some(std::ffi::OsStr::new("collect")) || args.next().is_some() {

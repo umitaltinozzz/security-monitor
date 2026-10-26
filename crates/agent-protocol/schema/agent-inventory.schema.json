@@ -251,6 +251,7 @@
       "type": "string",
       "enum": [
         "permission_denied",
+        "manual_binary_scan_incomplete",
         "unsupported_platform",
         "command_unavailable",
         "command_failed",

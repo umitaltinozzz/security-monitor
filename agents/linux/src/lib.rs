@@ -49,19 +49,30 @@ async fn collect_with_config(
     let (mut operating_system, mut checks) = collect_operating_system();
     let mut packages = collect_os_packages(operating_system.as_ref()).await;
     let manual = collect_manual_binaries();
+    let manual_partial = manual.partial;
+    #[cfg(target_os = "linux")]
+    let manual_issue = manual.first_issue;
     packages.records.extend(manual.records);
-    if manual.partial
+    if manual_partial
         || packages
             .records
             .iter()
             .any(|record| record.source == PackageSource::Manual)
     {
         packages.check.status = CheckStatus::Partial;
-        packages.check.diagnostic = Some(if manual.partial {
-            DiagnosticCode::PermissionDenied
+        packages.check.diagnostic = Some(if manual_partial {
+            DiagnosticCode::ManualBinaryScanIncomplete
         } else {
             DiagnosticCode::StaleObservation
         });
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(issue) = manual_issue {
+        tracing::warn!(
+            path = ?issue.path,
+            reason = ?issue.kind,
+            "manual binary scan is incomplete; package inventory remains partial"
+        );
     }
     packages.check.item_count = packages.records.len().min(u32::MAX as usize) as u32;
     if let Some(os) = operating_system.as_mut() {
