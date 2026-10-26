@@ -15,13 +15,37 @@ const output = join(root, 'target', 'release-out', artifact);
 const bundle = join(root, 'target', target, 'release', 'bundle');
 await mkdir(output, { recursive: true });
 
+const packageSuffixes = {
+  windows: ['.msi', '.exe'],
+  darwin: ['.dmg', '.app.tar.gz'],
+  linux: ['.appimage', '.deb'],
+}[platform];
+const isPackageFile = (name) => {
+  const normalized = name.toLowerCase();
+  return packageSuffixes.some((suffix) => normalized.endsWith(suffix)) || normalized.endsWith('.zip');
+};
+const isPackageSignature = (name) => {
+  const normalized = name.toLowerCase();
+  return packageSuffixes.some((suffix) => normalized.endsWith(`${suffix}.sig`)) || normalized.endsWith('.zip.sig');
+};
+
 async function filesUnder(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error('A packaged release contains a symbolic link.');
-    if (entry.isDirectory()) files.push(...await filesUnder(path));
-    else if (entry.isFile()) files.push(path);
+    if (entry.isSymbolicLink()) {
+      if (isPackageFile(entry.name) || isPackageSignature(entry.name)) {
+        throw new Error('A packaged release contains a symbolic link.');
+      }
+      continue;
+    }
+    if (entry.isDirectory()) {
+      const directoryName = entry.name.toLowerCase();
+      if (directoryName.endsWith('.app') || directoryName.endsWith('.appdir')) continue;
+      files.push(...await filesUnder(path));
+    } else if (entry.isFile() && (isPackageFile(entry.name) || isPackageSignature(entry.name))) {
+      files.push(path);
+    }
   }
   return files;
 }
@@ -30,6 +54,11 @@ const packageFiles = await filesUnder(bundle);
 if (packageFiles.length === 0) throw new Error('Tauri produced no desktop packages.');
 if (packageFiles.some((path) => path.toLowerCase().endsWith('.zip'))) {
   throw new Error('ZIP updater bundles are outside the supported release formats.');
+}
+for (const suffix of packageSuffixes) {
+  if (!packageFiles.some((path) => path.toLowerCase().endsWith(suffix))) {
+    throw new Error(`Tauri did not produce a required ${platform} package (${suffix}).`);
+  }
 }
 const stagedNames = new Map();
 for (const source of packageFiles) {

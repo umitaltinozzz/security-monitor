@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -279,6 +279,57 @@ test('asset staging rejects Tauri ZIP updater bundles', async () => {
   assert.match(result.stderr, /ZIP updater bundles are outside the supported release formats/);
 });
 
+test('Windows staging requires MSI and NSIS installers while macOS staging requires DMG and app updater bundles', async () => {
+  const platforms = [
+    {
+      target: 'x86_64-pc-windows-msvc',
+      artifact: 'windows-x86_64',
+      platform: 'windows',
+      arch: 'x86_64',
+      codeSigning: 'unsigned',
+      packages: [
+        ['msi', 'security-monitor.msi', 'msi signature'],
+        ['nsis', 'security-monitor.exe', 'nsis signature'],
+      ],
+    },
+    {
+      target: 'x86_64-apple-darwin',
+      artifact: 'macos-x86_64',
+      platform: 'darwin',
+      arch: 'x86_64',
+      codeSigning: 'unsigned',
+      packages: [
+        ['dmg', 'security-monitor.dmg'],
+        ['macos', 'security-monitor.app.tar.gz', 'updater signature'],
+      ],
+    },
+  ];
+
+  for (const fixture of platforms) {
+    const root = await mkdtemp(join(tmpdir(), 'secmon-release-desktop-stage-'));
+    const releaseDirectory = join(root, 'target', fixture.target, 'release');
+    await mkdir(releaseDirectory, { recursive: true });
+    await writeFile(join(releaseDirectory, fixture.platform === 'windows' ? 'secmon.exe' : 'secmon'), 'CLI binary');
+    for (const [directory, packageName, signature] of fixture.packages) {
+      const packageDirectory = join(releaseDirectory, 'bundle', directory);
+      await mkdir(packageDirectory, { recursive: true });
+      await writeFile(join(packageDirectory, packageName), 'desktop package');
+      if (signature) await writeFile(join(packageDirectory, `${packageName}.sig`), signature);
+    }
+
+    const result = run('stage-assets.mjs', [fixture.target, fixture.artifact, fixture.platform, fixture.arch], {
+      cwd: root,
+      env: { SECMON_CODE_SIGNING: fixture.codeSigning },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const output = join(root, 'target', 'release-out', fixture.artifact);
+    const outputNames = await readdir(output);
+    for (const [, packageName] of fixture.packages) {
+      assert.ok(outputNames.some((name) => name.endsWith(packageName)), `${fixture.artifact} did not stage ${packageName}`);
+    }
+  }
+});
+
 test('Linux asset staging includes x86_64 and aarch64 agent binaries', async () => {
   const root = await mkdtemp(join(tmpdir(), 'secmon-release-linux-stage-'));
   const target = 'x86_64-unknown-linux-gnu';
@@ -289,6 +340,7 @@ test('Linux asset staging includes x86_64 and aarch64 agent binaries', async () 
   await mkdir(join(root, 'target', 'aarch64-unknown-linux-musl', 'release'), { recursive: true });
   await writeFile(join(bundle, 'security-monitor.AppImage'), 'desktop package');
   await writeFile(join(bundle, 'security-monitor.AppImage.sig'), 'updater signature');
+  await writeFile(join(bundle, 'security-monitor.deb'), 'deb package');
   await writeFile(join(releaseDirectory, 'secmon'), 'CLI binary');
   await writeFile(join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent'), 'x86 agent');
   await writeFile(join(root, 'target', 'aarch64-unknown-linux-musl', 'release', 'secmon-agent'), 'ARM agent');
@@ -303,6 +355,40 @@ test('Linux asset staging includes x86_64 and aarch64 agent binaries', async () 
   assert.equal(await readFile(join(output, 'secmon-agent-linux-aarch64'), 'utf8'), 'ARM agent');
   const signing = JSON.parse(await readFile(join(output, 'linux-x86_64.signing.json'), 'utf8'));
   assert.equal(signing.codeSigning, 'not_applicable');
+});
+
+test('Linux asset staging skips symlinks inside the AppDir bundle', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Creating symlinks requires Windows runner privileges.');
+    return;
+  }
+
+  const root = await mkdtemp(join(tmpdir(), 'secmon-release-linux-appdir-'));
+  const target = 'x86_64-unknown-linux-gnu';
+  const releaseDirectory = join(root, 'target', target, 'release');
+  const bundle = join(releaseDirectory, 'bundle', 'appimage');
+  const appDir = join(bundle, 'security-monitor.AppDir');
+  await mkdir(join(appDir, 'usr', 'bin'), { recursive: true });
+  await mkdir(releaseDirectory, { recursive: true });
+  await mkdir(join(root, 'target', 'x86_64-unknown-linux-musl', 'release'), { recursive: true });
+  await mkdir(join(root, 'target', 'aarch64-unknown-linux-musl', 'release'), { recursive: true });
+  await writeFile(join(bundle, 'security-monitor.AppImage'), 'desktop package');
+  await writeFile(join(bundle, 'security-monitor.AppImage.sig'), 'updater signature');
+  await writeFile(join(bundle, 'security-monitor.deb'), 'deb package');
+  await symlink('missing-target', join(appDir, 'usr', 'bin', 'app-link'));
+  await writeFile(join(releaseDirectory, 'secmon'), 'CLI binary');
+  await writeFile(join(root, 'target', 'x86_64-unknown-linux-musl', 'release', 'secmon-agent'), 'x86 agent');
+  await writeFile(join(root, 'target', 'aarch64-unknown-linux-musl', 'release', 'secmon-agent'), 'ARM agent');
+
+  const result = run('stage-assets.mjs', [target, 'linux-x86_64', 'linux', 'x86_64'], {
+    cwd: root,
+    env: { SECMON_CODE_SIGNING: 'not_applicable' },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = join(root, 'target', 'release-out', 'linux-x86_64');
+  assert.equal(await readFile(join(output, 'security-monitor-linux-x86_64-security-monitor.AppImage'), 'utf8'), 'desktop package');
+  assert.equal(await readFile(join(output, 'security-monitor-linux-x86_64-security-monitor.deb'), 'utf8'), 'deb package');
+  await assert.rejects(readFile(join(output, 'app-link'), 'utf8'));
 });
 
 test('asset staging requires a code-signing status that fits the platform', async () => {

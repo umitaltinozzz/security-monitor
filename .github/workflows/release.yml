@@ -100,7 +100,30 @@ jobs:
 
       - name: Install minisign on Windows
         if: runner.os == 'Windows'
-        run: choco install minisign --yes --no-progress
+        shell: pwsh
+        run: |
+          $version = '0.12'
+          $archive = Join-Path $env:RUNNER_TEMP "minisign-$version-win64.zip"
+          $installDirectory = Join-Path $env:RUNNER_TEMP "minisign-$version"
+          $url = "https://github.com/jedisct1/minisign/releases/download/$version/minisign-$version-win64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+
+          # SHA-256 pinned from the official WinGet v0.12 manifest.
+          $expectedSha256 = '37B600344E20C19314B2E82813DB2BFDCC408B77B876F7727889DBD46D539479'
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($actualSha256 -ne $expectedSha256) {
+            throw 'Downloaded minisign archive failed SHA-256 verification.'
+          }
+
+          Expand-Archive -LiteralPath $archive -DestinationPath $installDirectory
+          $binaryDirectory = Join-Path $installDirectory 'minisign-win64\x86_64'
+          $minisign = Join-Path $binaryDirectory 'minisign.exe'
+          if (-not (Test-Path -LiteralPath $minisign -PathType Leaf)) {
+            throw 'The verified minisign archive did not contain the expected Windows binary.'
+          }
+          [IO.File]::AppendAllText($env:GITHUB_PATH, "$binaryDirectory`n")
+          & $minisign -v
+          if ($LASTEXITCODE -ne 0) { throw 'The verified Windows minisign binary failed its version check.' }
 
       - name: Install minisign on macOS
         if: runner.os == 'macOS'
