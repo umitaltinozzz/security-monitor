@@ -255,21 +255,25 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, ToolError> {
 
 /// Windows resolves names differently from the sensitive-path denylist: it strips trailing dots
 /// and spaces (`.git.` opens `.git`), treats `:` as an alternate data stream or drive marker,
-/// maps 8.3 short names (`GIT~1`) to long ones, and reserves device names. Rejecting these forms
-/// on every platform keeps the denylist check and the opened path the same file.
+/// maps 8.3 short names (`GIT~1`) to long ones, folds non-ASCII case (`.gıt` can open `.git`),
+/// and reserves device names. The denylist only lowercases ASCII, so components are limited to
+/// printable ASCII and these forms are rejected on every platform; the checked name and the
+/// opened file then stay the same. Non-ASCII file names are refused rather than guessed.
 fn is_portable_component(name: &str) -> bool {
     if name.is_empty()
+        || !name.is_ascii()
         || name.ends_with('.')
         || name.ends_with(' ')
         || name.chars().any(|ch| {
-            ch.is_control() || matches!(ch, ':' | '\\' | '<' | '>' | '"' | '|' | '?' | '*')
+            ch.is_ascii_control() || matches!(ch, ':' | '\\' | '<' | '>' | '"' | '|' | '?' | '*')
         })
     {
         return false;
     }
-    if let Some((_, suffix)) = name.rsplit_once('~')
-        && !suffix.is_empty()
-        && suffix.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+    let bytes = name.as_bytes();
+    if bytes
+        .windows(2)
+        .any(|pair| pair[0] == b'~' && pair[1].is_ascii_digit())
     {
         return false;
     }
@@ -283,10 +287,8 @@ fn is_portable_component(name: &str) -> bool {
         stem.as_str(),
         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
     ) || ((stem.starts_with("COM") || stem.starts_with("LPT"))
-        && {
-            let mut rest = stem[3..].chars();
-            matches!((rest.next(), rest.next()), (Some(ch), None) if ch.is_ascii_digit() || "¹²³".contains(ch))
-        });
+        && stem.len() == 4
+        && stem.as_bytes()[3].is_ascii_digit());
     !reserved
 }
 
@@ -426,7 +428,11 @@ mod tests {
             "notes.txt::$DATA",
             "src:stream",
             "GIT~1/config",
+            "GIT~1~x/config",
             "PROGRA~1",
+            ".gıt/hooks/pre-commit",
+            "server.\u{212A}ey",
+            "ödeme.ts",
             "CON",
             "nul.txt",
             "src/Com1.rs",
