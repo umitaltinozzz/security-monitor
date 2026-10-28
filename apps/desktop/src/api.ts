@@ -164,13 +164,22 @@ export const api = {
   audit: (offset = 0, limit = 250) => invoke<AuditEvent[]>("list_audit_events", { offset, limit }),
   remediations: () => invoke<Remediation[]>("list_remediations"),
   remediationSandboxStatus: () => invoke<RemediationSandboxStatus>("remediation_sandbox_status"),
+  agentRemediationAvailable: () => invoke<boolean>("agent_remediation_available"),
   mcpRemediationRequests: () => invoke<McpRemediationRequest[]>("list_mcp_remediation_requests"),
   dismissMcpRemediationRequest: (requestId: string) =>
     invoke<void>("dismiss_mcp_remediation_request", { requestId }),
   requestRemediation: (findingId: string, providerId: string) =>
     invoke<Remediation>("request_remediation", { findingId, providerId }),
-  approveRemediation: (remediationId: string, sourceTransferApproved: boolean) =>
-    invoke<Remediation>("approve_remediation", { remediationId, sourceTransferApproved }),
+  approveRemediation: (
+    remediationId: string,
+    sourceTransferApproved: boolean,
+    networkAccessApproved: boolean,
+  ) =>
+    invoke<Remediation>("approve_remediation", {
+      remediationId,
+      sourceTransferApproved,
+      networkAccessApproved,
+    }),
   rejectRemediation: (remediationId: string) =>
     invoke<Remediation>("reject_remediation", { remediationId }),
   runSafeTests: (remediationId: string, input: SafeTestInput, executeApproved: boolean) =>

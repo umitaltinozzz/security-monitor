@@ -164,6 +164,10 @@ pub enum RemediationError {
     WorktreePathInvalid,
     #[error("agent source transfer approval is required")]
     SourceTransferApprovalRequired,
+    #[error("agent network access approval is required")]
+    NetworkApprovalRequired,
+    #[error("agent remediation requires an operating system sandbox")]
+    AgentSandboxUnavailable,
     #[error("project agent configuration must be reviewed before launching an agent")]
     AgentProjectConfigPresent,
     #[error("repository Git filters cannot run in remediation worktrees")]
@@ -282,11 +286,12 @@ mod process;
 mod sandbox;
 #[cfg(test)]
 mod tests;
+mod workspace_tools;
 mod worktree;
 
 #[cfg(test)]
 pub(crate) use agent::ScopedOpenCodePolicy;
-pub use agent::{agent_cli_executable, run_agent_cli};
+pub use agent::{agent_cli_executable, agent_sandbox_available, run_agent_cli};
 pub(crate) use git_safety::contains_symlink;
 pub use git_safety::{GitCommandSafety, validate_worktree_under};
 pub use mcp::{
@@ -299,6 +304,7 @@ pub(crate) use sandbox::remove_sandbox_temp;
 pub use sandbox::{
     available_engine, build_test_args, engine_available, run_sandbox_test, sandbox_executable,
 };
+pub use workspace_tools::{RemediationWorkspaceExecutor, remediation_workspace_tools};
 pub(crate) use worktree::canonical_worktrees_directory;
 pub use worktree::{
     create_worktree, create_worktree_with_id, remove_worktree, worktree_diff, worktrees_directory,

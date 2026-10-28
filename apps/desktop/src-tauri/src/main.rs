@@ -187,6 +187,7 @@ fn main() {
             ipc::findings::list_audit_events,
             ipc::remediation::list_remediations,
             ipc::remediation::remediation_sandbox_status,
+            ipc::remediation::agent_remediation_available,
             ipc::remediation::list_mcp_remediation_requests,
             ipc::remediation::dismiss_mcp_remediation_request,
             ipc::remediation::request_remediation,

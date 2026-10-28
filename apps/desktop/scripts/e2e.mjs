@@ -293,6 +293,8 @@ try {
             return [];
           case "remediation_sandbox_status":
             return { available: false, engine: null };
+          case "agent_remediation_available":
+            return false;
           case "set_finding_status": {
             state.finding = { ...state.finding, status: args.change.status, updated_at: timestamp };
             state.findings = [state.finding];
@@ -391,6 +393,8 @@ try {
             return [];
           case "remediation_sandbox_status":
             return { available: false, engine: null };
+          case "agent_remediation_available":
+            return false;
           default:
             throw "unknown";
         }
@@ -522,6 +526,11 @@ try {
   await page.getByRole("button", { name: "All findings", exact: true }).click();
   await page.getByRole("textbox", { name: "Search", exact: true }).fill("GHSA-fixture-2025");
   await page.getByRole("button", { name: "GHSA-fixture-2025" }).click();
+  await page
+    .getByText(
+      "Patch generation is disabled until an operating system sandbox is available and verified on this platform.",
+    )
+    .waitFor();
   await page.getByRole("dialog").getByRole("button", { name: "Change status" }).click();
   await page.getByRole("dialog").getByLabel("New status").selectOption("not_reachable");
   await page.getByRole("dialog").getByRole("button", { name: "Save changes" }).click();

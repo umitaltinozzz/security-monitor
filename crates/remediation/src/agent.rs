@@ -1,5 +1,11 @@
 use super::*;
 
+/// No provider currently has a tested operating-system sandbox in this crate.
+/// Keep agent execution disabled until a platform backend and its negative probes exist.
+pub fn agent_sandbox_available() -> bool {
+    false
+}
+
 pub fn agent_cli_executable(product: AgentCliProduct) -> &'static str {
     #[cfg(windows)]
     {
@@ -24,9 +30,16 @@ pub async fn run_agent_cli(
     worktree_path: &Path,
     prompt: &str,
     source_transfer_approved: bool,
+    network_access_approved: bool,
 ) -> Result<ProcessResult, RemediationError> {
     if !source_transfer_approved {
         return Err(RemediationError::SourceTransferApprovalRequired);
+    }
+    if !network_access_approved {
+        return Err(RemediationError::NetworkApprovalRequired);
+    }
+    if !agent_sandbox_available() {
+        return Err(RemediationError::AgentSandboxUnavailable);
     }
     let worktree =
         fs::canonicalize(worktree_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
@@ -252,5 +265,41 @@ mod tests {
         assert!(is_agent_config_name("AGENTS.md"));
         assert!(is_agent_config_name("AGENTS.override.md"));
         assert!(is_agent_config_name(".CLAUDE"));
+    }
+
+    #[tokio::test]
+    async fn agent_cli_refuses_to_start_without_explicit_network_approval() {
+        let temp = TempDir::new().unwrap();
+        let result = super::run_agent_cli(
+            AgentCliProduct::Codex,
+            temp.path(),
+            "review this patch",
+            true,
+            false,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(RemediationError::NetworkApprovalRequired)
+        ));
+    }
+
+    #[tokio::test]
+    async fn agent_cli_fails_closed_without_a_tested_os_sandbox() {
+        let temp = TempDir::new().unwrap();
+        let result = super::run_agent_cli(
+            AgentCliProduct::Codex,
+            temp.path(),
+            "review this patch",
+            true,
+            true,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(RemediationError::AgentSandboxUnavailable)
+        ));
     }
 }

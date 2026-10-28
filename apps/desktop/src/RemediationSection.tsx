@@ -26,9 +26,11 @@ export function RemediationSection({
   const [configuration, setConfiguration] = useState<AiConfigurationView | null>(null);
   const [remediations, setRemediations] = useState<Remediation[]>([]);
   const [sandbox, setSandbox] = useState<RemediationSandboxStatus | null>(null);
+  const [agentSandboxAvailable, setAgentSandboxAvailable] = useState(false);
   const [mcpRequests, setMcpRequests] = useState<McpRemediationRequest[]>([]);
   const [providerId, setProviderId] = useState("");
   const [sourceTransferApproved, setSourceTransferApproved] = useState(false);
+  const [networkAccessApproved, setNetworkAccessApproved] = useState(false);
   const [executeApproved, setExecuteApproved] = useState(false);
   const [testExecutable, setTestExecutable] = useState("");
   const [testArgs, setTestArgs] = useState("");
@@ -37,15 +39,18 @@ export function RemediationSection({
 
   const load = useCallback(async () => {
     try {
-      const [nextConfiguration, nextRemediations, nextSandbox, nextRequests] = await Promise.all([
-        api.aiConfiguration(),
-        api.remediations(),
-        api.remediationSandboxStatus(),
-        api.mcpRemediationRequests(),
-      ]);
+      const [nextConfiguration, nextRemediations, nextSandbox, nextAgentSandbox, nextRequests] =
+        await Promise.all([
+          api.aiConfiguration(),
+          api.remediations(),
+          api.remediationSandboxStatus(),
+          api.agentRemediationAvailable(),
+          api.mcpRemediationRequests(),
+        ]);
       setConfiguration(nextConfiguration);
       setRemediations(nextRemediations.filter((item) => item.finding_id === findingId));
       setSandbox(nextSandbox);
+      setAgentSandboxAvailable(nextAgentSandbox);
       setMcpRequests(nextRequests.filter((item) => item.finding_id === findingId));
       const project = data.projects.find((item) => item.id === projectId);
       const providers = nextConfiguration.providers.filter(
@@ -74,11 +79,12 @@ export function RemediationSection({
   );
 
   async function requestPatch() {
-    if (!providerId) return;
+    if (!providerId || !agentSandboxAvailable) return;
     setBusyId("new");
     try {
       await api.requestRemediation(findingId, providerId);
       setSourceTransferApproved(false);
+      setNetworkAccessApproved(false);
       await load();
     } catch {
       setNotice({ kind: "error", message: t("error.remediation_request_failed") });
@@ -88,12 +94,13 @@ export function RemediationSection({
   }
 
   async function queueMcpPatch(request: McpRemediationRequest) {
-    if (!request.provider_id) return;
+    if (!request.provider_id || !agentSandboxAvailable) return;
     setBusyId(request.id);
     try {
       await api.requestRemediation(findingId, request.provider_id);
       await api.dismissMcpRemediationRequest(request.id);
       setSourceTransferApproved(false);
+      setNetworkAccessApproved(false);
       await load();
     } catch {
       setNotice({ kind: "error", message: t("error.remediation_request_failed") });
@@ -114,8 +121,9 @@ export function RemediationSection({
   async function approve(item: Remediation) {
     setBusyId(item.id);
     try {
-      await api.approveRemediation(item.id, sourceTransferApproved);
+      await api.approveRemediation(item.id, sourceTransferApproved, networkAccessApproved);
       setSourceTransferApproved(false);
+      setNetworkAccessApproved(false);
       await load();
     } catch (error) {
       setNotice({
@@ -184,6 +192,7 @@ export function RemediationSection({
                     disabled={
                       busyId !== null ||
                       active ||
+                      !agentSandboxAvailable ||
                       !request.provider_id ||
                       !providers.some((provider) => provider.id === request.provider_id)
                     }
@@ -220,7 +229,7 @@ export function RemediationSection({
               </label>
               <button
                 className="button secondary"
-                disabled={busyId !== null || active || !providerId}
+                disabled={busyId !== null || active || !providerId || !agentSandboxAvailable}
                 onClick={() => void requestPatch()}
               >
                 {busyId === "new"
@@ -232,6 +241,11 @@ export function RemediationSection({
           {sandbox && !sandbox.available && (
             <p className="unverified-line">
               {t("findings.remediationWorkflow.sandboxUnavailable")}
+            </p>
+          )}
+          {!agentSandboxAvailable && (
+            <p className="unverified-line">
+              {t("findings.remediationWorkflow.agentSandboxUnavailable")}
             </p>
           )}
           {remediations.length === 0 ? (
@@ -259,6 +273,14 @@ export function RemediationSection({
                           />
                           {t("findings.remediationWorkflow.sourceTransferApproval")}
                         </label>
+                        <label className="check-field">
+                          <input
+                            type="checkbox"
+                            checked={networkAccessApproved}
+                            onChange={(event) => setNetworkAccessApproved(event.target.checked)}
+                          />
+                          {t("findings.remediationWorkflow.networkAccessApproval")}
+                        </label>
                         <div className="button-row end">
                           <button
                             className="button quiet"
@@ -269,7 +291,12 @@ export function RemediationSection({
                           </button>
                           <button
                             className="button primary"
-                            disabled={busyId !== null || !sourceTransferApproved}
+                            disabled={
+                              busyId !== null ||
+                              !agentSandboxAvailable ||
+                              !sourceTransferApproved ||
+                              !networkAccessApproved
+                            }
                             onClick={() => void approve(item)}
                           >
                             {busyId === item.id
@@ -406,6 +433,7 @@ function remediationErrorMessage(error: unknown, t: T, fallback: string) {
   const knownErrors = new Set([
     "remediation_opencode_project_config",
     "remediation_git_filter_not_allowed",
+    "agent_sandbox_unavailable",
   ]);
   return typeof error === "string" && knownErrors.has(error)
     ? t(`error.${error}`)

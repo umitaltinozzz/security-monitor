@@ -7,8 +7,11 @@ license.workspace = true
 description = "Isolated patch worktrees, sandboxed tests, and approval primitives"
 
 [dependencies]
+async-trait.workspace = true
+cap-std.workspace = true
 chrono.workspace = true
 libc.workspace = true
+security-monitor-ai = { version = "0.1.0", path = "../ai" }
 security-monitor-core = { version = "0.1.0", path = "../core" }
 serde.workspace = true
 serde_json.workspace = true
