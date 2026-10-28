@@ -499,15 +499,23 @@ mod tests {
             Err(crate::RemediationError::WorktreePathInvalid)
         ));
 
+        // A link added after the open-time check must still not be followed out of the root.
         let root_without_link = temp.path().join("clean-worktree");
         std::fs::create_dir(&root_without_link).unwrap();
         let clean = RemediationWorkspaceExecutor::open(&root_without_link).unwrap();
+        std::os::unix::fs::symlink(&outside, root_without_link.join("escape")).unwrap();
         assert_eq!(
             clean
                 .execute(&call(
                     WRITE_FILE,
                     json!({"path":"escape/sentinel.txt","contents":"overwritten"}),
                 ))
+                .await,
+            Err(ToolError::InvalidArguments)
+        );
+        assert_eq!(
+            clean
+                .execute(&call(READ_FILE, json!({"path":"escape/sentinel.txt"})))
                 .await,
             Err(ToolError::InvalidArguments)
         );
