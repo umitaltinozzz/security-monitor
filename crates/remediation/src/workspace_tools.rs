@@ -238,7 +238,11 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, ToolError> {
     let path = Path::new(value);
     let mut components = 0usize;
     for component in path.components() {
-        if !matches!(component, Component::Normal(_)) {
+        let Component::Normal(name) = component else {
+            return Err(ToolError::InvalidArguments);
+        };
+        let name = name.to_str().ok_or(ToolError::InvalidArguments)?;
+        if !is_portable_component(name) {
             return Err(ToolError::InvalidArguments);
         }
         components = components.saturating_add(1);
@@ -247,6 +251,43 @@ fn safe_relative_path(value: &str) -> Result<PathBuf, ToolError> {
         return Err(ToolError::InvalidArguments);
     }
     Ok(path.to_path_buf())
+}
+
+/// Windows resolves names differently from the sensitive-path denylist: it strips trailing dots
+/// and spaces (`.git.` opens `.git`), treats `:` as an alternate data stream or drive marker,
+/// maps 8.3 short names (`GIT~1`) to long ones, and reserves device names. Rejecting these forms
+/// on every platform keeps the denylist check and the opened path the same file.
+fn is_portable_component(name: &str) -> bool {
+    if name.is_empty()
+        || name.ends_with('.')
+        || name.ends_with(' ')
+        || name.chars().any(|ch| {
+            ch.is_control() || matches!(ch, ':' | '\\' | '<' | '>' | '"' | '|' | '?' | '*')
+        })
+    {
+        return false;
+    }
+    if let Some((_, suffix)) = name.rsplit_once('~')
+        && !suffix.is_empty()
+        && suffix.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+    {
+        return false;
+    }
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_uppercase();
+    let reserved = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+        && {
+            let mut rest = stem[3..].chars();
+            matches!((rest.next(), rest.next()), (Some(ch), None) if ch.is_ascii_digit() || "¹²³".contains(ch))
+        });
+    !reserved
 }
 
 fn reject_sensitive_path(path: &Path) -> Result<(), ToolError> {
@@ -368,6 +409,57 @@ mod tests {
         );
         let listed = tools.execute(&call(LIST_FILES, json!({}))).await.unwrap();
         assert!(listed["paths"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn workspace_tools_reject_windows_name_forms_that_bypass_the_denylist() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("worktree");
+        std::fs::create_dir(&root).unwrap();
+        let tools = RemediationWorkspaceExecutor::open(&root).unwrap();
+
+        for path in [
+            ".git./hooks/pre-commit",
+            ".git /config",
+            "server.key.",
+            "cert.pem ",
+            "notes.txt::$DATA",
+            "src:stream",
+            "GIT~1/config",
+            "PROGRA~1",
+            "CON",
+            "nul.txt",
+            "src/Com1.rs",
+            "LPT¹",
+            "a\u{0}b",
+            "what?.rs",
+        ] {
+            assert_eq!(
+                tools
+                    .execute(&call(WRITE_FILE, json!({"path": path, "contents": "x"})))
+                    .await,
+                Err(ToolError::InvalidArguments),
+                "{path:?} must be rejected"
+            );
+            assert_eq!(
+                tools.execute(&call(READ_FILE, json!({"path": path}))).await,
+                Err(ToolError::InvalidArguments),
+                "{path:?} must be rejected"
+            );
+        }
+        assert!(!root.join(".git").exists());
+
+        for path in [
+            "src/console.rs",
+            "docs/backup~notes.md",
+            "COM10.txt",
+            "src/a.b.rs",
+        ] {
+            tools
+                .execute(&call(WRITE_FILE, json!({"path": path, "contents": "ok"})))
+                .await
+                .unwrap_or_else(|error| panic!("{path:?} should be allowed: {error:?}"));
+        }
     }
 
     #[tokio::test]
