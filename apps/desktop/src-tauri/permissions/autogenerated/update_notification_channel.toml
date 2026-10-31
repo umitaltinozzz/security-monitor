@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-update-notification-channel"
+description = "Enables the update_notification_channel command without any pre-configured scope."
+commands.allow = ["update_notification_channel"]
+
+[[permission]]
+identifier = "deny-update-notification-channel"
+description = "Denies the update_notification_channel command without any pre-configured scope."
+commands.deny = ["update_notification_channel"]

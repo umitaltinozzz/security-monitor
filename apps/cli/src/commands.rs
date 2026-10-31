@@ -10,11 +10,12 @@ use security_monitor_advisory_providers::{
     HttpPolicy, OsvDatabaseUpdater, PublicDataHttp, ecosystem_slug,
 };
 use security_monitor_agent_transport::{
-    CredentialStore, InventoryCollectionApproval, OsCredentialStore, SshIdentity, SshTarget,
-    collect_agent,
+    CollectionError, CredentialStore, InventoryCollectionApproval, OsCredentialStore,
+    PinnedProxyJump, SshIdentity, SshTarget, collect_agent, collect_agent_via_jump_with_identities,
+    proxy_jump_matches,
 };
 use security_monitor_app_services::{
-    ServerSnapshotError, database_locations, persist_server_snapshot,
+    ServerSnapshotError, database_locations, persist_server_snapshot, remove_server_snapshot,
 };
 use security_monitor_core::{
     Asset, AuditEvent, AuditResult, AuditScope, Project, ScanOutcome, ScanRun,
@@ -344,16 +345,43 @@ pub async fn run_server_collect(
         AuditResult::Succeeded,
     )
     .await?;
-    let collection = match collect_agent(
-        &target,
-        fingerprint,
-        &SshIdentity::PrivateKeyRef(stored.private_key_ref),
-        &store,
-        InventoryCollectionApproval::after_explicit_user_confirmation(approved_at),
-    )
-    .await
-    {
+    let target_identity = SshIdentity::PrivateKeyRef(stored.private_key_ref);
+    let approval = InventoryCollectionApproval::after_explicit_user_confirmation(approved_at);
+    let collection_result = if let Some(jump_spec) = target.proxy_jump.as_deref() {
+        let (jump, jump_identity) =
+            resolve_cli_proxy_jump(&database, &store, jump_spec, &target.alias).await?;
+        collect_agent_via_jump_with_identities(
+            &target,
+            fingerprint,
+            &jump,
+            &jump_identity,
+            &target_identity,
+            &store,
+            approval,
+        )
+        .await
+    } else {
+        collect_agent(&target, fingerprint, &target_identity, &store, approval).await
+    };
+    let collection = match collection_result {
         Ok(collection) => collection,
+        Err(CollectionError::HostKeyChanged) => {
+            let _ = remove_server_snapshot(&app_data, asset_id);
+            let mut updated = asset.clone();
+            updated.last_success_at = None;
+            updated.updated_at = Utc::now();
+            let _ = database.repository::<Asset>().update(&updated).await;
+            let _ = write_audit_event(
+                &database,
+                "server_host_key_changed",
+                "asset",
+                asset_id,
+                Utc::now(),
+                AuditResult::Failed,
+            )
+            .await;
+            return Err("server_host_key_changed");
+        }
         Err(_) => {
             let _ = write_audit_event(
                 &database,
@@ -497,8 +525,14 @@ pub fn run_hook_install(
         HookMode::Block => "block",
     };
     let hook_argument = format!("--{hook_name}");
+    let missing_binary_action = match mode {
+        HookMode::Warn => {
+            "echo \"warning: secmon is not on PATH; skipping security check\" >&2; exit 0"
+        }
+        HookMode::Block => "echo \"blocked: secmon is not on PATH\" >&2; exit 3",
+    };
     let script = format!(
-        "{HOOK_MARKER}umask 077\nhook_input=$(mktemp) || exit 1\ntrap 'rm -f \"$hook_input\"' EXIT HUP INT TERM\ncat > \"$hook_input\" || exit 1\nif [ -x \"${{0}}.secmon-original\" ]; then\n  \"${{0}}.secmon-original\" \"$@\" < \"$hook_input\"\n  original_status=$?\n  if [ \"$original_status\" -ne 0 ]; then exit \"$original_status\"; fi\nfi\nsecmon hook run --mode {mode_name} --fail-on {} {hook_argument} < \"$hook_input\"\nhook_status=$?\nexit \"$hook_status\"\n",
+        "{HOOK_MARKER}umask 077\nhook_input=$(mktemp) || exit 1\ntrap 'rm -f \"$hook_input\"' EXIT HUP INT TERM\ncat > \"$hook_input\" || exit 1\nif [ -x \"${{0}}.secmon-original\" ]; then\n  \"${{0}}.secmon-original\" \"$@\" < \"$hook_input\"\n  original_status=$?\n  if [ \"$original_status\" -ne 0 ]; then exit \"$original_status\"; fi\nfi\nif ! command -v secmon >/dev/null 2>&1; then\n  {missing_binary_action}\nfi\nsecmon hook run --mode {mode_name} --fail-on {} {hook_argument} < \"$hook_input\"\nhook_status=$?\nexit \"$hook_status\"\n",
         fail_on_text(fail_on),
     );
     if write_hook_executable(&hook_path, script.as_bytes()).is_err() {
@@ -745,6 +779,57 @@ async fn ensure_project(database: &Database, root: &Path) -> Result<Project, &'s
         .await
         .map_err(|_| "storage_unavailable")?;
     Ok(project)
+}
+
+async fn resolve_cli_proxy_jump(
+    database: &Database,
+    store: &dyn CredentialStore,
+    jump_spec: &str,
+    target_alias: &str,
+) -> Result<(PinnedProxyJump, SshIdentity), &'static str> {
+    let assets = database
+        .repository::<Asset>()
+        .list()
+        .await
+        .map_err(|_| "server_unavailable")?;
+    for asset in assets {
+        if asset.removed_at.is_some() {
+            continue;
+        }
+        let (Some(target_ref), Some(confirmed_fingerprint)) =
+            (asset.ssh_target_ref.as_deref(), asset.host_key_fingerprint)
+        else {
+            continue;
+        };
+        let Ok(Some(bytes)) = store.get_optional(target_ref) else {
+            continue;
+        };
+        let Ok(stored) = serde_json::from_slice::<StoredSshTarget>(&bytes) else {
+            continue;
+        };
+        let Ok(jump_target) = SshTarget::new(
+            stored.target.alias,
+            stored.target.hostname,
+            stored.target.username,
+            stored.target.port,
+            stored.target.proxy_jump,
+        ) else {
+            continue;
+        };
+        if jump_target.proxy_jump.is_none()
+            && jump_target.alias != target_alias
+            && proxy_jump_matches(jump_spec, &jump_target)
+        {
+            return Ok((
+                PinnedProxyJump {
+                    target: jump_target,
+                    confirmed_fingerprint,
+                },
+                SshIdentity::PrivateKeyRef(stored.private_key_ref),
+            ));
+        }
+    }
+    Err("server_unavailable")
 }
 
 async fn write_audit_event(

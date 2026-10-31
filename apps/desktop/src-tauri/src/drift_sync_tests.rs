@@ -341,6 +341,7 @@ async fn user_dispositions_are_never_overwritten() {
 fn deployment_selection_prefers_the_project_remote_and_rejects_ambiguity() {
     let mut inventory: AgentInventory = parse(PRODUCTION_AFFECTED);
     assert!(select_deployment(&inventory, Some("git@github.com:acme/web.git")).is_some());
+    assert!(select_deployment(&inventory, Some("git@github.com:acme/other.git")).is_none());
     assert!(select_deployment(&inventory, None).is_some());
 
     let mut other = inventory.deployments[0].clone();

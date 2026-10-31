@@ -12,7 +12,7 @@ pub use association::{
 pub use credentials::{
     CredentialDeleteOutcome, CredentialError, CredentialStore, OsCredentialStore,
 };
-pub use host::{SshTarget, TargetError, validate_fingerprint};
+pub use host::{SshTarget, TargetError, proxy_jump_matches, validate_fingerprint};
 pub use pairing::{PairingInstructions, create_pairing_instructions};
 pub use ssh_config::{
     SshConfigError, SshConfigWarning, SshHost, load_ssh_hosts_from, load_user_ssh_hosts,
@@ -21,7 +21,7 @@ pub use ssh_config::{
 pub use transport::{
     AgentCollection, AgentlessApproval, AgentlessCollection, AgentlessCommand, CollectionError,
     HostKeyCandidate, InventoryCollectionApproval, PinnedProxyJump, ServerState, SshIdentity,
-    collect_agent, collect_agent_via_jump, collect_agentless, collect_agentless_via_jump,
-    inspect_host_key, inspect_host_key_via_jump, server_state_for_error,
-    server_state_for_inventory,
+    collect_agent, collect_agent_via_jump, collect_agent_via_jump_with_identities,
+    collect_agentless, collect_agentless_via_jump, inspect_host_key, inspect_host_key_via_jump,
+    server_state_for_error, server_state_for_inventory,
 };

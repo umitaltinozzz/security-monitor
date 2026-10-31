@@ -1062,7 +1062,7 @@ fn validate_notification_destination(kind: &str, destination: &str) -> Result<()
     let parsed =
         url::Url::parse(destination).map_err(|_| DatabaseError::InvalidNotificationDestination)?;
     let scheme_matches = match kind {
-        "webhook" | "slack" | "discord" => parsed.scheme() == "https",
+        "webhook" | "slack" | "discord" | "ntfy" => parsed.scheme() == "https",
         "smtp" => matches!(parsed.scheme(), "smtp" | "smtps"),
         _ => false,
     };

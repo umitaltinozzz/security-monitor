@@ -70,7 +70,7 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         Err(_) => return unavailable_snapshot(DiagnosticCode::PermissionDenied),
     };
     let mut process_ids = Vec::new();
-    let mut had_permission_denied = false;
+    let mut had_permission_denied = !Path::new("/proc/1").exists() || proc_mounts_hide_processes();
     for entry in entries {
         let Ok(entry) = entry else {
             had_permission_denied = true;
@@ -216,6 +216,35 @@ async fn collect_linux_processes(max_processes: usize) -> ProcessSnapshot {
         processes,
         services,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn proc_mounts_hide_processes() -> bool {
+    let Ok(mounts) = crate::read_bounded_text(Path::new("/proc/mounts"), 64 * 1024) else {
+        return false;
+    };
+    proc_mounts_have_hidepid(&mounts)
+}
+
+#[cfg(target_os = "linux")]
+fn proc_mounts_have_hidepid(mounts: &str) -> bool {
+    mounts.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        let _device = fields.next();
+        let mount_point = fields.next();
+        let fs_type = fields.next();
+        let options = fields.next();
+        mount_point == Some("/proc")
+            && fs_type == Some("proc")
+            && options.is_some_and(|opts| {
+                opts.split(',').any(|opt| {
+                    matches!(
+                        opt.trim(),
+                        "hidepid=1" | "hidepid=2" | "hidepid=noaccess" | "hidepid=invisible"
+                    )
+                })
+            })
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -624,5 +653,11 @@ mod tests {
         let (selected, hit_limit) = super::select_process_ids(vec![900, 7, 42, 3], 4);
         assert_eq!(selected, vec![3, 7, 42, 900]);
         assert!(!hit_limit);
+        assert!(super::proc_mounts_have_hidepid(
+            "proc /proc proc rw,nosuid,nodev,noexec,relatime,hidepid=2 0 0\n"
+        ));
+        assert!(!super::proc_mounts_have_hidepid(
+            "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n"
+        ));
     }
 }

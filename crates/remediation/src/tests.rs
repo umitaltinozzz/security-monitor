@@ -560,3 +560,41 @@ fn mcp_requests_are_local_atomic_and_reject_path_traversal() {
     );
     assert!(remove_mcp_remediation_request(temp.path(), "../escape").is_err());
 }
+
+#[tokio::test]
+async fn worktree_diff_rejects_repointed_dot_git_and_sandbox_mounts_dot_git_readonly() {
+    let (temp, repository) = fixture_repository();
+    let prepared = create_worktree(&repository, temp.path()).await.unwrap();
+    let command = SafeTestCommand {
+        executable: "cargo".into(),
+        args: vec!["test".into(), "--locked".into(), "--offline".into()],
+        image: format!("registry.invalid/secmon/rust@sha256:{}", "a".repeat(64)),
+    };
+    let args = build_test_args(
+        SandboxEngine::Docker,
+        &prepared.worktree_path,
+        "secmon-test-git",
+        &command,
+    )
+    .unwrap();
+    let values = args
+        .iter()
+        .map(|arg| arg.to_string_lossy())
+        .collect::<Vec<_>>();
+    assert!(
+        values.iter().any(|arg| arg.starts_with("type=bind,src=")
+            && arg.ends_with(",dst=/workspace/.git,readonly"))
+    );
+
+    let fake_git_dir = prepared.worktree_path.join(".fake-git");
+    fs::create_dir_all(&fake_git_dir).unwrap();
+    fs::write(
+        prepared.worktree_path.join(".git"),
+        format!("gitdir: {}\n", fake_git_dir.display()),
+    )
+    .unwrap();
+    assert!(matches!(
+        worktree_diff(&prepared.worktree_path).await,
+        Err(RemediationError::WorktreePathInvalid)
+    ));
+}

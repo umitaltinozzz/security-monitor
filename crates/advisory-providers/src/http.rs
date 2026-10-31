@@ -109,7 +109,8 @@ impl PublicDataHttp {
         let redirect_loopback = allow_loopback;
         let client = reqwest::Client::builder()
             .user_agent(concat!("secmon/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(45))
+            .connect_timeout(Duration::from_secs(20))
+            .read_timeout(Duration::from_secs(45))
             .redirect(reqwest::redirect::Policy::custom(move |attempt| {
                 if attempt.previous().len() >= 5 {
                     return attempt.stop();
@@ -162,6 +163,7 @@ impl PublicDataHttp {
         let response = self
             .client
             .get(url)
+            .timeout(Duration::from_secs(45))
             .send()
             .await
             .map_err(|_| ProviderError::Network { host: host.clone() })?;
@@ -284,6 +286,7 @@ impl PublicDataHttp {
         let response = self
             .client
             .get(url)
+            .timeout(Duration::from_secs(15 * 60))
             .send()
             .await
             .map_err(|_| ProviderError::Network { host: host.clone() })?;
@@ -630,11 +633,29 @@ fn is_public_ip(address: IpAddr) -> bool {
                 || (a == 255 && b == 255 && c == 255 && d == 255))
         }
         IpAddr::V6(address) => {
+            let segments = address.segments();
+            let is_nat64 = segments[0] == 0x0064
+                && segments[1] == 0xff9b
+                && ((segments[2] == 0 && segments[3] == 0 && segments[4] == 0 && segments[5] == 0)
+                    || segments[2] == 1);
+            let is_6to4 = segments[0] == 0x2002;
+            let is_teredo = segments[0] == 0x2001 && segments[1] == 0x0000;
+            let is_benchmarking =
+                segments[0] == 0x2001 && segments[1] == 0x0002 && segments[2] == 0x0000;
+            let is_documentation = segments[0] == 0x2001 && segments[1] == 0x0db8;
+            let is_discard =
+                segments[0] == 0x0100 && segments[1] == 0 && segments[2] == 0 && segments[3] == 0;
             !(address.is_loopback()
                 || address.is_unspecified()
                 || address.is_multicast()
                 || address.is_unique_local()
                 || address.is_unicast_link_local()
+                || is_nat64
+                || is_6to4
+                || is_teredo
+                || is_benchmarking
+                || is_documentation
+                || is_discard
                 || address
                     .to_ipv4_mapped()
                     .is_some_and(|mapped| !is_public_ip(IpAddr::V4(mapped))))

@@ -19,6 +19,7 @@ export function Servers() {
     username: "",
     port: 22,
     environment: "unknown" as "production" | "staging" | "development" | "unknown",
+    proxy_jump: null as string | null,
   });
   const [fingerprint, setFingerprint] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -29,7 +30,14 @@ export function Servers() {
   } | null>(null);
   const [approvedAsset, setApprovedAsset] = useState<string | null>(null);
   const [hosts, setHosts] = useState<
-    { alias: string; hostname: string; username: string; port: number; has_proxy_jump: boolean }[]
+    {
+      alias: string;
+      hostname: string;
+      username: string;
+      port: number;
+      has_proxy_jump: boolean;
+      proxy_jump?: string | null;
+    }[]
   >([]);
   const [summaries, setSummaries] = useState<
     Record<string, Awaited<ReturnType<typeof api.serverInventory>> | undefined>
@@ -228,6 +236,7 @@ export function Servers() {
                       username: host.username,
                       port: host.port,
                       environment: "unknown",
+                      proxy_jump: host.proxy_jump ?? null,
                     })
                   }
                 >

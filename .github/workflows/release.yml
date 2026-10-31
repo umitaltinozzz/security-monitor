@@ -52,23 +52,12 @@ jobs:
             arch: x86_64
     env:
       SECMON_UPDATE_PUBLIC_KEY: ${{ vars.SECMON_UPDATE_PUBLIC_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
       MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
       SECMON_WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.SECMON_WINDOWS_CERTIFICATE_THUMBPRINT }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
       APPLE_API_KEY: ${{ vars.APPLE_API_KEY }}
-      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -96,6 +85,18 @@ jobs:
 
       - name: Verify release signing configuration
         id: signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: node scripts/release/verify-config.mjs ${{ matrix.platform }}
 
       - name: Install minisign on Windows
@@ -136,6 +137,9 @@ jobs:
       - name: Import Windows signing certificate
         if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
         shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           $certificateDirectory = Join-Path $env:RUNNER_TEMP 'security-monitor-signing'
           New-Item -ItemType Directory -Force -Path $certificateDirectory | Out-Null
@@ -150,6 +154,11 @@ jobs:
       - name: Import Apple signing certificate
         if: runner.os == 'macOS' && steps.signing.outputs.code_signing == 'signed'
         shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/security-monitor.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/security-monitor.keychain"
@@ -217,10 +226,16 @@ jobs:
 
       - name: Build signed desktop packages
         if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'signed'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
       - name: Build unsigned Windows desktop packages
         if: runner.os == 'Windows' && steps.signing.outputs.code_signing == 'unsigned'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm -C apps/desktop tauri build --target ${{ matrix.target }} --config ../../target/tauri.release.json
 
       - name: Build desktop packages
@@ -228,6 +243,10 @@ jobs:
         shell: bash
         env:
           CODE_SIGNING: ${{ steps.signing.outputs.code_signing }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
         run: |
           if [ "$CODE_SIGNING" = unsigned ]; then
             unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
@@ -243,6 +262,8 @@ jobs:
         run: node scripts/release/stage-assets.mjs ${{ matrix.target }} ${{ matrix.artifact }} ${{ matrix.platform }} ${{ matrix.arch }}
 
       - name: Sign and verify CLI and agent binaries
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
         run: node scripts/release/sign-binaries.mjs target/release-out/${{ matrix.artifact }}
 
       - name: Upload release files
@@ -261,7 +282,6 @@ jobs:
       contents: write
       actions: read
     env:
-      MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
       MINISIGN_PUBLIC_KEY: ${{ vars.MINISIGN_PUBLIC_KEY }}
     steps:
       - name: Check out source
@@ -305,6 +325,8 @@ jobs:
         run: node scripts/release/create-manifest.mjs target/release-assets "$RELEASE_TAG"
 
       - name: Sign and verify release checksums
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
         run: node scripts/release/sign-binaries.mjs target/release-assets --checksums
 
       - name: Upload dry-run release files

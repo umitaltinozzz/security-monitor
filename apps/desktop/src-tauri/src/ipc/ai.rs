@@ -402,7 +402,7 @@ pub async fn run_ai_request(
                 tokens_in: 0,
                 tokens_out: 0,
                 cost: if network_attempted.load(std::sync::atomic::Ordering::SeqCst) {
-                    None
+                    Some(estimate.estimated_cost_usd)
                 } else {
                     Some(0.0)
                 },

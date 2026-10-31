@@ -59,6 +59,7 @@ export function auditAction(action: string, t: T): string {
     project_added: "history.events.projectAdded",
     server_paired: "history.events.serverPaired",
     server_inventory_collection_approved: "history.events.inventoryApproved",
+    server_host_key_changed: "history.events.serverHostKeyChanged",
     scanner_installed: "history.events.scannerInstalled",
     mcp_source_access_permission_enable_approved: "history.events.mcpSourceAccessApproval",
     mcp_source_access_permission_enabled: "history.events.mcpSourceAccessEnabled",

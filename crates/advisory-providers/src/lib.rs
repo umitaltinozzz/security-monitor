@@ -28,7 +28,9 @@ pub use kev::{CachedKevCatalog, KevProvider, apply_kev, parse_kev_catalog};
 pub use matching::{AdvisoryFinding, FindingReason, evaluate_inventory};
 pub use merge::{AdvisoryMerger, merge_and_persist};
 pub use news::{NewsFeed, NewsSignalService, NewsSyncReport};
-pub use osv::{OsvDatabase, OsvDatabaseUpdater, OsvUpdateStatus, ecosystem_slug};
+pub use osv::{
+    OSV_SCANNER_DB_RELATIVE_DIR, OsvDatabase, OsvDatabaseUpdater, OsvUpdateStatus, ecosystem_slug,
+};
 pub use service::{AdvisoryService, AdvisorySyncReport, ProviderFreshness};
 
 #[cfg(test)]

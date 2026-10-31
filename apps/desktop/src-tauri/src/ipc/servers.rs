@@ -25,17 +25,103 @@ pub async fn list_ssh_config_hosts() -> Result<Vec<SshHostSummary>, String> {
             username: host.username,
             port: host.port,
             has_proxy_jump: host.proxy_jump.is_some(),
+            proxy_jump: host.proxy_jump,
         })
         .collect())
 }
 
-#[tauri::command]
-pub async fn inspect_server_host_key(input: SshTargetInput) -> Result<String, String> {
-    let target = to_ssh_target(input)?;
-    let candidate = inspect_host_key(&target)
+fn with_ssh_config_proxy_jump(mut input: SshTargetInput) -> SshTargetInput {
+    let has_explicit_jump = input
+        .proxy_jump
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+    if !has_explicit_jump
+        && let Ok((hosts, _)) = load_user_ssh_hosts()
+        && let Some(host) = hosts.into_iter().find(|host| {
+            host.alias == input.alias
+                && host.hostname == input.hostname
+                && host.username == input.username
+                && host.port == input.port
+                && host.proxy_jump.is_some()
+        })
+    {
+        input.proxy_jump = host.proxy_jump;
+    }
+    input
+}
+
+async fn resolve_pinned_proxy_jump(
+    database: &Database,
+    store: &dyn CredentialStore,
+    jump_spec: &str,
+    target_alias: &str,
+) -> Result<(PinnedProxyJump, SshIdentity), String> {
+    let assets = database
+        .repository::<Asset>()
+        .list()
         .await
-        .map_err(|error| opaque(error, "host_key_failed"))?;
+        .map_err(|error| opaque(error, "storage_unavailable"))?;
+    for asset in assets {
+        if asset.removed_at.is_some() {
+            continue;
+        }
+        let (Some(target_ref), Some(confirmed_fingerprint)) =
+            (asset.ssh_target_ref.as_deref(), asset.host_key_fingerprint)
+        else {
+            continue;
+        };
+        let Ok(Some(bytes)) = store.get_optional(target_ref) else {
+            continue;
+        };
+        let Ok(stored) = serde_json::from_slice::<StoredSshTarget>(&bytes) else {
+            continue;
+        };
+        let Ok(jump_target) = to_ssh_target(stored.target) else {
+            continue;
+        };
+        if jump_target.proxy_jump.is_none()
+            && jump_target.alias != target_alias
+            && proxy_jump_matches(jump_spec, &jump_target)
+        {
+            return Ok((
+                PinnedProxyJump {
+                    target: jump_target,
+                    confirmed_fingerprint,
+                },
+                SshIdentity::PrivateKeyRef(stored.private_key_ref),
+            ));
+        }
+    }
+    Err("invalid_input".to_owned())
+}
+
+async fn inspect_target_host_key(
+    database: &Database,
+    store: &dyn CredentialStore,
+    target: &SshTarget,
+) -> Result<String, String> {
+    let candidate = if let Some(jump_spec) = target.proxy_jump.as_deref() {
+        let (jump, jump_identity) =
+            resolve_pinned_proxy_jump(database, store, jump_spec, &target.alias).await?;
+        inspect_host_key_via_jump(target, &jump, &jump_identity, store)
+            .await
+            .map_err(|error| opaque(error, "host_key_failed"))?
+    } else {
+        inspect_host_key(target)
+            .await
+            .map_err(|error| opaque(error, "host_key_failed"))?
+    };
     Ok(candidate.fingerprint)
+}
+
+#[tauri::command]
+pub async fn inspect_server_host_key(
+    state: State<'_, AppState>,
+    input: SshTargetInput,
+) -> Result<String, String> {
+    let input = with_ssh_config_proxy_jump(input);
+    let target = to_ssh_target(input)?;
+    inspect_target_host_key(&state.database, &OsCredentialStore, &target).await
 }
 
 #[tauri::command]
@@ -49,14 +135,13 @@ pub async fn pair_server(
     if !fingerprint_confirmed {
         return Err("permission_denied".to_owned());
     }
+    let input = with_ssh_config_proxy_jump(input);
     let target = to_ssh_target(input.clone())?;
-    let candidate = inspect_host_key(&target)
-        .await
-        .map_err(|error| opaque(error, "host_key_failed"))?;
-    if candidate.fingerprint != confirmed_fingerprint {
+    let store = OsCredentialStore;
+    let observed_fingerprint = inspect_target_host_key(&state.database, &store, &target).await?;
+    if observed_fingerprint != confirmed_fingerprint {
         return Err("host_key_changed".to_owned());
     }
-    let store = OsCredentialStore;
     let instructions = create_pairing_instructions(&store, &device_label)
         .map_err(|error| opaque(error, "pairing_failed"))?;
     let credential = StoredSshTarget {
@@ -254,15 +339,31 @@ pub async fn collect_server_inventory(
         .map_err(|error| opaque(error, "collection_failed"))?;
     let target = to_ssh_target(stored.target)?;
     let approved_at = Utc::now();
-    let collection = collect_agent(
-        &target,
-        fingerprint,
-        &SshIdentity::PrivateKeyRef(stored.private_key_ref),
-        &store,
-        InventoryCollectionApproval::after_explicit_user_confirmation(approved_at),
-    )
-    .await
-    .map_err(|error| opaque(error, "collection_failed"))?;
+    let target_identity = SshIdentity::PrivateKeyRef(stored.private_key_ref);
+    let approval = InventoryCollectionApproval::after_explicit_user_confirmation(approved_at);
+    let collection_result = if let Some(jump_spec) = target.proxy_jump.as_deref() {
+        let (jump, jump_identity) =
+            resolve_pinned_proxy_jump(&state.database, &store, jump_spec, &target.alias).await?;
+        collect_agent_via_jump_with_identities(
+            &target,
+            fingerprint,
+            &jump,
+            &jump_identity,
+            &target_identity,
+            &store,
+            approval,
+        )
+        .await
+    } else {
+        collect_agent(&target, fingerprint, &target_identity, &store, approval).await
+    };
+    let collection = match collection_result {
+        Ok(collection) => collection,
+        Err(error) => {
+            return handle_collection_failure(&state.database, &state.app_data_dir, &asset, error)
+                .await;
+        }
+    };
     collection
         .inventory
         .validate()
@@ -310,4 +411,30 @@ pub(super) async fn evaluate_server_os_packages(
     tokio::task::spawn_blocking(move || evaluate_os_packages(&cache_root, &inventory))
         .await
         .map_err(|error| opaque(error, "collection_failed"))
+}
+
+async fn handle_collection_failure(
+    database: &Database,
+    app_data_dir: &Path,
+    asset: &Asset,
+    error: CollectionError,
+) -> Result<CollectionSummary, String> {
+    if matches!(error, CollectionError::HostKeyChanged) {
+        let _ = delete_server_snapshot(app_data_dir, &asset.id);
+        let mut updated_asset = asset.clone();
+        updated_asset.last_success_at = None;
+        updated_asset.updated_at = Utc::now();
+        let _ = database.repository::<Asset>().update(&updated_asset).await;
+        let _ = write_audit_event(
+            database,
+            "server_host_key_changed",
+            "asset",
+            Some(asset.id.clone()),
+            Utc::now(),
+            AuditResult::Failed,
+        )
+        .await;
+        return Err(opaque(error, "host_key_changed"));
+    }
+    Err(opaque(error, "collection_failed"))
 }

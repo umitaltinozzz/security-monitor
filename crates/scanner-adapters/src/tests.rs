@@ -321,3 +321,39 @@ fn installation_path_helpers_do_not_accept_outside_roots() {
     let resolved = link.canonicalize().unwrap();
     assert!(!resolved.starts_with(root.path().canonicalize().unwrap()));
 }
+
+#[test]
+fn osv_scanner_exit_code_one_is_treated_as_findings_not_engine_failure() {
+    assert!(!crate::runner::scanner_exit_indicates_error(
+        EngineKind::OsvScanner,
+        Some(0)
+    ));
+    assert!(!crate::runner::scanner_exit_indicates_error(
+        EngineKind::OsvScanner,
+        Some(1)
+    ));
+    assert!(crate::runner::scanner_exit_indicates_error(
+        EngineKind::OsvScanner,
+        Some(2)
+    ));
+    assert!(crate::runner::scanner_exit_indicates_error(
+        EngineKind::OsvScanner,
+        Some(127)
+    ));
+    assert!(crate::runner::scanner_exit_indicates_error(
+        EngineKind::OsvScanner,
+        None
+    ));
+    assert!(!crate::runner::scanner_exit_indicates_error(
+        EngineKind::Trivy,
+        Some(0)
+    ));
+    assert!(crate::runner::scanner_exit_indicates_error(
+        EngineKind::Trivy,
+        Some(1)
+    ));
+    assert_eq!(
+        security_monitor_advisory_providers::OSV_SCANNER_DB_RELATIVE_DIR,
+        "advisories/osv/scanner-db"
+    );
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-agent-remediation-available"
+description = "Enables the agent_remediation_available command without any pre-configured scope."
+commands.allow = ["agent_remediation_available"]
+
+[[permission]]
+identifier = "deny-agent-remediation-available"
+description = "Denies the agent_remediation_available command without any pre-configured scope."
+commands.deny = ["agent_remediation_available"]

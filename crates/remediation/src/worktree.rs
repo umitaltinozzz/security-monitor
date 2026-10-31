@@ -186,30 +186,23 @@ pub async fn worktree_diff(worktree_path: &Path) -> Result<WorktreeDiff, Remedia
     if !worktree.is_dir() || contains_symlink(&worktree)? {
         return Err(RemediationError::WorktreePathInvalid);
     }
-    let git_dir_output = run_git_command(
-        &[
-            "-C",
-            path_arg(&worktree)?,
-            "rev-parse",
-            "--absolute-git-dir",
-        ],
-        Duration::from_secs(15),
-        MAX_TEST_OUTPUT_BYTES,
-    )
-    .await?;
-    let git_dir = fs::canonicalize(String::from_utf8_lossy(&git_dir_output.0).trim())
-        .map_err(|_| RemediationError::WorktreePathInvalid)?;
-    if has_git_filter_attributes(&worktree, &git_dir)? {
+    let (git_dir, common_dir) = resolve_worktree_git_dir(&worktree)?;
+    if has_git_filter_attributes(&worktree, &git_dir)?
+        || has_git_filter_attributes(&worktree, &common_dir)?
+    {
         return Err(RemediationError::GitFiltersNotAllowed);
     }
+    let git_dir_arg = format!("--git-dir={}", path_arg(&git_dir)?);
+    let work_tree_arg = format!("--work-tree={}", path_arg(&worktree)?);
     let diff = run_git_command(
         &[
-            "-C",
-            path_arg(&worktree)?,
+            &git_dir_arg,
+            &work_tree_arg,
             "diff",
             "--binary",
             "--no-ext-diff",
             "--no-textconv",
+            "--ignore-submodules=all",
             "HEAD",
         ],
         Duration::from_secs(30),
@@ -221,8 +214,8 @@ pub async fn worktree_diff(worktree_path: &Path) -> Result<WorktreeDiff, Remedia
     }
     let untracked = run_git_command(
         &[
-            "-C",
-            path_arg(&worktree)?,
+            &git_dir_arg,
+            &work_tree_arg,
             "ls-files",
             "--others",
             "--exclude-standard",
@@ -296,11 +289,87 @@ fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, RemediationError> {
     }
 }
 
+fn resolve_worktree_git_dir(worktree: &Path) -> Result<(PathBuf, PathBuf), RemediationError> {
+    let dot_git = worktree.join(".git");
+    let metadata =
+        fs::symlink_metadata(&dot_git).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 4096 {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let contents =
+        fs::read_to_string(&dot_git).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    let raw_git_dir = contents
+        .trim()
+        .strip_prefix("gitdir:")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(RemediationError::WorktreePathInvalid)?;
+    let resolved_git_dir = if Path::new(raw_git_dir).is_absolute() {
+        PathBuf::from(raw_git_dir)
+    } else {
+        worktree.join(raw_git_dir)
+    };
+    let git_dir =
+        fs::canonicalize(resolved_git_dir).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if !git_dir.is_dir()
+        || git_dir.starts_with(worktree)
+        || git_dir.parent().and_then(|parent| parent.file_name())
+            != Some(std::ffi::OsStr::new("worktrees"))
+    {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let backlink_path = git_dir.join("gitdir");
+    let backlink_meta =
+        fs::symlink_metadata(&backlink_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if !backlink_meta.is_file()
+        || backlink_meta.file_type().is_symlink()
+        || backlink_meta.len() > 4096
+    {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let backlink_raw =
+        fs::read_to_string(&backlink_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    let backlink_resolved = if Path::new(backlink_raw.trim()).is_absolute() {
+        PathBuf::from(backlink_raw.trim())
+    } else {
+        git_dir.join(backlink_raw.trim())
+    };
+    let canonical_dot_git =
+        fs::canonicalize(&dot_git).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    let canonical_backlink =
+        fs::canonicalize(backlink_resolved).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if canonical_backlink != canonical_dot_git {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let commondir_path = git_dir.join("commondir");
+    let commondir_meta =
+        fs::symlink_metadata(&commondir_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if !commondir_meta.is_file()
+        || commondir_meta.file_type().is_symlink()
+        || commondir_meta.len() > 4096
+    {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    let commondir_raw =
+        fs::read_to_string(&commondir_path).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    let commondir_resolved = if Path::new(commondir_raw.trim()).is_absolute() {
+        PathBuf::from(commondir_raw.trim())
+    } else {
+        git_dir.join(commondir_raw.trim())
+    };
+    let common_dir =
+        fs::canonicalize(commondir_resolved).map_err(|_| RemediationError::WorktreePathInvalid)?;
+    if !common_dir.is_dir() || common_dir.starts_with(worktree) {
+        return Err(RemediationError::WorktreePathInvalid);
+    }
+    Ok((git_dir, common_dir))
+}
+
 fn has_git_filter_attributes(root: &Path, git_dir: &Path) -> Result<bool, RemediationError> {
     let mut pending = vec![root.to_path_buf()];
     let mut visited = 0usize;
     while let Some(directory) = pending.pop() {
-        for entry in fs::read_dir(directory).map_err(|_| RemediationError::FilesystemFailed)? {
+        for entry in fs::read_dir(&directory).map_err(|_| RemediationError::FilesystemFailed)? {
             visited = visited.saturating_add(1);
             if visited > MAX_WORKTREE_ENTRIES {
                 return Err(RemediationError::WorktreePathInvalid);
@@ -315,7 +384,11 @@ fn has_git_filter_attributes(root: &Path, git_dir: &Path) -> Result<bool, Remedi
             if file_type.is_dir() {
                 if entry.file_name() != ".git" {
                     pending.push(entry.path());
+                } else if directory != root {
+                    return Err(RemediationError::WorktreePathInvalid);
                 }
+            } else if entry.file_name() == ".git" && directory != root {
+                return Err(RemediationError::WorktreePathInvalid);
             } else if entry.file_name() == ".gitattributes"
                 && file_has_filter_attribute(&entry.path())?
             {

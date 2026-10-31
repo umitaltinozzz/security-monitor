@@ -113,6 +113,35 @@ pub fn app_data_dir_for_build(app_data_dir: &Path, debug_build: bool) -> PathBuf
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppPaths {
+    app_data_dir: PathBuf,
+}
+
+impl AppPaths {
+    pub fn new(app_data_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            app_data_dir: app_data_dir.into(),
+        }
+    }
+
+    pub fn app_data_dir(&self) -> &Path {
+        &self.app_data_dir
+    }
+
+    pub fn advisories_dir(&self) -> PathBuf {
+        self.app_data_dir.join("advisories")
+    }
+
+    pub fn osv_dir(&self) -> PathBuf {
+        self.advisories_dir().join("osv")
+    }
+
+    pub fn osv_scanner_db_dir(&self) -> PathBuf {
+        self.osv_dir().join("scanner-db")
+    }
+}
+
 pub fn persist_server_snapshot(
     app_data_dir: &Path,
     asset_id: &str,

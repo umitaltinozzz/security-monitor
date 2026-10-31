@@ -128,7 +128,7 @@ fn is_safe_proxy_jump(value: &str) -> bool {
     (port.is_none_or(|port| port > 0)) && (is_safe_alias(host) || is_safe_hostname(host))
 }
 
-pub(crate) fn proxy_jump_matches(value: &str, target: &SshTarget) -> bool {
+pub fn proxy_jump_matches(value: &str, target: &SshTarget) -> bool {
     if value == target.alias {
         return true;
     }

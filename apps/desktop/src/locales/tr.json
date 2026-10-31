@@ -527,6 +527,7 @@
       "projectAdded": "Proje eklendi",
       "serverPaired": "Sunucu eşleştirildi",
       "inventoryApproved": "Sunucu envanter toplama onaylandı",
+      "serverHostKeyChanged": "Sunucu SSH host anahtarı değişti",
       "findingChanged": "Bulgu durumu değiştirildi",
       "scannerInstalled": "Tarayıcı kuruldu",
       "mcpSourceAccessApproval": "MCP kaynak erişimi onaylandı",

@@ -34,6 +34,16 @@ pub fn write_mcp_remediation_request(
     request: &McpRemediationRequest,
 ) -> Result<(), RemediationError> {
     validate_mcp_request(request)?;
+    let existing = list_mcp_remediation_requests(app_data_dir)?;
+    if existing.len() >= MAX_MCP_REQUESTS
+        || existing
+            .iter()
+            .filter(|item| item.finding_id == request.finding_id)
+            .count()
+            >= 16
+    {
+        return Err(RemediationError::InvalidTestCommand);
+    }
     let queue = canonical_mcp_queue_directory(app_data_dir)?;
     let path = queue.join(format!("{}.json", request.id));
     let bytes = serde_json::to_vec(request).map_err(|_| RemediationError::FilesystemFailed)?;

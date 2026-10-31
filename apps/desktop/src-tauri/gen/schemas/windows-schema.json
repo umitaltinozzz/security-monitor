@@ -183,6 +183,12 @@
           "markdownDescription": "Enables the add_project command without any pre-configured scope."
         },
         {
+          "description": "Enables the agent_remediation_available command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-remediation-available",
+          "markdownDescription": "Enables the agent_remediation_available command without any pre-configured scope."
+        },
+        {
           "description": "Enables the approve_remediation command without any pre-configured scope.",
           "type": "string",
           "const": "allow-approve-remediation",
@@ -223,6 +229,12 @@
           "type": "string",
           "const": "allow-delete-memory",
           "markdownDescription": "Enables the delete_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-notification-channel",
+          "markdownDescription": "Enables the delete_notification_channel command without any pre-configured scope."
         },
         {
           "description": "Enables the detect_scanners command without any pre-configured scope.",
@@ -369,6 +381,12 @@
           "markdownDescription": "Enables the list_news_signals command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_notification_channels command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-notification-channels",
+          "markdownDescription": "Enables the list_notification_channels command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_project_server_links command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-project-server-links",
@@ -393,6 +411,12 @@
           "markdownDescription": "Enables the list_scan_runs command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_scanner_findings command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-scanner-findings",
+          "markdownDescription": "Enables the list_scanner_findings command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_server_assets command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-server-assets",
@@ -409,6 +433,12 @@
           "type": "string",
           "const": "allow-pair-server",
           "markdownDescription": "Enables the pair_server command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the preview_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-preview-notification",
+          "markdownDescription": "Enables the preview_notification command without any pre-configured scope."
         },
         {
           "description": "Enables the refresh_news_signals command without any pre-configured scope.",
@@ -465,6 +495,18 @@
           "markdownDescription": "Enables the save_app_settings command without any pre-configured scope."
         },
         {
+          "description": "Enables the save_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-notification-channel",
+          "markdownDescription": "Enables the save_notification_channel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the send_test_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-send-test-notification",
+          "markdownDescription": "Enables the send_test_notification command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_finding_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-finding-status",
@@ -513,10 +555,22 @@
           "markdownDescription": "Enables the update_memory command without any pre-configured scope."
         },
         {
+          "description": "Enables the update_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-update-notification-channel",
+          "markdownDescription": "Enables the update_notification_channel command without any pre-configured scope."
+        },
+        {
           "description": "Denies the add_project command without any pre-configured scope.",
           "type": "string",
           "const": "deny-add-project",
           "markdownDescription": "Denies the add_project command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_remediation_available command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-remediation-available",
+          "markdownDescription": "Denies the agent_remediation_available command without any pre-configured scope."
         },
         {
           "description": "Denies the approve_remediation command without any pre-configured scope.",
@@ -559,6 +613,12 @@
           "type": "string",
           "const": "deny-delete-memory",
           "markdownDescription": "Denies the delete_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-notification-channel",
+          "markdownDescription": "Denies the delete_notification_channel command without any pre-configured scope."
         },
         {
           "description": "Denies the detect_scanners command without any pre-configured scope.",
@@ -705,6 +765,12 @@
           "markdownDescription": "Denies the list_news_signals command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_notification_channels command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-notification-channels",
+          "markdownDescription": "Denies the list_notification_channels command without any pre-configured scope."
+        },
+        {
           "description": "Denies the list_project_server_links command without any pre-configured scope.",
           "type": "string",
           "const": "deny-list-project-server-links",
@@ -729,6 +795,12 @@
           "markdownDescription": "Denies the list_scan_runs command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_scanner_findings command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-scanner-findings",
+          "markdownDescription": "Denies the list_scanner_findings command without any pre-configured scope."
+        },
+        {
           "description": "Denies the list_server_assets command without any pre-configured scope.",
           "type": "string",
           "const": "deny-list-server-assets",
@@ -745,6 +817,12 @@
           "type": "string",
           "const": "deny-pair-server",
           "markdownDescription": "Denies the pair_server command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the preview_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-preview-notification",
+          "markdownDescription": "Denies the preview_notification command without any pre-configured scope."
         },
         {
           "description": "Denies the refresh_news_signals command without any pre-configured scope.",
@@ -801,6 +879,18 @@
           "markdownDescription": "Denies the save_app_settings command without any pre-configured scope."
         },
         {
+          "description": "Denies the save_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-notification-channel",
+          "markdownDescription": "Denies the save_notification_channel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the send_test_notification command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-send-test-notification",
+          "markdownDescription": "Denies the send_test_notification command without any pre-configured scope."
+        },
+        {
           "description": "Denies the set_finding_status command without any pre-configured scope.",
           "type": "string",
           "const": "deny-set-finding-status",
@@ -847,6 +937,12 @@
           "type": "string",
           "const": "deny-update-memory",
           "markdownDescription": "Denies the update_memory command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the update_notification_channel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-update-notification-channel",
+          "markdownDescription": "Denies the update_notification_channel command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

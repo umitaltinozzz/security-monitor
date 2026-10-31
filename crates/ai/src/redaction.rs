@@ -105,7 +105,7 @@ pub fn redact_text_with_host_aliases(
     static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
     let patterns = PATTERNS.get_or_init(|| {
         [
-            r#"(?i)(?:api[_-]?key|access[_-]?token|token|secret|pwd|passwd|db[_-]?pass|password|authorization)[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"#,
+            r#"(?i)\b(?:[a-z0-9_.-]*[_-])?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|secret(?:[_-]?key(?:[_-]?base)?)?|private[_-]?key|signing[_-]?key|encryption[_-]?key|master[_-]?key|token|pwd|passwd|db[_-]?pass|password|authorization)\b[\"']?\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)"#,
             r"(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
             r"(?i)\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|shpat_[A-Za-z0-9_-]{8,}|dop_v1_[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9_-]{20,})\b",
             r"(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
@@ -156,7 +156,7 @@ pub fn redact_text_with_host_aliases(
                 r#"(?:{host_value}(?:\s*,\s*{host_value})*|\[[^\]\r\n]*\])"#
             );
             let pattern = format!(
-                r#"(?i)(\b[a-z0-9_.-]*(?:hostname|host|server|address|ip|domain|external(?:[_-]?name)?)(?:s|[_-]?names?)?\b[\"']?\s*[:=]\s*[\"']?)({host_sequence})([\"']?)"#
+                r#"(?i)(\b(?:[a-z0-9_.-]*(?:hostname|host)|(?:[a-z0-9_.-]*[_.-])?(?:server|address|ip|domain|external(?:[_-]?name)?))(?:s|[_-]?names?)?\b[\"']?\s*[:=]\s*[\"']?)({host_sequence})([\"']?)"#
             );
             Regex::new(&pattern).ok()
         })
@@ -909,5 +909,13 @@ mod tests {
         assert!(!result.text.contains("192.0.2.1"));
         assert!(!result.text.contains("fe80::1"));
         assert_eq!(result.redacted_values, 23);
+
+        let benign = redact_text(
+            "strip = true\ntooltip = \"ok\"\nSECRET_KEY = \"super-secret-value\"\nPRIVATE_KEY: my_private_key\n",
+        );
+        assert!(benign.text.contains("strip = true"));
+        assert!(benign.text.contains("tooltip = \"ok\""));
+        assert!(!benign.text.contains("super-secret-value"));
+        assert!(!benign.text.contains("my_private_key"));
     }
 }

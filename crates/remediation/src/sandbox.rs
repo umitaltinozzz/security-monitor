@@ -38,11 +38,31 @@ pub fn build_test_args(
             "type=bind,src={},dst=/workspace",
             path_arg(&worktree)?
         )),
+    ];
+    let dot_git = worktree.join(".git");
+    if dot_git.exists() {
+        let metadata =
+            fs::symlink_metadata(&dot_git).map_err(|_| RemediationError::WorktreePathInvalid)?;
+        if metadata.file_type().is_symlink() {
+            return Err(RemediationError::WorktreePathInvalid);
+        }
+        let dot_git =
+            fs::canonicalize(&dot_git).map_err(|_| RemediationError::WorktreePathInvalid)?;
+        if !dot_git.starts_with(&worktree) || dot_git.to_string_lossy().contains(',') {
+            return Err(RemediationError::WorktreePathInvalid);
+        }
+        args.push(OsString::from("--mount"));
+        args.push(OsString::from(format!(
+            "type=bind,src={},dst=/workspace/.git,readonly",
+            path_arg(&dot_git)?
+        )));
+    }
+    args.extend([
         OsString::from("--workdir=/workspace"),
         OsString::from("--env=TMPDIR=/workspace/.secmon-tmp"),
         OsString::from(command.image.as_str()),
         OsString::from(command.executable.as_str()),
-    ];
+    ]);
     args.extend(command.args.iter().map(OsString::from));
     let _ = engine;
     Ok(args)

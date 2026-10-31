@@ -100,7 +100,7 @@ fn evaluate_component(
 
     let version = component.version.as_deref()?;
     let mut source_results: BTreeMap<String, Option<bool>> = BTreeMap::new();
-    for range in matching {
+    for range in &matching {
         let source = range
             .source
             .as_deref()
@@ -164,6 +164,7 @@ fn evaluate_component(
             .and_modify(|current| *current = union_result(*current, result))
             .or_insert(result);
     }
+    let fix_version = select_fix_version(advisory, &matching, version);
     let verified = source_results
         .values()
         .flatten()
@@ -174,7 +175,7 @@ fn evaluate_component(
             advisory,
             component,
             FindingReason::SourceDisagreement,
-            advisory.fixed_versions.first().cloned(),
+            fix_version,
             evidence_sources,
         ));
     }
@@ -183,7 +184,7 @@ fn evaluate_component(
             advisory,
             component,
             FindingReason::VersionRangeUnverified,
-            advisory.fixed_versions.first().cloned(),
+            fix_version,
             evidence_sources,
         ));
     }
@@ -192,12 +193,154 @@ fn evaluate_component(
             advisory,
             component,
             FindingReason::AffectedVersion,
-            advisory.fixed_versions.first().cloned(),
+            fix_version,
             evidence_sources,
         ))
     } else {
         None
     }
+}
+
+fn select_fix_version(
+    advisory: &Advisory,
+    matching: &[&security_monitor_core::AffectedRange],
+    version: &str,
+) -> Option<String> {
+    for range in matching {
+        let source = range.source.as_deref().unwrap_or("unknown source");
+        let matched = match range.range_type.as_deref() {
+            Some("SEMVER") => {
+                if (canonical_ecosystem(&range.ecosystem) == "golang"
+                    && is_go_pseudo_version(version))
+                    || (canonical_ecosystem(&range.ecosystem) == "rubygems"
+                        && (version.contains('-') || version.contains('+')))
+                {
+                    None
+                } else {
+                    events_fix_with(
+                        version,
+                        &range.events,
+                        &advisory.fixed_versions,
+                        parse_semver_version,
+                    )
+                }
+            }
+            Some("ECOSYSTEM") if is_deb_compatible_ecosystem(&range.ecosystem) => events_fix_with(
+                version,
+                &range.events,
+                &advisory.fixed_versions,
+                parse_debian_version,
+            ),
+            Some("ECOSYSTEM") if is_rpm_ecosystem(&range.ecosystem) => events_fix_with(
+                version,
+                &range.events,
+                &advisory.fixed_versions,
+                parse_rpm_evr,
+            ),
+            Some("ECOSYSTEM") if is_apk_ecosystem(&range.ecosystem) => events_fix_with(
+                version,
+                &range.events,
+                &advisory.fixed_versions,
+                parse_apk_version,
+            ),
+            Some("ECOSYSTEM") if canonical_ecosystem(&range.ecosystem) == "pypi" => {
+                events_fix_with(version, &range.events, &advisory.fixed_versions, |value| {
+                    value.parse::<Pep440Version>().ok()
+                })
+            }
+            Some("ECOSYSTEM")
+                if matches!(
+                    canonical_ecosystem(&range.ecosystem).as_str(),
+                    "npm" | "cargo"
+                ) || (canonical_ecosystem(&range.ecosystem) == "golang"
+                    && !is_go_pseudo_version(version)) =>
+            {
+                events_fix_with(
+                    version,
+                    &range.events,
+                    &advisory.fixed_versions,
+                    parse_semver_version,
+                )
+            }
+            None if source == "cve.now" && is_deb_compatible_ecosystem(&range.ecosystem) => {
+                events_fix_with(
+                    version,
+                    &range.events,
+                    &advisory.fixed_versions,
+                    parse_debian_version,
+                )
+            }
+            None if source == "cve.now"
+                && matches!(
+                    canonical_ecosystem(&range.ecosystem).as_str(),
+                    "npm" | "cargo"
+                )
+                || (source == "cve.now"
+                    && canonical_ecosystem(&range.ecosystem) == "golang"
+                    && !is_go_pseudo_version(version)) =>
+            {
+                events_fix_with(
+                    version,
+                    &range.events,
+                    &advisory.fixed_versions,
+                    parse_semver_version,
+                )
+            }
+            _ => None,
+        };
+        if matched.is_some() {
+            return matched;
+        }
+    }
+    advisory.fixed_versions.first().cloned()
+}
+
+fn events_fix_with<T: Ord>(
+    version: &str,
+    events: &[security_monitor_core::RangeEvent],
+    advisory_fixed_versions: &[String],
+    parse: impl Fn(&str) -> Option<T>,
+) -> Option<String> {
+    let installed = parse(version)?;
+    let mut lower: Option<(T, bool)> = None;
+    let mut matching_branch_fix: Option<(T, String)> = None;
+    for event in events {
+        if let Some(introduced) = &event.introduced {
+            lower = if introduced == "0" {
+                parse("0").map(|parsed| (parsed, false))
+            } else if let Some(exclusive) = introduced.strip_prefix('>') {
+                parse(exclusive).map(|parsed| (parsed, true))
+            } else {
+                parse(introduced).map(|parsed| (parsed, false))
+            };
+        }
+        if let Some(fixed) = &event.fixed {
+            if let (Some((start, exclusive)), Some(upper)) = (&lower, parse(fixed))
+                && lower_includes(&installed, start, *exclusive)
+                && installed < upper
+                && matching_branch_fix
+                    .as_ref()
+                    .is_none_or(|(best, _)| &upper < best)
+            {
+                matching_branch_fix = Some((upper, fixed.clone()));
+            }
+            lower = None;
+        }
+        if event.last_affected.is_some() || event.limit.is_some() {
+            lower = None;
+        }
+    }
+    if let Some((_, fixed)) = matching_branch_fix {
+        return Some(fixed);
+    }
+    events
+        .iter()
+        .filter_map(|event| event.fixed.as_deref())
+        .chain(advisory_fixed_versions.iter().map(String::as_str))
+        .filter_map(|candidate| parse(candidate).map(|parsed| (parsed, candidate.to_owned())))
+        .filter(|(parsed, _)| parsed > &installed)
+        .min_by(|(left, _), (right, _)| left.cmp(right))
+        .map(|(_, candidate)| candidate)
 }
 
 fn union_result(current: Option<bool>, incoming: Option<bool>) -> Option<bool> {
@@ -378,8 +521,14 @@ fn debian_revision_cmp(left: &str, right: &str) -> Ordering {
         while (left_index < left.len() && !left[left_index].is_ascii_digit())
             || (right_index < right.len() && !right[right_index].is_ascii_digit())
         {
-            let left_byte = left.get(left_index).copied();
-            let right_byte = right.get(right_index).copied();
+            let left_byte = left
+                .get(left_index)
+                .copied()
+                .filter(|byte| !byte.is_ascii_digit());
+            let right_byte = right
+                .get(right_index)
+                .copied()
+                .filter(|byte| !byte.is_ascii_digit());
             let order = debian_character_order(left_byte).cmp(&debian_character_order(right_byte));
             if order != Ordering::Equal {
                 return order;
@@ -923,6 +1072,76 @@ mod debian_version_tests {
                 prop_assert!(first <= third);
             }
         }
+    }
+
+    #[test]
+    fn multi_branch_advisory_selects_fix_version_for_installed_branch() {
+        use chrono::Utc;
+        use security_monitor_core::{Advisory, AffectedRange, RangeEvent};
+        use security_monitor_inventory::{Inventory, InventoryComponent};
+
+        let now = Utc::now();
+        let advisory = Advisory {
+            canonical_id: "CVE-2026-0001".to_owned(),
+            title: "multi-branch fix".to_owned(),
+            summary: Some("multi-branch fix".to_owned()),
+            summary_model: None,
+            description: None,
+            source_attributions: Vec::new(),
+            aliases: Vec::new(),
+            severity: None,
+            cvss: None,
+            epss: None,
+            epss_date: None,
+            kev: false,
+            affected_ranges: vec![AffectedRange {
+                ecosystem: "npm".to_owned(),
+                package: Some("widget".to_owned()),
+                range_type: Some("SEMVER".to_owned()),
+                source: Some("osv.dev".to_owned()),
+                events: vec![
+                    RangeEvent {
+                        introduced: Some("1.0.0".to_owned()),
+                        fixed: Some("1.9.5".to_owned()),
+                        last_affected: None,
+                        limit: None,
+                    },
+                    RangeEvent {
+                        introduced: Some("2.0.0".to_owned()),
+                        fixed: Some("2.4.1".to_owned()),
+                        last_affected: None,
+                        limit: None,
+                    },
+                ],
+            }],
+            fixed_versions: vec!["1.9.5".to_owned(), "2.4.1".to_owned()],
+            source_urls: Vec::new(),
+            source_updated_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        };
+        let inventory = Inventory {
+            components: vec![InventoryComponent {
+                purl: "pkg:npm/widget@2.3.0".to_owned(),
+                ecosystem: "npm".to_owned(),
+                name: "widget".to_owned(),
+                version: Some("2.3.0".to_owned()),
+                source_type: "lockfile".to_owned(),
+                evidence_paths: vec!["package-lock.json".to_owned()],
+            }],
+            project_roots: Vec::new(),
+            detected_files: Vec::new(),
+            diagnostics: Vec::new(),
+            complete: true,
+        };
+
+        let findings = super::evaluate_inventory(&[advisory], &inventory);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].fix_version.as_deref(), Some("2.4.1"));
+        assert!(
+            super::parse_debian_version("1.0a1").unwrap()
+                < super::parse_debian_version("1.0ab").unwrap()
+        );
     }
 }
 

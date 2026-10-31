@@ -21,6 +21,7 @@ use crate::{
 };
 
 const OSV_DUMP_BASE: &str = "https://osv-vulnerabilities.storage.googleapis.com";
+pub const OSV_SCANNER_DB_RELATIVE_DIR: &str = "advisories/osv/scanner-db";
 const MAX_OSV_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_OSV_EXPANDED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_OSV_ARCHIVE_ENTRIES: usize = 500_000;
@@ -312,12 +313,29 @@ impl OsvDatabase {
         collect_json_files(directory, &mut files)?;
         files.sort();
         for path in files {
-            let bytes = fs::read(path).map_err(ProviderError::Io)?;
-            let value: Value = serde_json::from_slice(&bytes)?;
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    database.status.stale = true;
+                    database.status.error = Some("corrupt_advisory_entry_skipped".to_owned());
+                    continue;
+                }
+            };
+            let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+                database.status.stale = true;
+                database.status.error = Some("corrupt_advisory_entry_skipped".to_owned());
+                continue;
+            };
             if value.get("id").and_then(Value::as_str).is_none() {
-                return Err(ProviderError::InvalidData);
+                database.status.stale = true;
+                database.status.error = Some("corrupt_advisory_entry_skipped".to_owned());
+                continue;
             }
-            let advisory = parse_osv_advisory(&bytes)?;
+            let Ok(advisory) = parse_osv_advisory(&bytes) else {
+                database.status.stale = true;
+                database.status.error = Some("corrupt_advisory_entry_skipped".to_owned());
+                continue;
+            };
             for affected in &advisory.affected_ranges {
                 if let Some(package) = &affected.package {
                     database

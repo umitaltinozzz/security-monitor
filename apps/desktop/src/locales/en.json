@@ -527,6 +527,7 @@
       "projectAdded": "Project added",
       "serverPaired": "Server paired",
       "inventoryApproved": "Server inventory collection approved",
+      "serverHostKeyChanged": "Server SSH host key changed",
       "findingChanged": "Finding status changed",
       "scannerInstalled": "Scanner installed",
       "mcpSourceAccessApproval": "MCP source access approved",

@@ -198,6 +198,8 @@ pub struct SshTargetInput {
     pub username: String,
     pub port: u16,
     pub environment: Environment,
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -208,6 +210,8 @@ pub struct SshHostSummary {
     pub username: String,
     pub port: u16,
     pub has_proxy_jump: bool,
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]

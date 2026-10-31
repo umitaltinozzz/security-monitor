@@ -254,18 +254,21 @@ pub async fn correlate_and_persist(
     let correlated = correlate(advisories, &verified_components, evaluated_at)?;
     let findings = database.repository::<Finding>();
     let evidence = database.repository::<FindingEvidence>();
+    let existing_findings = findings.list().await?;
     for record in &correlated {
         if let Some(existing) = findings.get(&record.finding.id).await? {
             let mut updated = record.finding.clone();
-            updated.created_at = existing.created_at;
-            updated.repo_status = existing.repo_status.clone();
-            updated.production_status = existing.production_status.clone();
-            if has_active_user_disposition(&existing, evaluated_at) {
-                updated.status = existing.status.clone();
-                updated.disposition = existing.disposition.clone();
-                updated.risk_expires_at = existing.risk_expires_at;
-            }
+            apply_preserved_finding_state(&mut updated, &existing, evaluated_at);
             findings.update(&updated).await?;
+        } else if let Some(rekeyed) = existing_findings.iter().find(|candidate| {
+            candidate.id != record.finding.id
+                && candidate.advisory_id == record.finding.advisory_id
+                && candidate.component_instance_id == record.finding.component_instance_id
+        }) {
+            let mut updated = record.finding.clone();
+            apply_preserved_finding_state(&mut updated, rekeyed, evaluated_at);
+            findings.create(&updated).await?;
+            let _ = findings.delete(&rekeyed.id).await?;
         } else {
             findings.create(&record.finding).await?;
         }
@@ -276,6 +279,33 @@ pub async fn correlate_and_persist(
         }
     }
     Ok(correlated)
+}
+
+fn apply_preserved_finding_state(
+    updated: &mut Finding,
+    existing: &Finding,
+    evaluated_at: DateTime<Utc>,
+) {
+    updated.created_at = existing.created_at;
+    updated.repo_status = existing.repo_status.clone();
+    updated.production_status = existing.production_status.clone();
+    if has_active_user_disposition(existing, evaluated_at) {
+        updated.status = existing.status.clone();
+        let mut disposition = existing.disposition.clone();
+        if let Some(inner) = disposition.as_mut()
+            && inner.scope == "finding"
+        {
+            inner.scope_id = updated.id.clone();
+        }
+        updated.disposition = disposition;
+        updated.risk_expires_at = existing.risk_expires_at;
+    } else if matches!(
+        existing.status,
+        FindingStatus::Mitigated | FindingStatus::FixProposed
+    ) && updated.status == FindingStatus::ConfirmedAffected
+    {
+        updated.status = existing.status.clone();
+    }
 }
 
 fn has_active_user_disposition(finding: &Finding, evaluated_at: DateTime<Utc>) -> bool {

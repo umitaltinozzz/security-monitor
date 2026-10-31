@@ -337,9 +337,37 @@ pub async fn collect_agent_via_jump(
     store: &dyn CredentialStore,
     approval: InventoryCollectionApproval,
 ) -> Result<AgentCollection, CollectionError> {
+    collect_agent_via_jump_with_identities(
+        target,
+        confirmed_fingerprint,
+        jump,
+        identity,
+        identity,
+        store,
+        approval,
+    )
+    .await
+}
+
+pub async fn collect_agent_via_jump_with_identities(
+    target: &SshTarget,
+    confirmed_fingerprint: &str,
+    jump: &PinnedProxyJump,
+    jump_identity: &SshIdentity,
+    target_identity: &SshIdentity,
+    store: &dyn CredentialStore,
+    approval: InventoryCollectionApproval,
+) -> Result<AgentCollection, CollectionError> {
     with_collection_timeout(async {
-        let mut connection =
-            connect_for_target(target, confirmed_fingerprint, identity, store, Some(jump)).await?;
+        let mut connection = connect_for_target_with_identities(
+            target,
+            confirmed_fingerprint,
+            jump_identity,
+            target_identity,
+            store,
+            Some(jump),
+        )
+        .await?;
         let output = run_remote(&mut connection.target, MAX_AGENT_COMMAND).await?;
         let inventory = decode_inventory(&output).map_err(|_| CollectionError::Protocol)?;
         Ok(AgentCollection {
@@ -524,6 +552,17 @@ async fn connect_for_target(
     store: &dyn CredentialStore,
     jump: Option<&PinnedProxyJump>,
 ) -> Result<SshConnection, CollectionError> {
+    connect_for_target_with_identities(target, fingerprint, identity, identity, store, jump).await
+}
+
+async fn connect_for_target_with_identities(
+    target: &SshTarget,
+    fingerprint: &str,
+    jump_identity: &SshIdentity,
+    target_identity: &SshIdentity,
+    store: &dyn CredentialStore,
+    jump: Option<&PinnedProxyJump>,
+) -> Result<SshConnection, CollectionError> {
     validate_fingerprint(fingerprint).map_err(|_| CollectionError::InvalidFingerprint)?;
     validate_route(target, jump)?;
     let (mut target_session, jump_session) = if let Some(jump) = jump {
@@ -531,7 +570,13 @@ async fn connect_for_target(
             .map_err(|_| CollectionError::InvalidFingerprint)?;
         let mut jump_session =
             connect_pinned_host(&jump.target, &jump.confirmed_fingerprint).await?;
-        authenticate(&mut jump_session, &jump.target.username, identity, store).await?;
+        authenticate(
+            &mut jump_session,
+            &jump.target.username,
+            jump_identity,
+            store,
+        )
+        .await?;
         let channel = timeout(
             CONNECT_TIMEOUT,
             jump_session.channel_open_direct_tcpip(
@@ -575,7 +620,13 @@ async fn connect_for_target(
             None,
         )
     };
-    authenticate(&mut target_session, &target.username, identity, store).await?;
+    authenticate(
+        &mut target_session,
+        &target.username,
+        target_identity,
+        store,
+    )
+    .await?;
     Ok(SshConnection {
         target: target_session,
         _jump: jump_session,

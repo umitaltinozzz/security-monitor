@@ -5,9 +5,10 @@ pub(super) use security_monitor_advisory_providers::{
 };
 pub(super) use security_monitor_agent_protocol::AgentInventory;
 pub(super) use security_monitor_agent_transport::{
-    CredentialDeleteOutcome, CredentialStore, InventoryCollectionApproval, OsCredentialStore,
-    SshIdentity, SshTarget, collect_agent, create_pairing_instructions, inspect_host_key,
-    load_user_ssh_hosts,
+    CollectionError, CredentialDeleteOutcome, CredentialStore, InventoryCollectionApproval,
+    OsCredentialStore, PinnedProxyJump, SshIdentity, SshTarget, collect_agent,
+    collect_agent_via_jump_with_identities, create_pairing_instructions, inspect_host_key,
+    inspect_host_key_via_jump, load_user_ssh_hosts, proxy_jump_matches,
 };
 pub(super) use security_monitor_ai::{
     AiRequest, AiSettings, DataCategory, HttpAiTransport, MAX_OUTPUT_TOKENS_PER_CALL,
@@ -75,12 +76,16 @@ pub(super) struct StoredSshTarget {
 }
 
 pub(super) fn to_ssh_target(input: SshTargetInput) -> Result<SshTarget, String> {
+    let proxy_jump = input
+        .proxy_jump
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty());
     SshTarget::new(
         input.alias,
         input.hostname,
         input.username,
         input.port,
-        None,
+        proxy_jump,
     )
     .map_err(|error| opaque(error, "invalid_input"))
 }

@@ -374,6 +374,7 @@ fn assess_production<'p>(
         }
     }
 
+    let multiple_deployments = distinct_deployment_count(production.inventory) > 1;
     let observations = production
         .inventory
         .packages
@@ -393,6 +394,10 @@ fn assess_production<'p>(
     reasons.extend(assessment.reasons);
     let status = match assessment.state {
         PackageState::Affected => ProductionStatus::StillAffected,
+        PackageState::Unaffected if multiple_deployments => {
+            reasons.push(DriftReason::ProductionInventoryIncomplete);
+            ProductionStatus::Unknown
+        }
         PackageState::Unaffected => ProductionStatus::FixedInProduction,
         PackageState::Unknown => ProductionStatus::Unknown,
     };
@@ -624,6 +629,21 @@ fn valid_image_digest(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
     })
+}
+
+fn distinct_deployment_count(inventory: &AgentInventory) -> usize {
+    let mut candidates: Vec<&DeploymentIdentity> = Vec::new();
+    for identity in inventory.deployments.iter().chain(
+        inventory
+            .services
+            .iter()
+            .filter_map(|service| service.deploy_identity.as_ref()),
+    ) {
+        if !candidates.contains(&identity) {
+            candidates.push(identity);
+        }
+    }
+    candidates.len()
 }
 
 fn inventory_contains_deployment(

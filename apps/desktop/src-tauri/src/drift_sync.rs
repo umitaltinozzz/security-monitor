@@ -387,6 +387,13 @@ pub fn select_deployment<'a>(
         if !matching.is_empty() {
             return (matching.len() == 1).then(|| matching[0]);
         }
+        return (candidates.len() == 1
+            && candidates[0]
+                .repository
+                .as_deref()
+                .and_then(normalize_remote)
+                .is_none())
+        .then(|| candidates[0]);
     }
     (candidates.len() == 1).then(|| candidates[0])
 }

@@ -65,7 +65,7 @@ pub enum StartupCheckError {
 pub struct LocalProjectScanner {
     database: Database,
     app_data_dir: PathBuf,
-    http_policy: HttpPolicy,
+    http_policy: std::sync::RwLock<HttpPolicy>,
     scanners: ScannerAdapters,
     settings: LocalScanSettings,
     project_locks:
@@ -86,12 +86,27 @@ impl LocalProjectScanner {
         Ok(Self {
             database,
             app_data_dir,
-            http_policy,
+            http_policy: std::sync::RwLock::new(http_policy),
             scanners,
             settings,
             project_locks: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             correlation_lock: tokio::sync::Mutex::new(()),
         })
+    }
+
+    pub fn set_http_policy(&self, http_policy: HttpPolicy) {
+        if let Ok(mut guard) = self.http_policy.write() {
+            *guard = http_policy;
+        }
+    }
+
+    fn current_http_policy(&self) -> HttpPolicy {
+        self.http_policy
+            .read()
+            .map(|guard| *guard)
+            .unwrap_or(HttpPolicy {
+                public_downloads_enabled: false,
+            })
     }
 
     pub fn queue(self: &Arc<Self>, limits: ScanLimits) -> Result<ScanQueue, QueueError> {
@@ -509,8 +524,12 @@ impl LocalProjectScanner {
                 .all(|(checkpoint, inventory)| checkpoint.inventory_complete && inventory.complete),
         };
         let cache_root = self.app_data_dir.join("advisories");
-        let service = AdvisoryService::new(self.http_policy, self.database.clone(), cache_root)
-            .map_err(|_| ScanError::AdvisoryRefreshFailed)?;
+        let service = AdvisoryService::new(
+            self.current_http_policy(),
+            self.database.clone(),
+            cache_root,
+        )
+        .map_err(|_| ScanError::AdvisoryRefreshFailed)?;
         let refresh_succeeded = match service.refresh_and_match(&union).await {
             Ok(_) => self.provider_data_is_fresh(Utc::now(), &union),
             Err(_) => {
@@ -570,11 +589,14 @@ impl LocalProjectScanner {
 
     async fn refresh_inventory_advisories(&self, inventory: &Inventory) -> bool {
         let cache_root = self.app_data_dir.join("advisories");
-        let service =
-            match AdvisoryService::new(self.http_policy, self.database.clone(), cache_root) {
-                Ok(service) => service,
-                Err(_) => return false,
-            };
+        let service = match AdvisoryService::new(
+            self.current_http_policy(),
+            self.database.clone(),
+            cache_root,
+        ) {
+            Ok(service) => service,
+            Err(_) => return false,
+        };
         match service.refresh_and_match(inventory).await {
             Ok(_) => self.provider_data_is_fresh(Utc::now(), inventory),
             Err(_) => {

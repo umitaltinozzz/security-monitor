@@ -73,7 +73,10 @@ impl ScannerAdapters {
             None
         };
         let osv_cache_directory = if request.engine == EngineKind::OsvScanner {
-            Some(create_private_directory(&app_data, "osv/scanner-db")?)
+            Some(create_private_directory(
+                &app_data,
+                security_monitor_advisory_providers::OSV_SCANNER_DB_RELATIVE_DIR,
+            )?)
         } else {
             None
         };
@@ -101,12 +104,13 @@ impl ScannerAdapters {
             ),
             EngineKind::Semgrep => normalize_semgrep(&process.stdout, &validated.project_root),
         };
+        let process_failed = scanner_exit_indicates_error(request.engine, process.exit_code);
         let mut result = match result {
             Ok(result) => result,
-            Err(_) if !process.success => return Err(ScannerError::ProcessFailed),
+            Err(_) if process_failed => return Err(ScannerError::ProcessFailed),
             Err(error) => return Err(error),
         };
-        if !process.success {
+        if process_failed {
             result.complete = false;
             result.diagnostics.push(ScanDiagnostic {
                 kind: ScanDiagnosticKind::ScannerReportedError,
@@ -126,6 +130,13 @@ impl ScannerAdapters {
         let canonical = path.canonicalize().ok()?;
         canonical.starts_with(&app_root).then_some(canonical)
     }
+}
+
+pub(crate) fn scanner_exit_indicates_error(engine: EngineKind, exit_code: Option<i32>) -> bool {
+    !matches!(
+        (engine, exit_code),
+        (EngineKind::OsvScanner, Some(0 | 1)) | (_, Some(0))
+    )
 }
 
 pub(crate) fn select_detection(

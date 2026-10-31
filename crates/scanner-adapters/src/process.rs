@@ -14,6 +14,7 @@ const PROCESS_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub(crate) struct ProcessOutput {
     pub success: bool,
+    pub exit_code: Option<i32>,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
@@ -83,6 +84,7 @@ async fn run_process_inner(
 
     Ok(ProcessOutput {
         success: status.success(),
+        exit_code: status.code(),
         stdout,
         stderr,
     })

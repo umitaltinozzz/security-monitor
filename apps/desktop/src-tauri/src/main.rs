@@ -22,6 +22,78 @@ use tokio_util::sync::CancellationToken;
 const EN_TRAY_LOCALE: &str = include_str!("../../src/locales/en.json");
 const TR_TRAY_LOCALE: &str = include_str!("../../src/locales/tr.json");
 
+#[cfg(test)]
+include!("ipc_commands.rs");
+
+fn app_invoke_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        ipc::settings::get_app_settings,
+        ipc::settings::save_app_settings,
+        ipc::notifications::list_notification_channels,
+        ipc::notifications::save_notification_channel,
+        ipc::notifications::update_notification_channel,
+        ipc::notifications::delete_notification_channel,
+        ipc::notifications::preview_notification,
+        ipc::notifications::send_test_notification,
+        ipc::settings::get_ai_configuration,
+        ipc::settings::save_ai_settings,
+        ipc::ai::save_ai_provider,
+        ipc::ai::set_project_ai_providers,
+        ipc::ai::estimate_ai_request,
+        ipc::ai::run_ai_request,
+        ipc::projects::list_projects,
+        ipc::projects::add_project,
+        ipc::projects::discover_local_projects,
+        ipc::scan::start_project_scan,
+        ipc::scan::cancel_project_scan,
+        ipc::scan::get_scan_result,
+        ipc::findings::list_findings,
+        ipc::findings::list_scanner_findings,
+        ipc::findings::set_scanner_finding_review,
+        ipc::findings::list_findings_page,
+        ipc::memory::list_memories,
+        ipc::memory::create_memory,
+        ipc::memory::update_memory,
+        ipc::memory::delete_memory,
+        ipc::memory::export_memories,
+        ipc::memory::import_memories,
+        ipc::memory::delete_all_memories,
+        ipc::findings::list_advisories,
+        ipc::news::list_news_signals,
+        ipc::news::refresh_news_signals,
+        ipc::findings::list_components,
+        ipc::findings::list_component_instances,
+        ipc::findings::list_finding_evidence,
+        ipc::findings::list_scan_runs,
+        ipc::findings::list_audit_events,
+        ipc::remediation::list_remediations,
+        ipc::remediation::remediation_sandbox_status,
+        ipc::remediation::agent_remediation_available,
+        ipc::remediation::list_mcp_remediation_requests,
+        ipc::remediation::dismiss_mcp_remediation_request,
+        ipc::remediation::request_remediation,
+        ipc::remediation::approve_remediation,
+        ipc::remediation::reject_remediation,
+        ipc::remediation::run_safe_tests,
+        ipc::findings::set_finding_status,
+        ipc::servers::list_server_assets,
+        ipc::scan::detect_scanners,
+        ipc::scan::install_scanner,
+        ipc::scan::update_advisory_data,
+        ipc::update::check_for_updates,
+        ipc::update::install_update,
+        ipc::servers::list_ssh_config_hosts,
+        ipc::servers::inspect_server_host_key,
+        ipc::servers::pair_server,
+        ipc::servers::unpair_server,
+        ipc::servers::collect_server_inventory,
+        ipc::drift::get_server_inventory_summary,
+        ipc::drift::list_project_server_links,
+        ipc::drift::link_project_server,
+        ipc::drift::unlink_project_server,
+    ]
+}
+
 fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let window = match app.get_webview_window("main") {
         Some(window) => window,
@@ -145,72 +217,7 @@ fn main() {
                 destroy_main_window(window);
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            ipc::settings::get_app_settings,
-            ipc::settings::save_app_settings,
-            ipc::notifications::list_notification_channels,
-            ipc::notifications::save_notification_channel,
-            ipc::notifications::update_notification_channel,
-            ipc::notifications::delete_notification_channel,
-            ipc::notifications::preview_notification,
-            ipc::notifications::send_test_notification,
-            ipc::settings::get_ai_configuration,
-            ipc::settings::save_ai_settings,
-            ipc::ai::save_ai_provider,
-            ipc::ai::set_project_ai_providers,
-            ipc::ai::estimate_ai_request,
-            ipc::ai::run_ai_request,
-            ipc::projects::list_projects,
-            ipc::projects::add_project,
-            ipc::projects::discover_local_projects,
-            ipc::scan::start_project_scan,
-            ipc::scan::cancel_project_scan,
-            ipc::scan::get_scan_result,
-            ipc::findings::list_findings,
-            ipc::findings::list_scanner_findings,
-            ipc::findings::set_scanner_finding_review,
-            ipc::findings::list_findings_page,
-            ipc::memory::list_memories,
-            ipc::memory::create_memory,
-            ipc::memory::update_memory,
-            ipc::memory::delete_memory,
-            ipc::memory::export_memories,
-            ipc::memory::import_memories,
-            ipc::memory::delete_all_memories,
-            ipc::findings::list_advisories,
-            ipc::news::list_news_signals,
-            ipc::news::refresh_news_signals,
-            ipc::findings::list_components,
-            ipc::findings::list_component_instances,
-            ipc::findings::list_finding_evidence,
-            ipc::findings::list_scan_runs,
-            ipc::findings::list_audit_events,
-            ipc::remediation::list_remediations,
-            ipc::remediation::remediation_sandbox_status,
-            ipc::remediation::agent_remediation_available,
-            ipc::remediation::list_mcp_remediation_requests,
-            ipc::remediation::dismiss_mcp_remediation_request,
-            ipc::remediation::request_remediation,
-            ipc::remediation::approve_remediation,
-            ipc::remediation::reject_remediation,
-            ipc::remediation::run_safe_tests,
-            ipc::findings::set_finding_status,
-            ipc::servers::list_server_assets,
-            ipc::scan::detect_scanners,
-            ipc::scan::install_scanner,
-            ipc::scan::update_advisory_data,
-            ipc::update::check_for_updates,
-            ipc::update::install_update,
-            ipc::servers::list_ssh_config_hosts,
-            ipc::servers::inspect_server_host_key,
-            ipc::servers::pair_server,
-            ipc::servers::unpair_server,
-            ipc::servers::collect_server_inventory,
-            ipc::drift::get_server_inventory_summary,
-            ipc::drift::list_project_server_links,
-            ipc::drift::link_project_server,
-            ipc::drift::unlink_project_server,
-        ])
+        .invoke_handler(app_invoke_handler())
         .build(app_context())
         .expect("failed to build Security Monitor");
     app.run(move |_, event| match event {
@@ -226,12 +233,56 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{collections::BTreeSet, path::Path};
 
     use super::{
-        EN_TRAY_LOCALE, TR_TRAY_LOCALE, app_data_dir_for_build, should_keep_tray_process_alive,
+        APP_COMMANDS, EN_TRAY_LOCALE, TR_TRAY_LOCALE, app_data_dir_for_build,
+        should_keep_tray_process_alive,
     };
     use crate::ipc_types::AppSettings;
+    use security_monitor_core::ScannerFinding;
+
+    #[test]
+    fn app_commands_match_handler_and_capability_permissions() {
+        let main_source = include_str!("main.rs");
+        let (_, after_macro) = main_source
+            .split_once("tauri::generate_handler![")
+            .expect("generate_handler! macro must be present in main.rs");
+        let (handler_block, _) = after_macro
+            .split_once(']')
+            .expect("generate_handler! macro must close with ]");
+        let handler_commands = handler_block
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim().trim_end_matches(',');
+                if trimmed.is_empty() {
+                    return None;
+                }
+                trimmed.rsplit_once("::").map(|(_, name)| name)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(handler_commands, APP_COMMANDS);
+        let unique_commands = APP_COMMANDS.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(unique_commands.len(), APP_COMMANDS.len());
+
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/main.json"))
+                .expect("capabilities/main.json must be valid JSON");
+        let capability_commands = capability["permissions"]
+            .as_array()
+            .expect("permissions must be an array")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .filter(|permission| *permission != "core:default")
+            .map(|permission| {
+                permission
+                    .strip_prefix("allow-")
+                    .expect("command permissions must start with allow-")
+                    .replace('-', "_")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(capability_commands, APP_COMMANDS);
+    }
 
     #[test]
     fn tray_close_keeps_process_alive_but_explicit_exit_does_not() {
@@ -276,7 +327,9 @@ mod tests {
         let app = tauri::test::mock_builder()
             .manage(state)
             .invoke_handler(tauri::generate_handler![
-                crate::ipc::settings::get_app_settings
+                crate::ipc::settings::get_app_settings,
+                crate::ipc::findings::list_scanner_findings,
+                crate::ipc::remediation::agent_remediation_available,
             ])
             .build(crate::app_context())
             .unwrap();
@@ -300,5 +353,39 @@ mod tests {
         .unwrap();
 
         assert_eq!(response, AppSettings::default());
+
+        let scanner_findings = tauri::test::get_ipc_response(
+            &window,
+            tauri::webview::InvokeRequest {
+                cmd: "list_scanner_findings".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_owned(),
+            },
+        )
+        .unwrap()
+        .deserialize::<Vec<ScannerFinding>>()
+        .unwrap();
+        assert!(scanner_findings.is_empty());
+
+        let remediation_available = tauri::test::get_ipc_response(
+            &window,
+            tauri::webview::InvokeRequest {
+                cmd: "agent_remediation_available".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_owned(),
+            },
+        )
+        .unwrap()
+        .deserialize::<bool>()
+        .unwrap();
+        assert!(!remediation_available);
     }
 }

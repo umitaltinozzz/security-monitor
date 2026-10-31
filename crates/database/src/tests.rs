@@ -13,7 +13,7 @@ use crate::{Database, DatabaseError, Entity, FindingPageFilter, Repository};
 
 #[test]
 fn migration_sources_use_platform_independent_lf_line_endings() {
-    let migrations: [&[u8]; 17] = [
+    let migrations: [&[u8]; 18] = [
         include_bytes!("../migrations/0001_initial.sql"),
         include_bytes!("../migrations/0002_advisory_metadata.sql"),
         include_bytes!("../migrations/0003_finding_disposition.sql"),
@@ -31,6 +31,7 @@ fn migration_sources_use_platform_independent_lf_line_endings() {
         include_bytes!("../migrations/0015_scanner_findings.sql"),
         include_bytes!("../migrations/0016_audit_event_lookup_index.sql"),
         include_bytes!("../migrations/0017_scanner_finding_review.sql"),
+        include_bytes!("../migrations/0018_ntfy_notification_channel.sql"),
     ];
 
     assert!(
@@ -71,7 +72,7 @@ fn records() -> FixtureRecords {
 async fn migration_installs_all_tables_into_an_empty_database() {
     let database = Database::in_memory().await.unwrap();
 
-    assert_eq!(database.schema_version().await.unwrap(), 17);
+    assert_eq!(database.schema_version().await.unwrap(), 18);
     let count: i64 = sqlx::query(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN \
          ('projects', 'assets', 'services', 'deployments', 'components', \
@@ -692,7 +693,7 @@ async fn read_only_database_open_does_not_migrate_or_allow_mutation() {
     writable.close().await;
 
     let readonly = Database::open_read_only(&path).await.unwrap();
-    assert_eq!(readonly.schema_version().await.unwrap(), 17);
+    assert_eq!(readonly.schema_version().await.unwrap(), 18);
     assert_eq!(
         readonly
             .repository::<Project>()
@@ -1455,4 +1456,20 @@ async fn advisory_rekey_updates_finding_records_before_removing_the_old_id() {
             .advisory_id,
         new_id
     );
+}
+
+#[tokio::test]
+async fn ntfy_notification_channel_can_be_persisted() {
+    let database = Database::in_memory().await.unwrap();
+    let mut channel = records().notification_channel;
+    channel.id = "channel-ntfy".to_owned();
+    channel.kind = security_monitor_core::NotificationChannelKind::Ntfy;
+    channel.config_ref = Some("secmon-keyring:v1:00000000-0000-4000-8000-000000000001".to_owned());
+    channel.network_approved_at = Some(Utc::now());
+    channel.network_approved_destination = Some("https://ntfy.sh".to_owned());
+    database
+        .repository::<NotificationChannel>()
+        .create(&channel)
+        .await
+        .expect("ntfy notification channel is accepted by schema and validator");
 }

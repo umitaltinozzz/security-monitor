@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-notification-channel"
+description = "Enables the save_notification_channel command without any pre-configured scope."
+commands.allow = ["save_notification_channel"]
+
+[[permission]]
+identifier = "deny-save-notification-channel"
+description = "Denies the save_notification_channel command without any pre-configured scope."
+commands.deny = ["save_notification_channel"]

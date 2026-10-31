@@ -525,10 +525,10 @@ pub async fn run_tool_loop(
                 &request.enabled_tool_names,
                 &request.approved_tool_permissions,
             ) {
-                Ok(()) => executor
-                    .execute(&call)
-                    .await
-                    .map_err(AiError::ToolExecution)?,
+                Ok(()) => match executor.execute(&call).await {
+                    Ok(output) => output,
+                    Err(error) => json!({ "error": error.to_string() }),
+                },
                 Err(error) => json!({ "error": error.to_string() }),
             };
             let result_bytes = serde_json::to_vec(&result)

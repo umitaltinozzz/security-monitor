@@ -106,12 +106,13 @@ impl AppState {
         if !(1..=168).contains(&settings.scan_interval_hours) {
             return Err("invalid_input".to_owned());
         }
-        let next_scans = ScanServices::new(&self.database, &self.app_data_dir, &settings)?;
         let bytes = serde_json::to_vec(&settings).map_err(|_| "storage_unavailable".to_owned())?;
         write_settings_atomically(&self.settings_path, &bytes)
             .map_err(|_| "storage_unavailable".to_owned())?;
+        self.scans.read().await.scanner.set_http_policy(HttpPolicy {
+            public_downloads_enabled: settings.public_downloads_enabled,
+        });
         *self.settings.write().await = settings;
-        *self.scans.write().await = next_scans;
         Ok(())
     }
 

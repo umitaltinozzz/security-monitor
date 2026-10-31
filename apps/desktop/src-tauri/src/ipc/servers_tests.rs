@@ -33,6 +33,7 @@ impl CredentialStore for FailingDeleteStore {
                 username: "secmon".to_owned(),
                 port: 22,
                 environment: security_monitor_core::Environment::Production,
+                proxy_jump: None,
             },
             private_key_ref: PRIVATE_KEY_REF.to_owned(),
         };
@@ -133,4 +134,113 @@ async fn unpair_treats_missing_keyring_entries_as_cleaned_up() {
 
     assert!(!result.credential_cleanup_warning);
     assert_eq!(store.delete_attempts.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn host_key_change_during_collection_records_audit_and_clears_verified_state() {
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc::now();
+    let asset = Asset {
+        id: Uuid::new_v4().to_string(),
+        asset_type: AssetType::Server,
+        hostname_alias: "fixture".to_owned(),
+        environment: security_monitor_core::Environment::Production,
+        ssh_target_ref: Some(TARGET_REF.to_owned()),
+        host_key_fingerprint: Some("SHA256:fixture".to_owned()),
+        last_seen_at: Some(now),
+        last_success_at: Some(now),
+        removed_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+    database.repository::<Asset>().create(&asset).await.unwrap();
+    let app_data_dir = tempfile::tempdir().unwrap();
+    let inventory = security_monitor_agent_protocol::decode_inventory(include_bytes!(
+        "../../../../../tests/fixtures/drift/production-affected.json"
+    ))
+    .unwrap();
+    persist_server_snapshot(app_data_dir.path(), &asset.id, &inventory).unwrap();
+    assert!(
+        load_server_snapshot(app_data_dir.path(), &asset.id)
+            .unwrap()
+            .is_some()
+    );
+
+    let error = handle_collection_failure(
+        &database,
+        app_data_dir.path(),
+        &asset,
+        CollectionError::HostKeyChanged,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, "host_key_changed");
+    assert!(
+        load_server_snapshot(app_data_dir.path(), &asset.id)
+            .unwrap()
+            .is_none()
+    );
+    let updated = database
+        .repository::<Asset>()
+        .get(&asset.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(updated.last_success_at.is_none());
+    let events = database.repository::<AuditEvent>().list().await.unwrap();
+    assert!(events.iter().any(|event| {
+        event.action == "server_host_key_changed"
+            && event.result == AuditResult::Failed
+            && event.scope.resource_id.as_deref() == Some(asset.id.as_str())
+    }));
+}
+
+#[tokio::test]
+async fn proxy_jump_is_preserved_in_target_and_resolves_paired_jump_host() {
+    let target = to_ssh_target(SshTargetInput {
+        alias: "internal".to_owned(),
+        hostname: "10.0.0.10".to_owned(),
+        username: "secmon".to_owned(),
+        port: 22,
+        environment: security_monitor_core::Environment::Production,
+        proxy_jump: Some("fixture".to_owned()),
+    })
+    .unwrap();
+    assert_eq!(target.proxy_jump.as_deref(), Some("fixture"));
+
+    let database = Database::in_memory().await.unwrap();
+    let now = Utc::now();
+    let jump_asset = Asset {
+        id: Uuid::new_v4().to_string(),
+        asset_type: AssetType::Server,
+        hostname_alias: "fixture".to_owned(),
+        environment: security_monitor_core::Environment::Production,
+        ssh_target_ref: Some(TARGET_REF.to_owned()),
+        host_key_fingerprint: Some("SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU".to_owned()),
+        last_seen_at: Some(now),
+        last_success_at: Some(now),
+        removed_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+    database
+        .repository::<Asset>()
+        .create(&jump_asset)
+        .await
+        .unwrap();
+    let store = FailingDeleteStore::default();
+    let (pinned_jump, jump_identity) =
+        resolve_pinned_proxy_jump(&database, &store, "fixture", "internal")
+            .await
+            .unwrap();
+    assert_eq!(pinned_jump.target.alias, "fixture");
+    assert_eq!(
+        jump_identity,
+        SshIdentity::PrivateKeyRef(PRIVATE_KEY_REF.to_owned())
+    );
+    assert!(
+        resolve_pinned_proxy_jump(&database, &store, "unpaired-bastion", "internal")
+            .await
+            .is_err()
+    );
 }

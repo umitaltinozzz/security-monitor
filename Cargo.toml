@@ -30,6 +30,13 @@ edition = "2024"
 rust-version = "1.90"
 license = "Apache-2.0"
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
 [workspace.dependencies]
 cap-std = "4"
 chrono = { version = "0.4", features = ["serde"] }
