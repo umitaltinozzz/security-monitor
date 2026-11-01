@@ -32,6 +32,7 @@
     "checkUpdates": "Check for updates",
     "installUpdate": "Install update",
     "install": "Install verified binary",
+    "installShort": "Install",
     "edit": "Edit",
     "delete": "Delete",
     "changeStatus": "Change status",
@@ -492,6 +493,7 @@
     "memoryExportFailed": "Could not export notes.",
     "memoryImportFailed": "Could not import this note archive.",
     "projectPermissions": "Providers allowed for each project",
+    "permissionsNeedProvider": "Add a provider above before allowing it for a project.",
     "mcpSourceAccess": "Local MCP source access",
     "mcpSourceAccessHelp": "Granting a project lets the configured local MCP client read its redacted source files; that client may forward returned text. Approve only projects suitable for that client. Access is off by default, and every grant or revocation is recorded in Activity.",
     "runHistory": "AI run history",
@@ -517,7 +519,16 @@
     "redactions": "Sensitive values redacted",
     "redactedPrompt": "Prompt after redaction",
     "approveAndSend": "Approve and send",
-    "notReadyBody": "You can add an AI provider later in Settings. Nothing is sent until you review and approve a request."
+    "notReadyBody": "You can add an AI provider later in Settings. Nothing is sent until you review and approve a request.",
+    "presetsTitle": "Quick preset",
+    "presetOpenCodeGo": "OpenCode Go",
+    "presetOpenCodeZen": "OpenCode Zen",
+    "presetOpenAi": "OpenAI API",
+    "presetAnthropic": "Anthropic Claude",
+    "presetOllama": "Ollama (Local)",
+    "presetOpenCodeCli": "OpenCode CLI (Local Agent)",
+    "advancedProviderFields": "Optional pricing and data region",
+    "advancedBudgetAndTools": "Budget limits and tool permissions"
   },
   "history": {
     "title": "History",
@@ -627,7 +638,15 @@
     "appearance": "Appearance",
     "language": "Language",
     "saved": "Settings saved",
-    "hours": "hours"
+    "hours": "hours",
+    "tabGeneral": "General & Appearance",
+    "tabPrivacy": "Privacy & Scanners",
+    "tabAi": "AI & Agents",
+    "tabNotifications": "Notifications",
+    "tabSources": "Data Sources & Backup",
+    "reopenOnboarding": "Reopen setup guide",
+    "reopenOnboardingShort": "Open guide",
+    "reopenOnboardingHelp": "Run the step-by-step initial setup and getting-started guide again."
   },
   "onboarding": {
     "title": "Set up Security Monitor",

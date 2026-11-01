@@ -32,6 +32,7 @@
     "checkUpdates": "Güncellemeleri denetle",
     "installUpdate": "Güncellemeyi yükle",
     "install": "Doğrulanmış ikiliyi yükle",
+    "installShort": "Yükle",
     "edit": "Düzenle",
     "delete": "Sil",
     "changeStatus": "Durumu değiştir",
@@ -492,6 +493,7 @@
     "memoryExportFailed": "Notlar dışa aktarılamadı.",
     "memoryImportFailed": "Bu not arşivi içe aktarılamadı.",
     "projectPermissions": "Her proje için izin verilen sağlayıcılar",
+    "permissionsNeedProvider": "Projelere izin vermek için önce yukarıdan bir sağlayıcı ekleyin.",
     "mcpSourceAccess": "Yerel MCP kaynak erişimi",
     "mcpSourceAccessHelp": "Bir projeye izin vermek, yapılandırılmış yerel MCP istemcisinin redakte edilmiş kaynak dosyalarını okumasını sağlar; istemci dönen metni başka yere iletebilir. Yalnızca bu istemciyle paylaşılmasına uygun projelere izin verin. Erişim varsayılan olarak kapalıdır; her izin ve iptal Etkinlik günlüğüne kaydedilir.",
     "runHistory": "AI çalışma geçmişi",
@@ -517,7 +519,16 @@
     "redactions": "Redakte edilen hassas değerler",
     "redactedPrompt": "Redaksiyon sonrası istem",
     "approveAndSend": "Onayla ve gönder",
-    "notReadyBody": "AI sağlayıcısını daha sonra Ayarlar'dan ekleyebilirsin. Bir isteği inceleyip onaylamadan hiçbir şey gönderilmez."
+    "notReadyBody": "AI sağlayıcısını daha sonra Ayarlar'dan ekleyebilirsin. Bir isteği inceleyip onaylamadan hiçbir şey gönderilmez.",
+    "presetsTitle": "Hızlı şablon seçin",
+    "presetOpenCodeGo": "OpenCode Go",
+    "presetOpenCodeZen": "OpenCode Zen",
+    "presetOpenAi": "OpenAI API",
+    "presetAnthropic": "Anthropic Claude",
+    "presetOllama": "Ollama (Yerel)",
+    "presetOpenCodeCli": "OpenCode CLI (Yerel Ajan)",
+    "advancedProviderFields": "İsteğe bağlı fiyatlandırma ve veri bölgesi",
+    "advancedBudgetAndTools": "Bütçe sınırları ve araç izinleri"
   },
   "history": {
     "title": "Geçmiş",
@@ -627,7 +638,15 @@
     "appearance": "Görünüm",
     "language": "Dil",
     "saved": "Ayarlar kaydedildi",
-    "hours": "saat"
+    "hours": "saat",
+    "tabGeneral": "Genel ve Görünüm",
+    "tabPrivacy": "Gizlilik ve Tarayıcılar",
+    "tabAi": "Yapay Zekâ (AI)",
+    "tabNotifications": "Bildirimler",
+    "tabSources": "Veri Kaynakları ve Yedek",
+    "reopenOnboarding": "Kurulum sihirbazını yeniden aç",
+    "reopenOnboardingShort": "Sihirbazı aç",
+    "reopenOnboardingHelp": "Adım adım ilk kurulum ve başlangıç rehberini tekrar çalıştırın."
   },
   "onboarding": {
     "title": "Security Monitor'ı kurun",

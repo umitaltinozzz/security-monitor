@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import en from "../locales/en.json";
 import tr from "../locales/tr.json";
 import type { AppSettings } from "../generated/AppSettings";
@@ -34,6 +34,21 @@ export function Onboarding() {
     "serverTitle",
     "aiTitle",
   ];
+  useEffect(() => {
+    if (step !== 1 || scanners.length > 0 || typeof api.scanners !== "function") return;
+    let cancelled = false;
+    void api
+      .scanners()
+      .then((detected) => {
+        if (!cancelled && Array.isArray(detected)) setScanners(detected);
+      })
+      .catch(() => {
+        // Silent on background check
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, scanners.length]);
   async function complete() {
     await saveSettings({ ...data.settings, onboarding_completed: true });
     onComplete();
@@ -139,7 +154,12 @@ export function Onboarding() {
             );
           })}
           <article className="flow-turn current">
-            <span className="eyebrow">{t("onboarding.assistant")}</span>
+            <div className="onboarding-step-head">
+              <span className="eyebrow">{t("onboarding.assistant")}</span>
+              <span className="tag unverified">
+                {t("onboarding.step")} {step + 1} {t("onboarding.of")} {titles.length}
+              </span>
+            </div>
             <h1 id="onboarding-title">{t(`onboarding.${titles[step]}`)}</h1>
             <p className="onboarding-description">
               {t(
@@ -229,7 +249,7 @@ export function Onboarding() {
                             >
                               {installingEngine === scanner.engine
                                 ? t("common.loading")
-                                : t("actions.install")}
+                                : t("actions.installShort")}
                             </button>
                           )}
                       </li>
@@ -251,13 +271,13 @@ export function Onboarding() {
                 <div className="ecosystem-grid">
                   {["npm", "pypi", "cargo", "golang", "composer", "maven", "rubygems", "nuget"].map(
                     (ecosystem) => (
-                      <label className="check-field" key={ecosystem}>
+                      <label className="check-field pill-check" key={ecosystem}>
                         <input
                           type="checkbox"
                           checked={data.settings.ecosystems.includes(ecosystem)}
                           onChange={(event) => toggleEcosystem(ecosystem, event.target.checked)}
                         />
-                        {t(`ecosystems.${ecosystem}`)}
+                        <span>{t(`ecosystems.${ecosystem}`)}</span>
                       </label>
                     ),
                   )}
@@ -299,6 +319,15 @@ export function Onboarding() {
               </p>
             )}
             <div className="onboarding-actions">
+              {step > 0 && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => setStep((current) => Math.max(0, current - 1))}
+                >
+                  {t("actions.back")}
+                </button>
+              )}
               <button className="button quiet" onClick={() => void next(true)}>
                 {t("actions.skip")}
               </button>

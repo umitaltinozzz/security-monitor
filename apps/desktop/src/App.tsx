@@ -503,7 +503,11 @@ export function App() {
                 </button>
               </div>
             )}
-            <main id="main-content" className="main-content" tabIndex={-1}>
+            <main
+              id="main-content"
+              className={`main-content ${page === "settings" ? "no-composer" : ""}`}
+              tabIndex={-1}
+            >
               {page === "review" && <Review />}
               {page === "projects" && <Projects />}
               {page === "servers" && <Servers />}
@@ -511,12 +515,14 @@ export function App() {
               {page === "history" && <History />}
               {page === "settings" && <Settings />}
             </main>
-            <ContextComposer
-              context={context}
-              projectId={data.projects.find((project) => project.name === context)?.id ?? null}
-              t={t}
-              setNotice={setNotice}
-            />
+            {page !== "settings" && (
+              <ContextComposer
+                context={context}
+                projectId={data.projects.find((project) => project.name === context)?.id ?? null}
+                t={t}
+                setNotice={setNotice}
+              />
+            )}
           </div>
           {paletteOpen && (
             <CommandPalette
