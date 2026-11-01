@@ -57,7 +57,9 @@ pub async fn start_project_scan(
                     crate::ipc::notifications::publish_new_high_findings(&state, Some(&project_id))
                         .await;
                 }
-                ScanResult::from_summary(summary)
+                let mut result = ScanResult::from_summary(summary);
+                result.scan_id = scan_id;
+                result
             }
             Err(_) => ScanResult {
                 scan_id: scan_id.clone(),

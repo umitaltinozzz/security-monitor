@@ -156,7 +156,13 @@
     "referenceBranch": "Referans dalı",
     "remoteConfigured": "Git uzak deposu yapılandırılmış",
     "noRemote": "Git uzak deposu yapılandırılmamış",
-    "empty": "Henüz proje eklenmedi."
+    "empty": "Henüz proje eklenmedi.",
+    "fullScanSetupTitle": "Tam tarama araçları eksik",
+    "fullScanSetupBody": "Tam tarama için OSV-Scanner ve Trivy motorları kullanılır. Eksik araçları SHA-256 doğrulamasıyla indirip kurabilir veya mevcut araçlarla devam edebilirsiniz.",
+    "fullScanDownloadsDisabled": "Tarayıcı motorlarını indirmek için genel indirmeler etkinleştirilecek.",
+    "fullScanInstallAndRun": "Eksik araçları indir ve tam tarama başlat",
+    "fullScanRunAnyway": "İndirmeden mevcut araçlarla tara",
+    "fullScanInstalling": "Tarayıcı motorları indiriliyor ve doğrulanıyor..."
   },
   "servers": {
     "title": "Sunucular",

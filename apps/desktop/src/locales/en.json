@@ -156,7 +156,13 @@
     "referenceBranch": "Reference branch",
     "remoteConfigured": "Git remote configured",
     "noRemote": "No Git remote configured",
-    "empty": "No projects added yet."
+    "empty": "No projects added yet.",
+    "fullScanSetupTitle": "Full scan tools are missing",
+    "fullScanSetupBody": "Full scan uses the OSV-Scanner and Trivy engines. You can download and install missing tools with SHA-256 verification or continue with current tools.",
+    "fullScanDownloadsDisabled": "Public downloads will be enabled to download scanner engines.",
+    "fullScanInstallAndRun": "Download missing tools and start full scan",
+    "fullScanRunAnyway": "Scan without downloading",
+    "fullScanInstalling": "Downloading and verifying scanner engines..."
   },
   "servers": {
     "title": "Servers",

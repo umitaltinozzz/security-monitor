@@ -161,7 +161,6 @@ impl AdvisoryService {
 
         let database_records = self.database.repository::<Advisory>().list().await?;
         let mut merger = AdvisoryMerger::new(database_records);
-        merger.extend(discovered.iter().cloned());
 
         let osv_root = self.cache_root.join("osv");
         let updater = OsvDatabaseUpdater::new(self.http.clone());
@@ -327,6 +326,7 @@ impl AdvisoryService {
             });
         }
 
+        merger.extend(discovered);
         let mut merged = merger.into_records();
         if let Some(catalog) = &kev {
             apply_kev(&mut merged, catalog);

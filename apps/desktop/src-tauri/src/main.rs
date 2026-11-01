@@ -110,8 +110,18 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Er
             tauri::WebviewWindowBuilder::from_config(app, config)?.build()?
         }
     };
+    let _ = window.unminimize();
+    let _ = window.center();
     window.show()?;
-    window.set_focus()?;
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+    let _ = window.set_always_on_top(false);
+    tracing::info!(
+        visible = ?window.is_visible(),
+        position = ?window.outer_position(),
+        size = ?window.outer_size(),
+        "main window shown and focused"
+    );
     Ok(())
 }
 
@@ -208,6 +218,9 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+            if let Err(error) = show_main_window(app.handle()) {
+                tracing::error!(%error, "failed to show the main window on startup");
+            }
             background::start(app.handle().clone(), setup_background_cancellation.clone());
             Ok(())
         })

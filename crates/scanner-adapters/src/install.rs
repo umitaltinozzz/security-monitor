@@ -16,7 +16,7 @@ use crate::{
     version::{self, DownloadArtifact},
 };
 
-const MAX_EXTRACTED_BINARY_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_EXTRACTED_BINARY_BYTES: u64 = 300 * 1024 * 1024;
 
 pub struct ScannerAdapters {
     pub(crate) http: PublicDataHttp,

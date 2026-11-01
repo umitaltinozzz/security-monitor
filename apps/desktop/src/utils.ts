@@ -18,6 +18,10 @@ export function initialLanguage(): Language {
   return navigator.language.toLowerCase().startsWith("tr") ? "tr" : "en";
 }
 
+export function displayPath(value: string): string {
+  return value.replace(/^\\\\\?\\/, "");
+}
+
 export function safeError(error: unknown, t: T): string {
   const code =
     typeof error === "string" && error in (en.error as Record<string, string>) ? error : "unknown";

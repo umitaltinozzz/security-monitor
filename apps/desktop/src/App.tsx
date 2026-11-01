@@ -207,12 +207,13 @@ export function App() {
           "runs",
           "audit",
         ]);
+        const summaryText = `${result.component_count} ${t("projects.components")} · ${result.finding_count + result.scanner_finding_count} ${t("navigation.findings")}`;
         setNotice({
-          message: t(
+          message: `${t(
             result.outcome === "succeeded" && result.inventory_complete
               ? "projects.scanComplete"
               : "projects.scanPartial",
-          ),
+          )} (${summaryText})`,
           kind: result.outcome === "failed" ? "error" : "success",
         });
       }

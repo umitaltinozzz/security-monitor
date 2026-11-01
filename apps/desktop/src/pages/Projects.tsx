@@ -1,14 +1,17 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api";
+import type { Project } from "../generated/Project";
+import type { ScannerAvailability } from "../generated/ScannerAvailability";
 import { Drift, DriftSummary, Empty, PageHeading, ScanDiagnostics, StatusTag } from "../components";
 import { MemoryNotes } from "../MemoryNotes";
 import { useWorkspace } from "../WorkspaceContext";
-import { date, safeError } from "../utils";
+import { date, displayPath, safeError } from "../utils";
 export function Projects() {
   const {
     data,
     t,
     addProject,
+    saveSettings,
     startScan,
     cancelProjectScan: cancelScan,
     scanState,
@@ -27,6 +30,54 @@ export function Projects() {
   >([]);
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [fullScanPromptProjectId, setFullScanPromptProjectId] = useState<string | null>(null);
+  const [fullScanScanners, setFullScanScanners] = useState<ScannerAvailability[]>([]);
+  const [installingScanners, setInstallingScanners] = useState(false);
+
+  async function requestFullScan(project: Project) {
+    try {
+      const detected = await api.scanners();
+      const missingRequired = detected.some(
+        (scanner) =>
+          (scanner.engine === "osv-scanner" || scanner.engine === "trivy") &&
+          scanner.status === "missing",
+      );
+      if (missingRequired) {
+        setFullScanScanners(detected);
+        setFullScanPromptProjectId(project.id);
+        return;
+      }
+    } catch {
+      // Fall back to starting the scan directly if scanner detection is unavailable.
+    }
+    setFullScanPromptProjectId(null);
+    await startScan(project, "full");
+  }
+
+  async function installMissingAndRunFullScan(project: Project) {
+    setInstallingScanners(true);
+    try {
+      if (!data.settings.public_downloads_enabled) {
+        await saveSettings({ ...data.settings, public_downloads_enabled: true });
+      }
+      const missingEngines = fullScanScanners
+        .filter(
+          (scanner) =>
+            (scanner.engine === "osv-scanner" || scanner.engine === "trivy") &&
+            scanner.status === "missing",
+        )
+        .map((scanner) => scanner.engine);
+      for (const engine of missingEngines) {
+        await api.installScanner(engine, true);
+      }
+      setFullScanPromptProjectId(null);
+      await startScan(project, "full");
+    } catch (error) {
+      setNotice({ kind: "error", message: safeError(error, t) });
+    } finally {
+      setInstallingScanners(false);
+    }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!path.trim()) return;
@@ -135,7 +186,7 @@ export function Projects() {
                     <span>
                       <strong>{candidate.name}</strong>
                       <small>
-                        {candidate.root_path} · {candidate.component_count}{" "}
+                        {displayPath(candidate.root_path)} · {candidate.component_count}{" "}
                         {t("projects.components")}
                       </small>
                     </span>
@@ -186,7 +237,9 @@ export function Projects() {
                 <div className="project-card-head">
                   <div>
                     <h2>{project.name}</h2>
-                    <p className="mono path">{project.root_path}</p>
+                    <p className="mono path" title={displayPath(project.root_path)}>
+                      {displayPath(project.root_path)}
+                    </p>
                   </div>
                   <StatusTag
                     value={
@@ -304,6 +357,62 @@ export function Projects() {
                     {t("common.updated")}: {date(project.updated_at, data.settings.language)}
                   </span>
                 </div>
+                {fullScanPromptProjectId === project.id && (
+                  <div className="callout">
+                    <h3>{t("projects.fullScanSetupTitle")}</h3>
+                    <p>{t("projects.fullScanSetupBody")}</p>
+                    <ul className="scanner-list">
+                      {fullScanScanners
+                        .filter((scanner) =>
+                          ["osv-scanner", "trivy", "semgrep"].includes(scanner.engine),
+                        )
+                        .map((scanner) => (
+                          <li key={scanner.engine}>
+                            <span>{t(`scanner.${scanner.engine.replaceAll("-", "_")}`)}</span>
+                            <span
+                              className={`tag ${scanner.status === "available" ? "verified" : "unverified"}`}
+                            >
+                              {t(`scanner.${scanner.status}`)}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                    {!data.settings.public_downloads_enabled && (
+                      <p className="field-hint">{t("projects.fullScanDownloadsDisabled")}</p>
+                    )}
+                    {installingScanners && (
+                      <p className="field-hint">{t("projects.fullScanInstalling")}</p>
+                    )}
+                    <div className="button-row">
+                      <button
+                        className="button primary"
+                        disabled={installingScanners}
+                        onClick={() => void installMissingAndRunFullScan(project)}
+                      >
+                        {installingScanners
+                          ? t("common.loading")
+                          : t("projects.fullScanInstallAndRun")}
+                      </button>
+                      <button
+                        className="button secondary"
+                        disabled={installingScanners}
+                        onClick={() => {
+                          setFullScanPromptProjectId(null);
+                          void startScan(project, "full");
+                        }}
+                      >
+                        {t("projects.fullScanRunAnyway")}
+                      </button>
+                      <button
+                        className="button quiet"
+                        disabled={installingScanners}
+                        onClick={() => setFullScanPromptProjectId(null)}
+                      >
+                        {t("actions.cancel")}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="button-row">
                   {activeScanIds[project.id] ? (
                     <button className="button quiet" onClick={() => void cancelScan(project.id)}>
@@ -319,7 +428,7 @@ export function Projects() {
                       </button>
                       <button
                         className="button secondary"
-                        onClick={() => void startScan(project, "full")}
+                        onClick={() => void requestFullScan(project)}
                       >
                         {t("actions.scanFull")}
                       </button>
