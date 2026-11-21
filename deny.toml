@@ -5,7 +5,7 @@ unmaintained = "workspace"
 # app disables that feature. Linux/macOS use the updater's tar/gzip AppImage path;
 # native cargo trees for all three targets omit the affected `zip` crate. Keep this
 # ignore only while those target-specific features and updater paths remain unchanged.
-ignore = ["RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369"]
+ignore = ["RUSTSEC-2026-0368"]
 
 [bans]
 multiple-versions = "warn"
