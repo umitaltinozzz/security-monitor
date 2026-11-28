@@ -42,11 +42,11 @@ uuid.workspace = true
 url.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
-tauri-plugin-updater = { version = "=2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls", "system-proxy"] }
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
-tauri-plugin-updater = { version = "=2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tauri-plugin-updater = { version = "=2.14.1", default-features = false, features = ["rustls-tls", "system-proxy"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
